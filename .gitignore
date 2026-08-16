@@ -1,0 +1,26 @@
+# ---- Gradle / 构建产物 ----
+.gradle/
+build/
+
+# ---- ModMind 工作区数据（快照/测试实例/构建日志）----
+.modmind/
+
+# ---- 捆绑的工具链与运行时 ----
+gradle-9.2.1/
+java-runtime-*/
+lib/
+
+# ---- IDE / 编辑器 ----
+.idea/
+*.iml
+.vscode/
+.claude/
+*.code-workspace
+
+# ---- 操作系统 ----
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ---- 日志 ----
+*.log

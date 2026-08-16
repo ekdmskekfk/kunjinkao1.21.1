@@ -1,0 +1,6 @@
+{
+  "pack": {
+    "description": "${mod_name} 资源",
+    "pack_format": ${pack_format_number}
+  }
+}
