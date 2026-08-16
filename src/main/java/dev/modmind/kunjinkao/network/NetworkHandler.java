@@ -16,6 +16,8 @@ public final class NetworkHandler {
         registrar.playToServer(ToggleOverwritePayload.TYPE, ToggleOverwritePayload.STREAM_CODEC, ToggleOverwritePayload::handle);
         registrar.playToServer(ToggleThemePayload.TYPE, ToggleThemePayload.STREAM_CODEC, ToggleThemePayload::handle);
         registrar.playToClient(OverwriteEffectPayload.TYPE, OverwriteEffectPayload.STREAM_CODEC, OverwriteEffectPayload::handle);
+        registrar.playToClient(TimeAcceleratorOpenPayload.TYPE, TimeAcceleratorOpenPayload.STREAM_CODEC, TimeAcceleratorOpenPayload::handle);
+        registrar.playToServer(TimeAcceleratorConfigPayload.TYPE, TimeAcceleratorConfigPayload.STREAM_CODEC, TimeAcceleratorConfigPayload::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {
