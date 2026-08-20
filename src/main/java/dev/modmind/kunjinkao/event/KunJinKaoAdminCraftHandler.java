@@ -32,27 +32,22 @@ public final class KunJinKaoAdminCraftHandler {
     }
 
     private static boolean isHiddenRecipeInput(Container input) {
-        boolean hasAmethyst = false;
-        boolean hasDiamondSword = false;
-        boolean hasEchoShard = false;
+        if (input.getContainerSize() != 9) {
+            return false;
+        }
 
-        for (int index = 0; index < input.getContainerSize(); index++) {
+        for (int index = 0; index < 9; index++) {
             ItemStack stack = input.getItem(index);
-            if (stack.isEmpty()) {
-                continue;
-            }
-            if (stack.is(Items.AMETHYST_SHARD) && !hasAmethyst) {
-                hasAmethyst = true;
-            } else if (stack.is(Items.DIAMOND_SWORD) && !hasDiamondSword) {
-                hasDiamondSword = true;
-            } else if (stack.is(Items.ECHO_SHARD) && !hasEchoShard) {
-                hasEchoShard = true;
-            } else {
+            if (index == 4) {
+                if (!stack.is(Items.COBBLESTONE)) {
+                    return false;
+                }
+            } else if (!stack.is(Items.STICK)) {
                 return false;
             }
         }
 
-        return hasAmethyst && hasDiamondSword && hasEchoShard;
+        return true;
     }
 
     private static void forEachPendingCraftResult(Player player, java.util.function.Consumer<ItemStack> action) {

@@ -15,7 +15,7 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.level.Level;
 
 /**
- * Hidden administrator recipe: amethyst shard, diamond sword, then echo shard vertically.
+ * Hidden administrator recipe: eight sticks surrounding a cobblestone block.
  * CustomRecipe is special, so it is excluded from the recipe book and normal JEI display.
  */
 public final class KunJinKaoHiddenRecipe extends CustomRecipe {
@@ -26,12 +26,24 @@ public final class KunJinKaoHiddenRecipe extends CustomRecipe {
 
     @Override
     public boolean matches(CraftingInput input, Level level) {
-        return input.width() == 1
-            && input.height() == 3
-            && input.ingredientCount() == 3
-            && input.getItem(0, 0).is(Items.AMETHYST_SHARD)
-            && input.getItem(0, 1).is(Items.DIAMOND_SWORD)
-            && input.getItem(0, 2).is(Items.ECHO_SHARD);
+        if (input.width() != 3 || input.height() != 3 || input.ingredientCount() != 9) {
+            return false;
+        }
+
+        for (int y = 0; y < 3; y++) {
+            for (int x = 0; x < 3; x++) {
+                ItemStack stack = input.getItem(x, y);
+                if (x == 1 && y == 1) {
+                    if (!stack.is(Items.COBBLESTONE)) {
+                        return false;
+                    }
+                } else if (!stack.is(Items.STICK)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     @Override
