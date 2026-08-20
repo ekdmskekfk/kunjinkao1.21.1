@@ -6,7 +6,16 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.81'
 }
 
-version = project.mod_version
+def incrementPatchVersion = { String currentVersion ->
+    def segments = currentVersion.tokenize('.')
+    if (segments.size() != 3 || !segments.every { it.isInteger() }) {
+        throw new GradleException("mod_version must use major.minor.patch format: ${currentVersion}")
+    }
+    "${segments[0]}.${segments[1]}.${segments[2].toInteger() + 1}"
+}
+
+def nextModVersion = incrementPatchVersion(project.mod_version)
+version = nextModVersion
 group = project.maven_group
 
 base {
@@ -78,7 +87,7 @@ tasks.named('processResources', ProcessResources).configure {
             minecraft_version: minecraft_version, minecraft_version_range: minecraft_version_range,
             neo_version: neo_version, neo_version_range: neo_version_range,
             loader_version_range: loader_version_range,
-            mod_id: mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
+            mod_id: mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: nextModVersion,
             mod_authors: mod_authors, mod_description: mod_description,
             pack_format_number: pack_format_number,
     ]
@@ -86,5 +95,15 @@ tasks.named('processResources', ProcessResources).configure {
 
     filesMatching(['META-INF/neoforge.mods.toml', 'pack.mcmeta']) {
         expand replaceProperties
+    }
+}
+
+tasks.named('build').configure {
+    doLast {
+        def propertiesFile = file('gradle.properties')
+        propertiesFile.text = propertiesFile.getText('UTF-8').replaceFirst(
+                /(?m)^mod_version=.*/,
+                "mod_version=${nextModVersion}"
+        )
     }
 }
