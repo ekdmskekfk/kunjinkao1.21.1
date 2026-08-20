@@ -4,6 +4,7 @@ import dev.modmind.kunjinkao.block.TimeAcceleratorBlock;
 import dev.modmind.kunjinkao.block.TimeAcceleratorBlockEntity;
 import dev.modmind.kunjinkao.entity.DiamondProjectile;
 import net.minecraft.core.Holder;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -15,6 +16,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.SwordItem;
 import net.minecraft.world.item.Tiers;
+import net.minecraft.world.item.component.Unbreakable;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -29,7 +31,8 @@ public class SwordRegistry {
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES = DeferredRegister.create(BuiltInRegistries.BLOCK_ENTITY_TYPE, KunJinKaoEntry.MOD_ID);
 
     public static final Holder<? extends Item> KUN_JIN_KAO_SWORD = ITEMS.register("kun_jin_kao",
-        () -> new KunJinKaoSwordItem(Tiers.DIAMOND, 3, -2.4F, new Item.Properties())
+        () -> new KunJinKaoSwordItem(Tiers.DIAMOND, 3, -2.4F,
+            new Item.Properties().component(DataComponents.UNBREAKABLE, new Unbreakable(false)))
     );
 
     // ===== 时间加速器方块 =====
