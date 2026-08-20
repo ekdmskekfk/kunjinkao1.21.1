@@ -1,0 +1,58 @@
+name: Build and release mod
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Set up Gradle 9.2.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.2.1'
+
+      - name: Build mod
+        run: gradle --no-daemon build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kunjinkao-mod-${{ github.sha }}
+          path: build/libs/kunjinkao_neoforge_1.21.1-*.jar
+          if-no-files-found: error
+
+      - name: Create or update release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: build-${{ github.sha }}
+        run: |
+          jar_file="$(find build/libs -maxdepth 1 -name 'kunjinkao_neoforge_1.21.1-*.jar' ! -name '*-sources.jar' -print -quit)"
+          test -n "$jar_file"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$jar_file" --clobber
+          else
+            gh release create "$TAG" "$jar_file" \
+              --target "$GITHUB_SHA" \
+              --title "Kunjinkao build ${GITHUB_SHA::7}" \
+              --generate-notes \
+              --prerelease
+          fi
