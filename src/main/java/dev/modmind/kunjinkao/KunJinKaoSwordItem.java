@@ -14,6 +14,8 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.effect.MobEffectCategory;
+import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -218,8 +220,24 @@ public class KunJinKaoSwordItem extends SwordItem {
     @Override
     public void inventoryTick(ItemStack stack, Level level, Entity entity, int slotId, boolean isSelected) {
         super.inventoryTick(stack, level, entity, slotId, isSelected);
-        if (!level.isClientSide() && stack.getDamageValue() > 0) {
+        if (level.isClientSide()) {
+            return;
+        }
+
+        if (stack.getDamageValue() > 0) {
             stack.setDamageValue(0);
+        }
+
+        if (entity instanceof Player player) {
+            removeHarmfulEffects(player);
+        }
+    }
+
+    private static void removeHarmfulEffects(Player player) {
+        for (MobEffectInstance effect : List.copyOf(player.getActiveEffects())) {
+            if (effect.getEffect().value().getCategory() == MobEffectCategory.HARMFUL) {
+                player.removeEffect(effect.getEffect());
+            }
         }
     }
 
