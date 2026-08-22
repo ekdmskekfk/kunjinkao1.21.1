@@ -5,5 +5,16 @@
   "key.categories.kunjinkao": "KunJinKao TangTangTang",
   "key.kunjinkao.disguise": "Toggle Disguise",
   "key.kunjinkao.overwrite": "Toggle Overwrite Flow",
-  "key.kunjinkao.theme": "Cycle Overwrite Theme"
+  "key.kunjinkao.theme": "Cycle Overwrite Theme",
+  "key.category.kunjinkao.tactical": "Kunjinkao Tactical",
+  "key.kunjinkao.toggle_tactical_hud": "Toggle Tactical HUD",
+  "screen.kunjinkao.tactical_hud": "Tactical HUD",
+  "screen.kunjinkao.tactical_hint": "Press H to close",
+  "screen.kunjinkao.entity_manager": "Loaded Entity Manager",
+  "screen.kunjinkao.entity_count": "Loaded entities: %s",
+  "button.kunjinkao.tactical_night_vision": "Night Vision",
+  "button.kunjinkao.tactical_entities": "Entities",
+  "button.kunjinkao.tactical_terminate": "Terminate",
+  "button.kunjinkao.tactical_teleport": "Teleport to",
+  "message.kunjinkao.tactical_denied": "You are not authorized to use the tactical HUD."
 }

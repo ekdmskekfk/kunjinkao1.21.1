@@ -3,6 +3,7 @@ package dev.modmind.kunjinkao;
 import dev.modmind.kunjinkao.client.KunJinKaoClientSetup;
 import dev.modmind.kunjinkao.client.KunJinKaoTooltipColorHandler;
 import dev.modmind.kunjinkao.config.AdminToolConfig;
+import dev.modmind.kunjinkao.config.TacticalHudConfig;
 import dev.modmind.kunjinkao.event.KunJinKaoAdminCraftHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoDeathEventHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoProtectionHandler;
@@ -23,6 +24,7 @@ public final class KunJinKaoEntry {
 
     public KunJinKaoEntry(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.SERVER, AdminToolConfig.SPEC, "kunjinkao-admin.toml");
+        modContainer.registerConfig(ModConfig.Type.COMMON, TacticalHudConfig.SPEC, "tactical-hud-admin.toml");
         modEventBus.addListener(NetworkHandler::register);
         SwordRegistry.register(modEventBus);
         KunJinKaoRecipes.register(modEventBus);

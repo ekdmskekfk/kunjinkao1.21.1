@@ -6,6 +6,7 @@ import net.minecraft.client.resources.model.ModelManager;
 import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.client.event.ModelEvent;
 
 import org.slf4j.Logger;
@@ -17,8 +18,10 @@ public class KunJinKaoClientSetup {
 
     public static void init(IEventBus modEventBus) {
         modEventBus.addListener(KunJinKaoKeyBindings::registerKeys);
+        modEventBus.addListener(TacticalHudKeyMappings::register);
         modEventBus.register(ClientModEvents.class);
         KunJinKaoClientEvents.register();
+        NeoForge.EVENT_BUS.addListener(TacticalHudClientEvents::onClientTick);
 
         // 启动诊断：记录剑模型与纹理图集状态（在每次会话均输出，用于定位渲染环境差异）
         modEventBus.addListener(ModelEvent.BakingCompleted.class, event -> {

@@ -1,0 +1,4 @@
+# UUIDs permitted to use the tactical HUD. This list is enforced by the server.
+admin_uuids = [
+  "00000000-0000-0000-0000-000000000000"
+]
