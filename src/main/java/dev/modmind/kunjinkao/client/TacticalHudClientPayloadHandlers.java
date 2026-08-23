@@ -24,4 +24,8 @@ public final class TacticalHudClientPayloadHandlers {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player != null) minecraft.player.displayClientMessage(Component.literal(payload.message()), true);
     }
+
+    public static void handleInvisibilityState(TacticalHudPayloads.InvisibilityStatePayload payload) {
+        TacticalHudClientState.setInvisibility(payload.playerUuid(), payload.invisible());
+    }
 }

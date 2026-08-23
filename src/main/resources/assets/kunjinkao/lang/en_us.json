@@ -13,6 +13,7 @@
   "screen.kunjinkao.entity_manager": "Loaded Entity Manager",
   "screen.kunjinkao.entity_count": "Loaded entities: %s",
   "button.kunjinkao.tactical_night_vision": "Night Vision",
+  "button.kunjinkao.tactical_invisibility": "Invisibility",
   "button.kunjinkao.tactical_entities": "Entities",
   "button.kunjinkao.tactical_terminate": "Terminate",
   "button.kunjinkao.tactical_teleport": "Teleport to",

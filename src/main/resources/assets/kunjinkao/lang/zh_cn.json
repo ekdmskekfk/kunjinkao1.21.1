@@ -13,6 +13,7 @@
   "screen.kunjinkao.entity_manager": "已加载实体管理",
   "screen.kunjinkao.entity_count": "已加载实体：%s",
   "button.kunjinkao.tactical_night_vision": "夜视",
+  "button.kunjinkao.tactical_invisibility": "隐身",
   "button.kunjinkao.tactical_entities": "实体",
   "button.kunjinkao.tactical_terminate": "结束",
   "button.kunjinkao.tactical_teleport": "传送至",

@@ -1,5 +1,10 @@
 package dev.modmind.kunjinkao.client;
 
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
+
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
@@ -9,6 +14,7 @@ public final class TacticalHudClientState {
     private static boolean authorized;
     private static boolean enabled;
     private static float animationProgress;
+    private static final Set<UUID> TACTICAL_INVISIBLE_PLAYERS = new HashSet<>();
 
     private TacticalHudClientState() {
     }
@@ -16,6 +22,12 @@ public final class TacticalHudClientState {
     public static boolean isAuthorized() { return authorized; }
     public static boolean isEnabled() { return enabled; }
     public static float animationProgress() { return animationProgress; }
+    public static boolean shouldHide(Player player) { return TACTICAL_INVISIBLE_PLAYERS.contains(player.getUUID()); }
+
+    public static void setInvisibility(UUID playerUuid, boolean invisible) {
+        if (invisible) TACTICAL_INVISIBLE_PLAYERS.add(playerUuid);
+        else TACTICAL_INVISIBLE_PLAYERS.remove(playerUuid);
+    }
 
     public static void receiveServerState(boolean serverEnabled, boolean serverAuthorized) {
         authorized = serverAuthorized;
@@ -42,5 +54,6 @@ public final class TacticalHudClientState {
         authorized = false;
         enabled = false;
         animationProgress = 0.0F;
+        TACTICAL_INVISIBLE_PLAYERS.clear();
     }
 }

@@ -4,6 +4,7 @@ import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.tactical.common.AuthService;
 import dev.modmind.kunjinkao.tactical.common.EntityAction;
 import dev.modmind.kunjinkao.tactical.common.EntityQueryService;
+import dev.modmind.kunjinkao.tactical.common.TacticalHudInvisibilityService;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -47,6 +48,14 @@ public final class TacticalHudServerHandlers {
                 new TacticalHudPayloads.EntityListPayload(EntityQueryService.getLoadedEntities(player.server)))));
     }
 
+    public static void handleToggleInvisibility(IPayloadContext context) {
+        context.enqueueWork(() -> withAuthorizedPlayer(context, player -> {
+            TacticalHudInvisibilityService.ToggleResult result = TacticalHudInvisibilityService.toggle(player);
+            if (result.success()) broadcastInvisibilityState(player, TacticalHudInvisibilityService.isActive(player));
+            sendResult(player, player.getUUID(), "invisibility", result.success(), result.message());
+        }));
+    }
+
     public static void handleManageEntity(TacticalHudPayloads.ManageEntityPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> withAuthorizedPlayer(context, player -> {
             Entity target = EntityQueryService.findLoadedEntity(player.server, payload.entityUuid());
@@ -82,5 +91,12 @@ public final class TacticalHudServerHandlers {
 
     private static void sendResult(ServerPlayer player, java.util.UUID subjectUuid, String action, boolean success, String message) {
         NetworkHandler.sendToPlayer(player, new TacticalHudPayloads.EntityActionResultPayload(subjectUuid, action, success, message));
+    }
+
+    public static void broadcastInvisibilityState(ServerPlayer player, boolean invisible) {
+        TacticalHudPayloads.InvisibilityStatePayload payload = new TacticalHudPayloads.InvisibilityStatePayload(player.getUUID(), invisible);
+        for (ServerPlayer recipient : player.server.getPlayerList().getPlayers()) {
+            NetworkHandler.sendToPlayer(recipient, payload);
+        }
     }
 }

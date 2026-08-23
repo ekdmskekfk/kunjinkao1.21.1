@@ -22,6 +22,8 @@ public class KunJinKaoClientSetup {
         modEventBus.register(ClientModEvents.class);
         KunJinKaoClientEvents.register();
         NeoForge.EVENT_BUS.addListener(TacticalHudClientEvents::onClientTick);
+        NeoForge.EVENT_BUS.addListener(TacticalHudInvisibilityClientEvents::onRenderPlayer);
+        NeoForge.EVENT_BUS.addListener(TacticalHudInvisibilityClientEvents::onRenderHand);
 
         // 启动诊断：记录剑模型与纹理图集状态（在每次会话均输出，用于定位渲染环境差异）
         modEventBus.addListener(ModelEvent.BakingCompleted.class, event -> {

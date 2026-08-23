@@ -51,6 +51,27 @@ public final class TacticalHudPayloads {
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
+    public record ToggleInvisibilityPayload() implements CustomPacketPayload {
+        public static final Type<ToggleInvisibilityPayload> TYPE = TacticalHudPayloads.type("tactical_toggle_invisibility");
+        public static final StreamCodec<FriendlyByteBuf, ToggleInvisibilityPayload> STREAM_CODEC =
+                StreamCodec.of((buf, payload) -> { }, buf -> new ToggleInvisibilityPayload());
+
+        public static void handle(ToggleInvisibilityPayload payload, IPayloadContext context) { TacticalHudServerHandlers.handleToggleInvisibility(context); }
+        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
+    public record InvisibilityStatePayload(UUID playerUuid, boolean invisible) implements CustomPacketPayload {
+        public static final Type<InvisibilityStatePayload> TYPE = TacticalHudPayloads.type("tactical_invisibility_state");
+        public static final StreamCodec<FriendlyByteBuf, InvisibilityStatePayload> STREAM_CODEC =
+                StreamCodec.of((buf, payload) -> { buf.writeUUID(payload.playerUuid); buf.writeBoolean(payload.invisible); },
+                        buf -> new InvisibilityStatePayload(buf.readUUID(), buf.readBoolean()));
+
+        public static void handle(InvisibilityStatePayload payload, IPayloadContext context) {
+            if (context.flow().isClientbound()) context.enqueueWork(() -> TacticalHudClientPayloadBridge.enqueue(payload));
+        }
+        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
     public record RequestEntityListPayload() implements CustomPacketPayload {
         public static final Type<RequestEntityListPayload> TYPE = TacticalHudPayloads.type("tactical_request_entities");
         public static final StreamCodec<FriendlyByteBuf, RequestEntityListPayload> STREAM_CODEC =

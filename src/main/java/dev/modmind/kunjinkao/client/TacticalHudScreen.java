@@ -19,13 +19,16 @@ public final class TacticalHudScreen extends Screen {
     @Override
     protected void init() {
         int panelX = width / 2 - 110;
-        int panelY = height / 2 - 54;
+        int panelY = height / 2 - 66;
         addRenderableWidget(Button.builder(Component.translatable("button.kunjinkao.tactical_night_vision"),
                         button -> NetworkHandler.sendToServer(new TacticalHudPayloads.ToggleNightVisionPayload()))
                 .bounds(panelX + 14, panelY + 34, 192, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("button.kunjinkao.tactical_invisibility"),
+                        button -> NetworkHandler.sendToServer(new TacticalHudPayloads.ToggleInvisibilityPayload()))
+                .bounds(panelX + 14, panelY + 60, 192, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("button.kunjinkao.tactical_entities"),
                         button -> NetworkHandler.sendToServer(new TacticalHudPayloads.RequestEntityListPayload()))
-                .bounds(panelX + 14, panelY + 60, 192, 20).build());
+                .bounds(panelX + 14, panelY + 86, 192, 20).build());
     }
 
     @Override
@@ -36,11 +39,11 @@ public final class TacticalHudScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         int panelX = width / 2 - 110;
-        int panelY = height / 2 - 54;
-        graphics.fill(panelX, panelY, panelX + 220, panelY + 108, 0xB0101820);
+        int panelY = height / 2 - 66;
+        graphics.fill(panelX, panelY, panelX + 220, panelY + 132, 0xB0101820);
         graphics.fill(panelX, panelY, panelX + 220, panelY + 2, 0xD048D8FF);
         graphics.drawCenteredString(font, title, width / 2, panelY + 12, 0xE8F8FF);
-        graphics.drawCenteredString(font, Component.translatable("screen.kunjinkao.tactical_hint"), width / 2, panelY + 92, 0x9FB8C8);
+        graphics.drawCenteredString(font, Component.translatable("screen.kunjinkao.tactical_hint"), width / 2, panelY + 116, 0x9FB8C8);
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 

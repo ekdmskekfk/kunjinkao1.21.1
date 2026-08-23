@@ -27,6 +27,8 @@ public final class TacticalHudClientEvents {
                 TacticalHudClientPayloadHandlers.handleEntityList(entities);
             } else if (payload instanceof TacticalHudPayloads.EntityActionResultPayload result) {
                 TacticalHudClientPayloadHandlers.handleActionResult(result);
+            } else if (payload instanceof TacticalHudPayloads.InvisibilityStatePayload invisibility) {
+                TacticalHudClientPayloadHandlers.handleInvisibilityState(invisibility);
             }
         }
         if (TacticalHudKeyMappings.TOGGLE_HUD == null) return;

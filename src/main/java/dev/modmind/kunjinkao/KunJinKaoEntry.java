@@ -7,6 +7,7 @@ import dev.modmind.kunjinkao.config.TacticalHudConfig;
 import dev.modmind.kunjinkao.event.KunJinKaoAdminCraftHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoDeathEventHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoProtectionHandler;
+import dev.modmind.kunjinkao.event.TacticalHudInvisibilityHandler;
 import dev.modmind.kunjinkao.network.NetworkHandler;
 import dev.modmind.kunjinkao.overwrite.KunJinKaoOverwriteHandler;
 import dev.modmind.kunjinkao.recipe.KunJinKaoRecipes;
@@ -33,6 +34,7 @@ public final class KunJinKaoEntry {
         NeoForge.EVENT_BUS.register(new KunJinKaoProtectionHandler());
         NeoForge.EVENT_BUS.register(new KunJinKaoOverwriteHandler());
         NeoForge.EVENT_BUS.register(new KunJinKaoAdminCraftHandler());
+        NeoForge.EVENT_BUS.register(new TacticalHudInvisibilityHandler());
 
         if (FMLLoader.getDist().isClient()) {
             NeoForge.EVENT_BUS.register(KunJinKaoTooltipColorHandler.class);
