@@ -20,6 +20,7 @@ public class KunJinKaoClientSetup {
         modEventBus.addListener(KunJinKaoKeyBindings::registerKeys);
         modEventBus.addListener(TacticalHudKeyMappings::register);
         modEventBus.register(ClientModEvents.class);
+        modEventBus.addListener(HoneycombShieldRendererRegistration::register);
         KunJinKaoClientEvents.register();
         NeoForge.EVENT_BUS.addListener(TacticalHudClientEvents::onClientTick);
         NeoForge.EVENT_BUS.addListener(TacticalHudInvisibilityClientEvents::onRenderPlayer);

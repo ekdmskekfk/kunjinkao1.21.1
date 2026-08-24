@@ -11,7 +11,7 @@ public final class NetworkHandler {
     }
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("3");
+        PayloadRegistrar registrar = event.registrar("4");
         registrar.playToServer(ToggleDisguisePayload.TYPE, ToggleDisguisePayload.STREAM_CODEC, ToggleDisguisePayload::handle);
         registrar.playToServer(ToggleOverwritePayload.TYPE, ToggleOverwritePayload.STREAM_CODEC, ToggleOverwritePayload::handle);
         registrar.playToServer(ToggleThemePayload.TYPE, ToggleThemePayload.STREAM_CODEC, ToggleThemePayload::handle);
@@ -27,6 +27,7 @@ public final class NetworkHandler {
         registrar.playToClient(TacticalHudPayloads.EntityListPayload.TYPE, TacticalHudPayloads.EntityListPayload.STREAM_CODEC, TacticalHudPayloads.EntityListPayload::handle);
         registrar.playToServer(TacticalHudPayloads.ManageEntityPayload.TYPE, TacticalHudPayloads.ManageEntityPayload.STREAM_CODEC, TacticalHudPayloads.ManageEntityPayload::handle);
         registrar.playToClient(TacticalHudPayloads.EntityActionResultPayload.TYPE, TacticalHudPayloads.EntityActionResultPayload.STREAM_CODEC, TacticalHudPayloads.EntityActionResultPayload::handle);
+        registrar.playToClient(ShieldHitPayload.TYPE, ShieldHitPayload.STREAM_CODEC, ShieldHitPayload::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {

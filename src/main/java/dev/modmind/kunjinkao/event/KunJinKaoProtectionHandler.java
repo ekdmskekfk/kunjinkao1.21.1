@@ -1,6 +1,7 @@
 package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
+import dev.modmind.kunjinkao.tactical.common.SwordPresence;
 import dev.modmind.kunjinkao.entity.DiamondProjectile;
 import dev.modmind.kunjinkao.overwrite.KunJinKaoOverwriteHandler;
 import net.minecraft.nbt.CompoundTag;
@@ -42,6 +43,9 @@ public class KunJinKaoProtectionHandler {
     @SubscribeEvent
     public void onLivingAttack(LivingIncomingDamageEvent event) {
         LivingEntity target = event.getEntity();
+        if (target instanceof net.minecraft.server.level.ServerPlayer player) {
+            ShieldHitHandler.onMobAttack(player, event.getSource());
+        }
         Entity direct = event.getSource().getDirectEntity();
         if (direct instanceof DiamondProjectile) return;
         if (!(direct instanceof LivingEntity livingAttacker) || !isHoldingKunJinKaoSword(livingAttacker)) {
@@ -73,13 +77,7 @@ public class KunJinKaoProtectionHandler {
     }
 
     public static boolean hasSwordInInventory(Player player) {
-        for (ItemStack stack : player.getInventory().items) {
-            if (stack.getItem() instanceof KunJinKaoSwordItem && !KunJinKaoSwordItem.isDisguised(stack)) return true;
-        }
-        for (ItemStack stack : player.getInventory().offhand) {
-            if (stack.getItem() instanceof KunJinKaoSwordItem && !KunJinKaoSwordItem.isDisguised(stack)) return true;
-        }
-        return false;
+        return SwordPresence.hasRealSwordInInventory(player);
     }
 
     private static boolean isHoldingKunJinKaoSword(LivingEntity living) {
