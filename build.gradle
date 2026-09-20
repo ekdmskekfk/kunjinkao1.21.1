@@ -110,20 +110,28 @@ tasks.named('build').configure {
         )
     }
 }
+
 // ---------------------------------------------------------------------------
-// 构建完成后把 mod jar 复制到项目根目录，省得每次手动去 build/libs 里翻。
-// 只复制主 jar；-sources.jar 不复制。根目录的 jar 已被 .gitignore 的 /*.jar 忽略。
-// doNotTrackState：目标目录就是项目根目录，里面有 Gradle 自己的 .gradle 锁文件，
-// 无法做增量状态跟踪（否则报 "destination directory contains unreadable content"）。
+// 构建完成后把 mod jar 复制到指定目录（默认 F:/mcmodli/tang/neoforge1.21.1mod，
+// 可用 -PmodJarDir=... 或在 ~/.gradle/gradle.properties 里覆盖）。
+// 只复制主 jar，-sources.jar 不复制。
+// doNotTrackState：目标目录由用户指定，可能含 Gradle 读不动的文件，跳过状态跟踪。
+// 非 Windows（例如 CI）只在目标目录已存在时才复制，避免创建无关目录。
 // ---------------------------------------------------------------------------
-tasks.register('copyModJarToRoot', Copy) {
+def modJarDir = providers.gradleProperty('modJarDir').getOrElse('F:/mcmodli/tang/neoforge1.21.1mod')
+def isWindowsHost = System.getProperty('os.name').toLowerCase().contains('windows')
+
+tasks.register('copyModJar', Copy) {
     dependsOn tasks.named('jar')
-    onlyIf { tasks.named('jar').get().archiveFile.get().asFile.exists() }
+    onlyIf {
+        def source = tasks.named('jar').get().archiveFile.get().asFile
+        source.exists() && (isWindowsHost || file(modJarDir).exists())
+    }
     from tasks.named('jar').flatMap { it.archiveFile }
-    into layout.projectDirectory
-    doNotTrackState('copies into the project root, which holds Gradle lock files')
+    into file(modJarDir)
+    doNotTrackState('目标目录由用户指定，可能包含 Gradle 无法读取的文件')
 }
 
 tasks.named('build').configure {
-    finalizedBy 'copyModJarToRoot'
+    finalizedBy 'copyModJar'
 }
