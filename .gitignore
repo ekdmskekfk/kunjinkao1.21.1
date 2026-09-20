@@ -1,0 +1,32 @@
+.gradle/
+build/
+.gradle
+out/
+classes/
+
+# ---- ModMind 工作区数据 ----
+.modmind/
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+.classpath
+.project
+.settings/
+bin/
+
+# ---- 日志 ----
+*.log
+logs/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+Desktop.ini
+# ---- NeoForge 运行目录 / 本机启动器备份 ----
+run/
+runs/
+dsh-launcher/
+

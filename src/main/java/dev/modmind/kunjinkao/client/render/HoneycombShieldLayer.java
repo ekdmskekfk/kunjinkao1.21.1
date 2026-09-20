@@ -1,0 +1,139 @@
+package dev.modmind.kunjinkao.client.render;
+
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import dev.modmind.kunjinkao.client.ShieldHitVisualState;
+import com.mojang.math.Axis;
+import net.minecraft.client.model.PlayerModel;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.entity.RenderLayerParent;
+import net.minecraft.client.renderer.entity.layers.RenderLayer;
+import net.minecraft.client.renderer.entity.player.PlayerRenderer;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import org.joml.Matrix4f;
+
+import java.util.List;
+
+/** A short-lived, translucent cyan honeycomb shield just ahead of the player model. */
+public final class HoneycombShieldLayer extends RenderLayer<AbstractClientPlayer, PlayerModel<AbstractClientPlayer>> {
+
+    private static final String ACCESS_DENIED_TEXT = "ACCESS DENIED";
+    private static final float TEXT_HOLD_TICKS = 10.0F;
+    private static final float CELL_RADIUS = 0.10F;
+    private static final float SQRT_THREE = 1.7320508F;
+    // Keep the shield well in front of the model so the player can see each patch clearly.
+    private static final float MODEL_SURFACE_OFFSET = -0.62F;
+    private static final float[][] CELL_CENTERS = {
+            {0.0F, 0.0F},
+            {1.5F, 0.8660254F}, {0.0F, SQRT_THREE}, {-1.5F, 0.8660254F},
+            {-1.5F, -0.8660254F}, {0.0F, -SQRT_THREE}, {1.5F, -0.8660254F}
+    };
+
+    public HoneycombShieldLayer(RenderLayerParent<AbstractClientPlayer, PlayerModel<AbstractClientPlayer>> parent) {
+        super(parent);
+    }
+
+    public static void addToPlayerRenderers(EntityRenderersEvent.AddLayers event) {
+        addLayer(event.getSkin(net.minecraft.client.resources.PlayerSkin.Model.WIDE));
+        addLayer(event.getSkin(net.minecraft.client.resources.PlayerSkin.Model.SLIM));
+    }
+
+    private static void addLayer(PlayerRenderer renderer) {
+        if (renderer != null) {
+            renderer.addLayer(new HoneycombShieldLayer(renderer));
+        }
+    }
+
+    @Override
+    public void render(PoseStack poseStack, MultiBufferSource buffer, int packedLight, AbstractClientPlayer player,
+                       float limbSwing, float limbSwingAmount, float partialTick, float ageInTicks,
+                       float netHeadYaw, float headPitch) {
+        List<ShieldHitVisualState.ShieldVisual> visuals = ShieldHitVisualState.getVisuals(player.getUUID());
+        if (visuals.isEmpty()) {
+            return;
+        }
+
+        poseStack.pushPose();
+        getParentModel().body.translateAndRotate(poseStack);
+        // Body is the model anchor. Minecraft model-space rotation is opposite world yaw,
+        // so both the impact and view offsets are negated before they are applied.
+        float viewRelativeToBody = player.getYRot() - player.yBodyRot;
+        for (ShieldHitVisualState.ShieldVisual visual : visuals) {
+            poseStack.pushPose();
+            poseStack.translate(0.0F, visual.impactHeight(), 0.0F);
+            poseStack.mulPose(Axis.YP.rotationDegrees(-visual.relativeImpactYaw() - viewRelativeToBody));
+            poseStack.translate(0.0F, 0.0F, MODEL_SURFACE_OFFSET);
+
+            PoseStack.Pose pose = poseStack.last();
+            VertexConsumer lines = buffer.getBuffer(RenderType.lines());
+            for (float[] center : CELL_CENTERS) {
+                renderHexagon(lines, pose, center[0] * CELL_RADIUS, center[1] * CELL_RADIUS, visual.alpha());
+            }
+            renderAccessDenied(poseStack, buffer, visual, partialTick);
+            poseStack.popPose();
+        }
+        poseStack.popPose();
+    }
+
+    private static void renderAccessDenied(PoseStack poseStack, MultiBufferSource buffer,
+                                           ShieldHitVisualState.ShieldVisual visual, float partialTick) {
+        float age = visual.ageTicks() + partialTick;
+        // 前 0.5 秒完全可见，之后在剩余的 0.5 秒中逐渐消失。
+        float opacity = age <= TEXT_HOLD_TICKS
+                ? 1.0F
+                : Math.max(0.0F, visual.alpha() * 2.0F);
+        if (opacity <= 0.01F) {
+            return;
+        }
+
+        float travel = Math.min(1.0F, age / 20.0F);
+        float driftX = -0.29F + travel * 0.58F;
+        float driftY = -0.255F + (float) Math.sin(age * 0.42F) * 0.018F;
+        int alpha = Math.max(0, Math.min(255, Math.round(235.0F * opacity)));
+        int color = (alpha << 24) | 0x9DEBFF;
+        Font font = Minecraft.getInstance().font;
+
+        poseStack.pushPose();
+        poseStack.translate(driftX, driftY, -0.008F);
+        // 字体使用像素坐标，缩放到与蜂巢边框匹配的世界尺寸。
+        poseStack.scale(0.0080F, -0.0080F, 0.0080F);
+        float textX = -font.width(ACCESS_DENIED_TEXT) / 2.0F;
+        font.drawInBatch(ACCESS_DENIED_TEXT, textX, 0.0F, color, true,
+                poseStack.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH,
+                0, LightTexture.FULL_BRIGHT);
+        poseStack.popPose();
+    }
+
+    private static void renderHexagon(VertexConsumer lines, PoseStack.Pose pose,
+                                      float centerX, float centerY, float opacity) {
+        float[] x = new float[6];
+        float[] y = new float[6];
+        for (int i = 0; i < 6; i++) {
+            double angle = Math.toRadians(i * 60.0D);
+            x[i] = centerX + (float) Math.cos(angle) * CELL_RADIUS;
+            y[i] = centerY + (float) Math.sin(angle) * CELL_RADIUS;
+        }
+
+        Matrix4f matrix = pose.pose();
+        // Lines deliberately keep the shield transparent while remaining visible at a distance.
+        int lineAlpha = Math.round(210.0F * opacity);
+        for (int i = 0; i < 6; i++) {
+            int next = (i + 1) % 6;
+            line(lines, pose, matrix, x[i], y[i], x[next], y[next], lineAlpha);
+        }
+    }
+
+    private static void line(VertexConsumer consumer, PoseStack.Pose pose, Matrix4f matrix,
+                             float x0, float y0, float x1, float y1, int alpha) {
+        consumer.addVertex(matrix, x0, y0, 0.0F).setColor(125, 224, 255, alpha)
+                .setNormal(pose, 0.0F, 0.0F, -1.0F);
+        consumer.addVertex(matrix, x1, y1, 0.0F).setColor(125, 224, 255, alpha)
+                .setNormal(pose, 0.0F, 0.0F, -1.0F);
+    }
+
+}

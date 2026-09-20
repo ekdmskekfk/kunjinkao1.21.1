@@ -1,0 +1,21 @@
+# 行尾统一策略：仓库内始终以 LF 存储，检出时按平台处理。
+# 本仓库的 CI 在 ubuntu 上构建，固定规则可避免跨平台行尾污染。
+* text=auto
+
+# 文本
+*.java       text
+*.gradle     text
+*.properties text
+*.json       text
+*.md         text
+*.yml        text
+*.toml       text
+gradlew      text eol=lf
+*.bat        text eol=crlf
+
+# 二进制
+*.png binary
+*.ogg binary
+*.jar binary
+*.nbt binary
+*.zip binary

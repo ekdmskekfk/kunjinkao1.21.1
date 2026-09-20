@@ -1,0 +1,212 @@
+package dev.modmind.kunjinkao.client;
+
+import dev.modmind.kunjinkao.KunJinKaoSwordItem;
+import dev.modmind.kunjinkao.KunJinKaoTheme;
+import dev.modmind.kunjinkao.KunJinKaoEntry;
+import dev.modmind.kunjinkao.network.NetworkHandler;
+import dev.modmind.kunjinkao.network.ToggleDisguisePayload;
+import dev.modmind.kunjinkao.network.ToggleOverwritePayload;
+import dev.modmind.kunjinkao.network.ToggleThemePayload;
+import dev.modmind.kunjinkao.network.ToggleTacticalHudPayload;
+import dev.modmind.kunjinkao.client.hud.HudScreen;
+import dev.modmind.kunjinkao.client.hud.HudEntityScreen;
+import dev.modmind.kunjinkao.client.gui.SwordOptionsScreen;
+import dev.modmind.kunjinkao.client.gui.AdminPasswordScreen;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+
+import javax.annotation.Nullable;
+
+@EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
+public class KunJinKaoClientEvents {
+
+    @SubscribeEvent
+    public static void onClientTick(ClientTickEvent.Post event) {
+                KunJinKaoClientOverwriteEffects.tick();
+        KunJinKaoClientSwordVisuals.tick();
+        RemoteSwordDrawVisualState.tick();
+        ClientHudState.tick();
+        for (int entityId : KunJinKaoClientOverwriteEffects.getActiveEntityIds()) {
+            KunJinKaoClientOverwriteEffects.tickSounds(entityId);
+        }
+        handleToggleDisguise();
+        handleToggleOverwrite();
+        handleCycleTheme();
+        handleToggleTacticalHud();
+        handleOpenSwordOptions();
+        handleOpenAdminPassword();
+    }
+
+    @SubscribeEvent
+    public static void onLocalSwordAttack(AttackEntityEvent event) {
+        KunJinKaoClientSwordVisuals.onLocalAttack(event);
+    }
+
+    @SubscribeEvent
+    public static void onLocalSwordRightClick(PlayerInteractEvent.RightClickItem event) {
+        KunJinKaoClientSwordVisuals.onLocalRightClick(event.getEntity(), event.getHand());
+    }
+
+    /**
+     * 伪装切换：K 键（可在按键设置中自定义）。
+     */
+    private static void handleToggleDisguise() {
+        if (!KunJinKaoKeyBindings.TOGGLE_DISGUISE.consumeClick()) {
+            return;
+        }
+        Player player = getLocalPlayer();
+        if (player == null) {
+            return;
+        }
+        InteractionHand targetHand = findSwordHand(player);
+        if (targetHand == null) {
+            return;
+        }
+
+        ItemStack stack = player.getItemInHand(targetHand);
+        KunJinKaoSwordItem.toggleDisguise(stack);
+        NetworkHandler.sendToServer(new ToggleDisguisePayload(targetHand));
+
+        boolean disguised = KunJinKaoSwordItem.isDisguised(stack);
+        player.displayClientMessage(
+                Component.literal(disguised ? "§7已伪装为钻石剑" : "§e已解除伪装"),
+                true
+        );
+    }
+
+    /**
+     * 覆写流程开关切换：I 键（可在按键设置中自定义）。
+     * 开启 → 无条件覆写+断未；关闭 → 瞬杀。
+     */
+    private static void handleToggleOverwrite() {
+        if (!KunJinKaoKeyBindings.TOGGLE_OVERWRITE.consumeClick()) {
+            return;
+        }
+        Player player = getLocalPlayer();
+        if (player == null) {
+            return;
+        }
+        InteractionHand targetHand = findSwordHand(player);
+        if (targetHand == null) {
+            return;
+        }
+
+        ItemStack stack = player.getItemInHand(targetHand);
+        if (KunJinKaoSwordItem.isDisguised(stack)) {
+            return; // 伪装时不切换覆写流程，二者互不干扰
+        }
+
+        KunJinKaoSwordItem.toggleOverwrite(stack);
+        NetworkHandler.sendToServer(new ToggleOverwritePayload(targetHand));
+
+        boolean enabled = KunJinKaoSwordItem.isOverwriteEnabled(stack);
+        player.displayClientMessage(
+                Component.literal(enabled ? "§a覆写流程已开启（无条件覆写+断未）" : "§c覆写流程已关闭（瞬杀）"),
+                true
+        );
+    }
+
+    /**
+     * 异象主题循环切换：P 键（0→1→2→3→4→0），伪装时不切换。
+     * 本地更新物品 NBT 用于渲染预览，并向服务端发送目标主题号。
+     */
+    private static void handleCycleTheme() {
+        if (!KunJinKaoKeyBindings.CYCLE_THEME.consumeClick()) {
+            return;
+        }
+        Player player = getLocalPlayer();
+        if (player == null) {
+            return;
+        }
+        InteractionHand targetHand = findSwordHand(player);
+        if (targetHand == null) {
+            return;
+        }
+
+        ItemStack stack = player.getItemInHand(targetHand);
+        if (KunJinKaoSwordItem.isDisguised(stack)) {
+            return;
+        }
+
+        int newTheme = (KunJinKaoSwordItem.getTheme(stack) + 1) % KunJinKaoTheme.COUNT;
+        KunJinKaoSwordItem.setTheme(stack, newTheme);
+        NetworkHandler.sendToServer(new ToggleThemePayload(targetHand, newTheme));
+        player.displayClientMessage(
+                Component.literal("§d异象主题：" + KunJinKaoTheme.displayName(newTheme)),
+                true
+        );
+    }
+
+    /**
+     * 战术 HUD 开关：使用 consumeClick，按住 H 不会重复切换。
+     */
+    private static void handleToggleTacticalHud() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null || minecraft.level == null) {
+            ClientHudState.reset();
+            return;
+        }
+        if (minecraft.screen != null && !(minecraft.screen instanceof HudScreen)
+                && !(minecraft.screen instanceof HudEntityScreen)) {
+            return;
+        }
+        if (!KunJinKaoKeyBindings.TOGGLE_TACTICAL_HUD.consumeClick()) {
+            return;
+        }
+        // HUD 是否打开由服务端白名单决定；客户端只提交请求，不自行切换状态。
+        NetworkHandler.sendToServer(new ToggleTacticalHudPayload(!ClientHudState.isEnabled()));
+    }
+
+    /** 】键打开管理员密码窗口；所有密码校验均由服务端完成。 */
+    private static void handleOpenAdminPassword() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (KunJinKaoKeyBindings.OPEN_ADMIN_PASSWORD.consumeClick() && minecraft.player != null
+                && minecraft.screen == null) {
+            minecraft.setScreen(new AdminPasswordScreen());
+        }
+    }
+
+    /**
+     * 句号键只在手持管理员剑且没有其他界面占用输入时打开设置界面。
+     */
+    private static void handleOpenSwordOptions() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (!KunJinKaoKeyBindings.OPEN_SWORD_OPTIONS.consumeClick()
+                || minecraft.player == null
+                || minecraft.screen != null) {
+            return;
+        }
+        InteractionHand hand = findSwordHand(minecraft.player);
+        if (hand != null) {
+            minecraft.setScreen(new SwordOptionsScreen(hand));
+        }
+    }
+
+    @Nullable
+    private static Player getLocalPlayer() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.player;
+    }
+
+    /**
+     * 查找手持锟斤拷之剑的手（主手优先，副手其次）。
+     */
+    @Nullable
+    private static InteractionHand findSwordHand(Player player) {
+        for (InteractionHand hand : InteractionHand.values()) {
+            if (player.getItemInHand(hand).getItem() instanceof KunJinKaoSwordItem) {
+                return hand;
+            }
+        }
+        return null;
+    }
+}
