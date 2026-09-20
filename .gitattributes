@@ -12,7 +12,7 @@
 *.toml       text
 gradlew      text eol=lf
 *.bat        text eol=crlf
-
+*.cmd        text eol=crlf
 # 二进制
 *.png binary
 *.ogg binary
