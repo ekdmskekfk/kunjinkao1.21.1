@@ -110,3 +110,20 @@ tasks.named('build').configure {
         )
     }
 }
+// ---------------------------------------------------------------------------
+// 构建完成后把 mod jar 复制到项目根目录，省得每次手动去 build/libs 里翻。
+// 只复制主 jar；-sources.jar 不复制。根目录的 jar 已被 .gitignore 的 /*.jar 忽略。
+// doNotTrackState：目标目录就是项目根目录，里面有 Gradle 自己的 .gradle 锁文件，
+// 无法做增量状态跟踪（否则报 "destination directory contains unreadable content"）。
+// ---------------------------------------------------------------------------
+tasks.register('copyModJarToRoot', Copy) {
+    dependsOn tasks.named('jar')
+    onlyIf { tasks.named('jar').get().archiveFile.get().asFile.exists() }
+    from tasks.named('jar').flatMap { it.archiveFile }
+    into layout.projectDirectory
+    doNotTrackState('copies into the project root, which holds Gradle lock files')
+}
+
+tasks.named('build').configure {
+    finalizedBy 'copyModJarToRoot'
+}
