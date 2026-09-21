@@ -352,7 +352,7 @@ public class KunJinKaoOverwriteHandler {
 
         // 先移除状态再 kill，避免死亡事件再次进入清理路径
         STATES.remove(id);
-        LOGGER.info("[OVERWRITE-FINISH] killing target={}", target.getType());
+        LOGGER.debug("[OVERWRITE-FINISH] killing target={}", target.getType());
         target.kill();
     }
 
@@ -477,17 +477,17 @@ public class KunJinKaoOverwriteHandler {
             return false;
         }
         if (KunJinKaoSwordItem.isDisguised(sword)) {
-            LOGGER.info("[SWORD-ATTACK] sword disguised -> vanilla");
+            LOGGER.debug("[SWORD-ATTACK] sword disguised -> vanilla");
             return false;
         }
         if (!(level instanceof ServerLevel serverLevel)) {
             return false;
         }
         if (KunJinKaoSwordItem.isOverwriteEnabled(sword)) {
-            LOGGER.info("[SWORD-ATTACK] overwriteEnabled=true -> startOverwrite target={}", target.getType());
+            LOGGER.debug("[SWORD-ATTACK] overwriteEnabled=true -> startOverwrite target={}", target.getType());
             startOverwrite(attacker, target, sword, serverLevel);
         } else {
-            LOGGER.info("[SWORD-ATTACK] overwriteEnabled=false -> INSTANT KILL target={}", target.getType());
+            LOGGER.debug("[SWORD-ATTACK] overwriteEnabled=false -> INSTANT KILL target={}", target.getType());
             KunJinKaoSwordItem.applyKunJinKaoMark(target, sword);
             target.kill();
         }
@@ -546,15 +546,15 @@ public class KunJinKaoOverwriteHandler {
             return;
         }
         if (!(event.getTarget() instanceof LivingEntity target) || target instanceof Player) {
-            LOGGER.info("[ATTACK-EVENT] skipped target={} (non-living or player)", event.getTarget());
+            LOGGER.debug("[ATTACK-EVENT] skipped target={} (non-living or player)", event.getTarget());
             return;
         }
         ItemStack sword = findSword(player);
         if (sword.isEmpty()) {
-            LOGGER.info("[ATTACK-EVENT] no sword held -> vanilla");
+            LOGGER.debug("[ATTACK-EVENT] no sword held -> vanilla");
             return;
         }
-        LOGGER.info("[ATTACK-EVENT] target={} overwriteEnabled={}",
+        LOGGER.debug("[ATTACK-EVENT] target={} overwriteEnabled={}",
                 target.getType(), KunJinKaoSwordItem.isOverwriteEnabled(sword));
         if (handleSwordAttack(player, target, sword, player.level())) {
             event.setCanceled(true);

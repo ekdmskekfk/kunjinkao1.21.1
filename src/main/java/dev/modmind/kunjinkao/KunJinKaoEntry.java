@@ -22,6 +22,8 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * 锟斤拷烫烫烫 - 管理员剑 / 战术 HUD / 加速器 / 密码权限 等
@@ -31,6 +33,7 @@ import net.neoforged.neoforge.common.NeoForge;
 public final class KunJinKaoEntry {
 
     public static final String MOD_ID = "kunjinkao";
+    private static final Logger LOGGER = LogManager.getLogger("KunJinKao");
 
     public KunJinKaoEntry(IEventBus modEventBus, ModContainer container) {
         modEventBus.addListener(NetworkHandler::register);
@@ -58,7 +61,7 @@ public final class KunJinKaoEntry {
         NeoForge.EVENT_BUS.register(AdminCommandHandler.class);
 
 
-        System.out.println("[Kunjinkao] NeoForge 1.21.1 锟斤拷烫烫烫 initialized");
+        LOGGER.info("[Kunjinkao] NeoForge 1.21.1 锟斤拷烫烫烫 initialized");
     }
 
 }

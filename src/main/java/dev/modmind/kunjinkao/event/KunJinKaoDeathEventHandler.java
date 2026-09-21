@@ -68,14 +68,14 @@ public class KunJinKaoDeathEventHandler {
         if (targetData.contains(MARK_TICK_KEY)) {
             long markAge = now - targetData.getLong(MARK_TICK_KEY);
             if (markAge > MARK_VALID_TICKS) {
-                LOGGER.info("[DEATH-DROPS] stale mark discarded on target={} age={}ticks",
+                LOGGER.debug("[DEATH-DROPS] stale mark discarded on target={} age={}ticks",
                         event.getEntity().getType(), markAge);
                 clearMarkKeys(targetData);
                 return;
             }
         }
 
-        LOGGER.info("[DEATH-DROPS] mark found on target={} mode={}", event.getEntity().getType(),
+        LOGGER.debug("[DEATH-DROPS] mark found on target={} mode={}", event.getEntity().getType(),
                 targetData.getInt(LOOTING_MODE_ENTITY_KEY));
 
         int mode = targetData.getInt(LOOTING_MODE_ENTITY_KEY);
@@ -133,11 +133,11 @@ public class KunJinKaoDeathEventHandler {
         if (entity instanceof Slime && !(entity instanceof MagmaCube)) {
             ItemStack slimeBall = new ItemStack(Items.SLIME_BALL, lootingLevel);
             additionalDrops.add(new ItemEntity(entity.level(), entity.getX(), entity.getY() + 0.2D, entity.getZ(), slimeBall));
-            System.out.println("[KunJinKao] Slime drops enhanced: +" + lootingLevel + " slime balls");
+            LOGGER.debug("[KunJinKao] Slime drops enhanced: +" + lootingLevel + " slime balls");
         }
 
         event.getDrops().addAll(additionalDrops);
-        System.out.println("[KunJinKao] Drops enhanced: mode=" + mode + " lootingLevel=" + lootingLevel
+        LOGGER.debug("[KunJinKao] Drops enhanced: mode=" + mode + " lootingLevel=" + lootingLevel
                 + " totalDrops=" + event.getDrops().size());
     }
 

@@ -153,7 +153,7 @@ public class KunJinKaoProtectionHandler {
             // 正好落在这个分支里；拦下来会让「砍中即秒杀」对持剑玩家完全失效。
             if (target instanceof Player player && hasSwordInInventory(player)
                     && !player.getPersistentData().getBoolean(KILL_BY_OVERWRITE_KEY)) {
-                LOGGER.info("[PROTECT-ATTACK] cancel damage source={} on sword-holding player", event.getSource().getMsgId());
+                LOGGER.debug("[PROTECT-ATTACK] cancel damage source={} on sword-holding player", event.getSource().getMsgId());
                 event.setCanceled(true);
             }
             return;
@@ -174,7 +174,7 @@ public class KunJinKaoProtectionHandler {
         }
         // 开关打开 → 取消本次普通伤害，进入无条件覆写流程
         if (KunJinKaoSwordItem.isOverwriteEnabled(sword)) {
-            LOGGER.info("[PROTECT-ATTACK] overwrite on -> cancel damage + startOverwrite target={}", target.getType());
+            LOGGER.debug("[PROTECT-ATTACK] overwrite on -> cancel damage + startOverwrite target={}", target.getType());
             event.setCanceled(true);
             if (!target.level().isClientSide() && target.level() instanceof ServerLevel serverLevel) {
                 KunJinKaoOverwriteHandler.startOverwrite(livingAttacker, target, sword, serverLevel);
