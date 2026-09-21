@@ -17,7 +17,12 @@ public final class AdminEyeSyncHandler {
         if (!(event.getEntity() instanceof ServerPlayer joining)) {
             return;
         }
+        // 只把其它玩家的状态单独发给新玩家；新玩家自己的状态由下面的 sendToAll 广播一次就够了。
+        // 原来循环包含新玩家本人，再叠加 sendToAll，会让新玩家收到自己的状态两次。
         for (ServerPlayer player : joining.server.getPlayerList().getPlayers()) {
+            if (player == joining) {
+                continue;
+            }
             NetworkHandler.sendToPlayer(joining,
                     new AdminEyeStatePayload(player.getUUID(), AdminToolConfig.isAuthorized(player.getUUID())));
         }

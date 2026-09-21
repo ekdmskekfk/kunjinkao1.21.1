@@ -15,7 +15,7 @@ public record ToggleBlueScreenAttackPayload(InteractionHand hand, boolean enable
 
     public static final StreamCodec<FriendlyByteBuf, ToggleBlueScreenAttackPayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> { buf.writeEnum(p.hand); buf.writeBoolean(p.enabled); },
-                    buf -> new ToggleBlueScreenAttackPayload(buf.readEnum(InteractionHand.class), buf.readBoolean()));
+                    buf -> new ToggleBlueScreenAttackPayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class), buf.readBoolean()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

@@ -20,7 +20,7 @@ public record SwordDrawAnimationPayload(UUID playerUuid, InteractionHand hand) i
             StreamCodec.of((buf, payload) -> {
                 buf.writeUUID(payload.playerUuid);
                 buf.writeEnum(payload.hand);
-            }, buf -> new SwordDrawAnimationPayload(buf.readUUID(), buf.readEnum(InteractionHand.class)));
+            }, buf -> new SwordDrawAnimationPayload(buf.readUUID(), NetworkHandler.readEnumSafe(buf, InteractionHand.class)));
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

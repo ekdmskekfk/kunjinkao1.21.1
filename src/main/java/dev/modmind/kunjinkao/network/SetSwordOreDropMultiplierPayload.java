@@ -15,7 +15,7 @@ public record SetSwordOreDropMultiplierPayload(InteractionHand hand, int multipl
 
     public static final StreamCodec<FriendlyByteBuf, SetSwordOreDropMultiplierPayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> { buf.writeEnum(p.hand); buf.writeInt(p.multiplier); },
-                    buf -> new SetSwordOreDropMultiplierPayload(buf.readEnum(InteractionHand.class), buf.readInt()));
+                    buf -> new SetSwordOreDropMultiplierPayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class), buf.readInt()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

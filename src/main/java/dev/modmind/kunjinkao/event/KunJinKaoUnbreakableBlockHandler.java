@@ -2,6 +2,7 @@ package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
@@ -37,6 +38,14 @@ public final class KunJinKaoUnbreakableBlockHandler {
 
         BlockState state = level.getBlockState(event.getPos());
         if (state.isAir() || state.getDestroySpeed(level, event.getPos()) >= 0.0F) {
+            return;
+        }
+
+        // 只有具备游戏管理员方块权限（创造模式或 OP 2 级）的玩家才允许走探针与破坏路径：
+        // 否则 fireBlockBreak 会让别的保护插件看到一次并未真正发生的破坏，
+        // 而普通玩家即使打开了开关也打不破屏障、还拿不到任何反馈。这里改成给一句提示后放行原版逻辑。
+        if (!player.canUseGameMasterBlocks()) {
+            player.displayClientMessage(Component.translatable("message.kunjinkao.admin_required"), true);
             return;
         }
 

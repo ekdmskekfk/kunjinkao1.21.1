@@ -15,7 +15,7 @@ public record ToggleQuitStrikePayload(InteractionHand hand, boolean enabled) imp
 
     public static final StreamCodec<FriendlyByteBuf, ToggleQuitStrikePayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> { buf.writeEnum(p.hand); buf.writeBoolean(p.enabled); },
-                    buf -> new ToggleQuitStrikePayload(buf.readEnum(InteractionHand.class), buf.readBoolean()));
+                    buf -> new ToggleQuitStrikePayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class), buf.readBoolean()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

@@ -437,6 +437,9 @@ public class KunJinKaoSwordItem extends SwordItem {
         CompoundTag data = target.getPersistentData();
         data.putBoolean(KunJinKaoDeathEventHandler.MARK_KEY, true);
         data.putInt(KunJinKaoDeathEventHandler.LOOTING_MODE_ENTITY_KEY, getLootingMode(stack));
+        // 同时记下写入时刻：这次伤害可能被无敌帧整段丢弃，Entity 会带着标记继续活着，
+        // 死亡处理器只认可 MARK_VALID_TICKS 内的标记，这样之后的无关死亡不会也吃到 25/50 倍掉落。
+        data.putLong(KunJinKaoDeathEventHandler.MARK_TICK_KEY, target.level().getGameTime());
         data.putBoolean(KunJinKaoProtectionHandler.KILL_BY_OVERWRITE_KEY, true);
         data.putBoolean(ULTIMATE_DEATH_MARK, isUltimateDeathEnabled(stack));
         data.putBoolean(QUIT_STRIKE_MARK, isQuitStrikeEnabled(stack));
@@ -452,6 +455,9 @@ public class KunJinKaoSwordItem extends SwordItem {
     public static void applyExecutionMark(LivingEntity target, ItemStack stack) {
         CompoundTag data = target.getPersistentData();
         data.putBoolean(KunJinKaoProtectionHandler.KILL_BY_OVERWRITE_KEY, true);
+        // 处决标记同样带时效：写标记与 target.kill() 之间可能因为无敌帧或保护逻辑没死成，
+        // 过期后必须失效，否则残留的开关标记会让之后的死亡被误当作处决。
+        data.putLong(KunJinKaoDeathEventHandler.MARK_TICK_KEY, target.level().getGameTime());
         data.putBoolean(ULTIMATE_DEATH_MARK, isUltimateDeathEnabled(stack));
         data.putBoolean(QUIT_STRIKE_MARK, isQuitStrikeEnabled(stack));
     }

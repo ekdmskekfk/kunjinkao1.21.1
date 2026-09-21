@@ -159,8 +159,11 @@ public class KunJinKaoProtectionHandler {
             return;
         }
 
-        ItemStack sword = livingAttacker.getMainHandItem();
-        if (KunJinKaoSwordItem.getAttackDamageLimit(sword) < KunJinKaoSwordItem.MAX_ATTACK_DAMAGE_LIMIT) {
+        // 副手持剑、主手拿别的东西时同样算"用剑攻击"：主手不是管理员剑就回落到副手，
+        // 与 overwrite 包的 findSword 语义一致，避免伤害上限/开关判定读错手。
+        ItemStack sword = findSword(livingAttacker);
+        if (sword.isEmpty()
+                || KunJinKaoSwordItem.getAttackDamageLimit(sword) < KunJinKaoSwordItem.MAX_ATTACK_DAMAGE_LIMIT) {
             return;
         }
         // 玩家目标：砍中即秒杀，不走 40 tick 的覆写流程。
@@ -190,8 +193,10 @@ public class KunJinKaoProtectionHandler {
         if (!(event.getSource().getEntity() instanceof LivingEntity attacker)) {
             return;
         }
-        ItemStack sword = attacker.getMainHandItem();
-        if (sword.getItem() instanceof KunJinKaoSwordItem && !KunJinKaoSwordItem.isDisguised(sword)) {
+        // 与其它判定共用 findSword：主手优先、主手不是剑时看副手，
+        // 否则副手持剑、主手拿别的东西时这次的伤害上限会被整段漏掉。
+        ItemStack sword = findSword(attacker);
+        if (!sword.isEmpty()) {
             int limit = KunJinKaoSwordItem.getAttackDamageLimit(sword);
             if (limit < KunJinKaoSwordItem.MAX_ATTACK_DAMAGE_LIMIT) {
                 event.setNewDamage(limit);
@@ -202,9 +207,30 @@ public class KunJinKaoProtectionHandler {
     private static final org.apache.logging.log4j.Logger LOGGER =
             org.apache.logging.log4j.LogManager.getLogger("KunJinKao");
 
+    /**
+     * 取本次攻击实际使用的管理员剑：主手优先，主手不是（未伪装的）管理员剑时再看副手。
+     * <p>
+     * 与 overwrite 包 {@code findSword} 的语义保持一致：副手持剑、主手拿别的东西同样算用剑攻击，
+     * 这样伤害上限、覆写开关与断未标记都不会因为读错手而失效。
+     *
+     * @return 管理员剑的物品栈；两只手都没有时返回 {@link ItemStack#EMPTY}
+     */
+    private static ItemStack findSword(LivingEntity living) {
+        ItemStack mainHand = living.getMainHandItem();
+        if (isAdminSword(mainHand)) {
+            return mainHand;
+        }
+        ItemStack offHand = living.getOffhandItem();
+        return isAdminSword(offHand) ? offHand : ItemStack.EMPTY;
+    }
+
+    private static boolean isAdminSword(ItemStack stack) {
+        return stack.getItem() instanceof KunJinKaoSwordItem && !KunJinKaoSwordItem.isDisguised(stack);
+    }
+
     private static boolean isHoldingKunJinKaoSword(LivingEntity living) {
-        ItemStack held = living.getMainHandItem();
-        return held.getItem() instanceof KunJinKaoSwordItem && !KunJinKaoSwordItem.isDisguised(held);
+        // 复用 findSword，保证"这次算不算用剑攻击"与后面读取剑设置的判定使用同一套手部规则。
+        return !findSword(living).isEmpty();
     }
 
     private static void sendHitShield(net.minecraft.server.level.ServerPlayer player, Entity impactSource) {

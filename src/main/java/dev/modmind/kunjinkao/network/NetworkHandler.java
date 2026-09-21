@@ -1,6 +1,7 @@
 package dev.modmind.kunjinkao.network;
 
 import dev.modmind.kunjinkao.KunJinKaoEntry;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -68,6 +69,23 @@ public final class NetworkHandler {
 
     public static void sendToAllTracking(ServerPlayer entity, CustomPacketPayload payload) {
         PacketDistributor.sendToPlayersTrackingEntity(entity, payload);
+    }
+
+    /**
+     * 原生 {@code FriendlyByteBuf#readEnum} 的安全版本：线格式完全一致（VarInt 序号），
+     * 只在序号越界时回落到 {@code values()[0]}。
+     * <p>
+     * 原生 readEnum 是直接拿序号当下标取数组元素，改造过的客户端发一个越界序号，
+     * 就会在 netty 解码线程抛 ArrayIndexOutOfBoundsException 把连接打断；这里做越界保护，
+     * 合法输入（序号在范围内）的解析结果与原生完全一致。
+     */
+    public static <E extends Enum<E>> E readEnumSafe(FriendlyByteBuf buf, Class<E> type) {
+        int ordinal = buf.readVarInt();
+        E[] values = type.getEnumConstants();
+        if (values == null || values.length == 0) {
+            throw new IllegalArgumentException("Enum type has no constants: " + type.getName());
+        }
+        return ordinal >= 0 && ordinal < values.length ? values[ordinal] : values[0];
     }
 
     public static String modId() {

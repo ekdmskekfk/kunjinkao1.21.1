@@ -17,7 +17,7 @@ public record HudEntityActionResultPayload(HudEntityAction action, UUID entityUu
 
     public static final StreamCodec<FriendlyByteBuf, HudEntityActionResultPayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> { buf.writeEnum(p.action); buf.writeUUID(p.entityUuid); buf.writeBoolean(p.success); buf.writeBoolean(p.authorized); },
-                    buf -> new HudEntityActionResultPayload(buf.readEnum(HudEntityAction.class), buf.readUUID(), buf.readBoolean(), buf.readBoolean()));
+                    buf -> new HudEntityActionResultPayload(NetworkHandler.readEnumSafe(buf, HudEntityAction.class), buf.readUUID(), buf.readBoolean(), buf.readBoolean()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

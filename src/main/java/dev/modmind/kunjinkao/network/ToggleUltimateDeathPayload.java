@@ -15,7 +15,7 @@ public record ToggleUltimateDeathPayload(InteractionHand hand, boolean enabled) 
 
     public static final StreamCodec<FriendlyByteBuf, ToggleUltimateDeathPayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> { buf.writeEnum(p.hand); buf.writeBoolean(p.enabled); },
-                    buf -> new ToggleUltimateDeathPayload(buf.readEnum(InteractionHand.class), buf.readBoolean()));
+                    buf -> new ToggleUltimateDeathPayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class), buf.readBoolean()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

@@ -15,7 +15,7 @@ public record SetAreaClearTargetModePayload(InteractionHand hand, int modeId) im
 
     public static final StreamCodec<FriendlyByteBuf, SetAreaClearTargetModePayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> { buf.writeEnum(p.hand); buf.writeInt(p.modeId); },
-                    buf -> new SetAreaClearTargetModePayload(buf.readEnum(InteractionHand.class), buf.readInt()));
+                    buf -> new SetAreaClearTargetModePayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class), buf.readInt()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

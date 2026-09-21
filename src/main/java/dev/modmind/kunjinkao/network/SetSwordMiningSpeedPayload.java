@@ -15,7 +15,7 @@ public record SetSwordMiningSpeedPayload(InteractionHand hand, int speed) implem
 
     public static final StreamCodec<FriendlyByteBuf, SetSwordMiningSpeedPayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> { buf.writeEnum(p.hand); buf.writeInt(p.speed); },
-                    buf -> new SetSwordMiningSpeedPayload(buf.readEnum(InteractionHand.class), buf.readInt()));
+                    buf -> new SetSwordMiningSpeedPayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class), buf.readInt()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

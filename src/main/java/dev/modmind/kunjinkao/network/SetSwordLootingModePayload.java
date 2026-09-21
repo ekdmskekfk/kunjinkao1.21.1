@@ -15,7 +15,7 @@ public record SetSwordLootingModePayload(InteractionHand hand, int mode) impleme
 
     public static final StreamCodec<FriendlyByteBuf, SetSwordLootingModePayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> { buf.writeEnum(p.hand); buf.writeInt(p.mode); },
-                    buf -> new SetSwordLootingModePayload(buf.readEnum(InteractionHand.class), buf.readInt()));
+                    buf -> new SetSwordLootingModePayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class), buf.readInt()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

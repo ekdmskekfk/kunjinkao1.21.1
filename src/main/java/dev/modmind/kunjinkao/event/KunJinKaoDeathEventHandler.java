@@ -1,11 +1,13 @@
 package dev.modmind.kunjinkao.event;
 
+import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.MagmaCube;
 import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -22,9 +24,10 @@ import java.util.List;
 
 /**
  * 锟斤拷之剑掉落增强处理器：
- * 凡是带有锟斤拷击杀标记（KunJinKaoMark）的生物，在产生掉落物时，
+ * 凡是带有锟斤拷击杀标记（KunJinKaoMark）且标记仍在时效内的生物，在产生掉落物时，
  * 根据实体上保存的抢夺模式（KunJinKaoLootingMode）应用超高抢夺加成：
- * 已有掉落翻倍、重新抽取战利品表、史莱姆粘液球额外奖励。
+ * 每个已有掉落额外生成 25/50 个、用 withLuck 重新抽取一次原版战利品表、
+ * 史莱姆（岩浆怪除外）额外补 25/50 个粘液球。
  */
 public class KunJinKaoDeathEventHandler {
 
@@ -35,6 +38,19 @@ public class KunJinKaoDeathEventHandler {
     public static final String LOOTING_MODE_ENTITY_KEY = "KunJinKaoLootingMode";
     public static final String KILLER_UUID_KEY = "KunJinKaoKiller";
 
+    /**
+     * 标记写入时刻（gameTime）。
+     * <p>
+     * 击杀标记是"先写标记、再放行伤害"的，而 LivingEntity.hurt 的无敌帧判定可能把这次伤害整段丢弃，
+     * 于是生物会带着标记继续活着；此后它因为任何无关原因死亡时，就会被误当成剑的击杀而复制 25/50 倍掉落。
+     * 记下时刻后，死亡处理只认可 MARK_VALID_TICKS tick 内的标记，超时即视为无效并清掉，
+     * 这样不需要每 tick 去扫描所有生物。
+     */
+    public static final String MARK_TICK_KEY = "KunJinKaoMarkTick";
+
+    /** 击杀标记的有效期（tick）：超过它就说明那次攻击早就没打中。 */
+    public static final int MARK_VALID_TICKS = 40;
+
     @SubscribeEvent
     public void onLivingDrops(LivingDropsEvent event) {
         // 指令杀（kill() 立即处决）的伤害来源可能没有攻击者实体，
@@ -43,6 +59,22 @@ public class KunJinKaoDeathEventHandler {
         if (!targetData.getBoolean(MARK_KEY)) {
             return;
         }
+
+        // 只认可 MARK_VALID_TICKS 内写入的标记：标记是攻击时预写的，可能因为无敌帧被整段丢弃，
+        // 过期标记必须作废，否则之后的无关死亡也会按 25/50 倍复制掉落。
+        // 缺失时刻键的标记来自覆写流程（overwrite 包）与断未抛射物，它们都是"写完标记立刻 kill()"，
+        // 属于同一 tick 的合法写入，因此这里按有效处理。
+        long now = event.getEntity().level().getGameTime();
+        if (targetData.contains(MARK_TICK_KEY)) {
+            long markAge = now - targetData.getLong(MARK_TICK_KEY);
+            if (markAge > MARK_VALID_TICKS) {
+                LOGGER.info("[DEATH-DROPS] stale mark discarded on target={} age={}ticks",
+                        event.getEntity().getType(), markAge);
+                clearMarkKeys(targetData);
+                return;
+            }
+        }
+
         LOGGER.info("[DEATH-DROPS] mark found on target={} mode={}", event.getEntity().getType(),
                 targetData.getInt(LOOTING_MODE_ENTITY_KEY));
 
@@ -50,6 +82,10 @@ public class KunJinKaoDeathEventHandler {
         // 无论是否应用加成，都立即清除标记，避免影响后续事件或实体复活
         targetData.remove(MARK_KEY);
         targetData.remove(LOOTING_MODE_ENTITY_KEY);
+        targetData.remove(MARK_TICK_KEY);
+        // 断未开关与两个处决开关标记留给各自的死亡处理器（KunJinKaoProtectionHandler / UltimateDeathHandler）
+        // 读取后自行清理：本事件与 LivingDeathEvent 的先后顺序不由这里决定，提前清掉有可能把一次合法处决取消掉；
+        // 真正会泄漏的场景（标记已过期）已经在上面那个分支里整套清干净。
 
         if (mode == 0) {
             return; // 无抢夺：原版掉落，不干涉
@@ -59,7 +95,8 @@ public class KunJinKaoDeathEventHandler {
         int lootingLevel = (mode == 1) ? 25 : 50;
         List<ItemEntity> additionalDrops = new ArrayList<>();
 
-        // 1. 已有掉落物数量翻倍：每个掉落物追加 lootingLevel 个，超出 64 的部分自动拆分堆叠
+        // 1. 已有掉落物：每个掉落物再额外生成 lootingLevel（25/50）个，超出 64 的部分自动拆分堆叠。
+        //    注意实现是"每个已有掉落固定追加 25/50 份"，不是把原掉落翻倍。
         for (ItemEntity drop : event.getDrops()) {
             ItemStack dropStack = drop.getItem();
             int maxSize = dropStack.getMaxStackSize();
@@ -91,8 +128,9 @@ public class KunJinKaoDeathEventHandler {
             }
         }
 
-        // 3. 史莱姆特殊处理：粘液球不走战利品表，按模式明确增加 25/50 个
-        if (entity instanceof Slime) {
+        // 3. 史莱姆特殊处理：粘液球不走战利品表，按模式明确增加 25/50 个。
+        //    岩浆怪（MagmaCube）同样继承自 Slime，但它的额外掉落应该是岩浆膏而不是粘液球，必须排除。
+        if (entity instanceof Slime && !(entity instanceof MagmaCube)) {
             ItemStack slimeBall = new ItemStack(Items.SLIME_BALL, lootingLevel);
             additionalDrops.add(new ItemEntity(entity.level(), entity.getX(), entity.getY() + 0.2D, entity.getZ(), slimeBall));
             System.out.println("[KunJinKao] Slime drops enhanced: +" + lootingLevel + " slime balls");
@@ -104,10 +142,24 @@ public class KunJinKaoDeathEventHandler {
     }
 
     /**
-     * 以高幸运值重新抽取实体的原版战利品表，制造类似海量抢夺的稀有掉落概率。
-     * 1.20.1 官方映射 API 修正：
-     * EntityType#getDefaultLootTable() 返回 ResourceLocation，
-     * LootDataManager#getLootTable(ResourceLocation) 直接接受该值。
+     * 清掉一整套击杀标记，避免只清一半留下"半个状态"。
+     */
+    private static void clearMarkKeys(CompoundTag data) {
+        data.remove(MARK_KEY);
+        data.remove(LOOTING_MODE_ENTITY_KEY);
+        data.remove(MARK_TICK_KEY);
+        data.remove(KunJinKaoProtectionHandler.KILL_BY_OVERWRITE_KEY);
+        // 两个处决开关标记同样清掉：这里已经判定标记失效，残留的开关会让之后的死亡被误判成套了处决
+        // （最坏情况是把持剑玩家当成处决目标直接踢出服务器）。
+        data.remove(KunJinKaoSwordItem.ULTIMATE_DEATH_MARK);
+        data.remove(KunJinKaoSwordItem.QUIT_STRIKE_MARK);
+    }
+
+    /**
+     * 用 withLuck(lootingLevel) 重新抽取一次实体的原版战利品表，
+     * 让稀有掉落按 25/50 级幸运重新算一次概率。
+     * 1.21.1 官方映射：EntityType#getDefaultLootTable() 返回 ResourceKey&lt;LootTable&gt;，
+     * 战利品表由 serverLevel.getServer().getServerResources().managers().fullRegistries() 提供。
      */
     private List<ItemStack> rollEntityLootTable(ServerLevel serverLevel, LivingEntity entity, int lootingLevel, DamageSource damageSource) {
         ResourceKey<LootTable> lootTableKey = entity.getType().getDefaultLootTable();

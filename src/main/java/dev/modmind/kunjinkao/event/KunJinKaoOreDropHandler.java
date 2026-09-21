@@ -53,7 +53,11 @@ public final class KunJinKaoOreDropHandler {
         // BreakEvent 在原版放出掉落前触发；排到同一服务器任务队列中，
         // 仅当该方块确实已被破坏时再补足 multiplier - 1 份掉落。
         level.getServer().execute(() -> {
-            if (level.getBlockState(pos).is(state.getBlock())) {
+            // 有意收紧：只认"目标位置已经变成空气"这一种破坏结果。
+            // 原来写的是"不再是原方块就算破坏"，于是方块被换成别的方块（其它 mod/玩家顺手放上方块、
+            // 替换成流体等）时也会补发矿石，属于越权补发。代价是这类"替换式破坏"不再加倍，
+            // 但原版正常挖掘最终留下的都是空气，实际玩法不受影响。
+            if (!level.getBlockState(pos).isAir()) {
                 return;
             }
             for (ItemStack baseDrop : baseDrops) {

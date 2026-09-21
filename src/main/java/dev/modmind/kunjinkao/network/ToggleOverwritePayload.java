@@ -18,7 +18,7 @@ public record ToggleOverwritePayload(InteractionHand hand) implements CustomPack
 
     public static final StreamCodec<FriendlyByteBuf, ToggleOverwritePayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> buf.writeEnum(p.hand),
-                    buf -> new ToggleOverwritePayload(buf.readEnum(InteractionHand.class)));
+                    buf -> new ToggleOverwritePayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class)));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

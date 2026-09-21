@@ -18,7 +18,7 @@ public record ToggleDisguisePayload(InteractionHand hand) implements CustomPacke
 
     public static final StreamCodec<FriendlyByteBuf, ToggleDisguisePayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> buf.writeEnum(p.hand),
-                    buf -> new ToggleDisguisePayload(buf.readEnum(InteractionHand.class)));
+                    buf -> new ToggleDisguisePayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class)));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

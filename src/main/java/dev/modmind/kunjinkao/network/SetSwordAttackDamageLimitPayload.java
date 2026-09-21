@@ -15,7 +15,7 @@ public record SetSwordAttackDamageLimitPayload(InteractionHand hand, int limit) 
 
     public static final StreamCodec<FriendlyByteBuf, SetSwordAttackDamageLimitPayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> { buf.writeEnum(p.hand); buf.writeInt(p.limit); },
-                    buf -> new SetSwordAttackDamageLimitPayload(buf.readEnum(InteractionHand.class), buf.readInt()));
+                    buf -> new SetSwordAttackDamageLimitPayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class), buf.readInt()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

@@ -140,13 +140,18 @@ public final class KunJinKaoColdDataEffectsHandler {
         boolean authorized = AdminToolConfig.isAuthorized(player.getUUID());
         boolean enabled = false;
         if (authorized) {
-            enabled = !player.getPersistentData().getBoolean("KunJinKaoHudNightVision");
+            // 真值必须是玩家身上"实际有没有夜视效果"：夜视会被牛奶、其它 mod 或 30 分钟时长清掉，
+            // 此时 persistentData 里的旧标记仍是 true，会把下一次点击误判成"关闭"，玩家得按两次才能再开。
+            boolean actuallyActive = player.hasEffect(MobEffects.NIGHT_VISION);
+            enabled = !actuallyActive;
             if (enabled) {
-                player.getPersistentData().putBoolean("KunJinKaoHudNightVision", true);
                 player.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 20 * 60 * 30, 0, false, false, false));
+                // 标记只是效果的镜像，开启时仍写入供其它逻辑读取。
+                player.getPersistentData().putBoolean("KunJinKaoHudNightVision", true);
             } else {
-                player.getPersistentData().remove("KunJinKaoHudNightVision");
                 player.removeEffect(MobEffects.NIGHT_VISION);
+                // 关闭时清掉标记，避免残留的 true 让下一次点击被误判成"再关闭一次"。
+                player.getPersistentData().remove("KunJinKaoHudNightVision");
             }
         }
         NetworkHandler.sendToPlayer(player, new HudNightVisionStatePayload(enabled, authorized));

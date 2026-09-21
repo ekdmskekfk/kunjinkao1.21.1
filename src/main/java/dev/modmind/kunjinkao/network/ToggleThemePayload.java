@@ -20,7 +20,7 @@ public record ToggleThemePayload(InteractionHand hand, int theme) implements Cus
 
     public static final StreamCodec<FriendlyByteBuf, ToggleThemePayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> { buf.writeEnum(p.hand); buf.writeInt(p.theme); },
-                    buf -> new ToggleThemePayload(buf.readEnum(InteractionHand.class), buf.readInt()));
+                    buf -> new ToggleThemePayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class), buf.readInt()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

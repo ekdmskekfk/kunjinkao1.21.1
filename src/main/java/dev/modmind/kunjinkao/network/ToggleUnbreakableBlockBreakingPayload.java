@@ -15,7 +15,7 @@ public record ToggleUnbreakableBlockBreakingPayload(InteractionHand hand, boolea
 
     public static final StreamCodec<FriendlyByteBuf, ToggleUnbreakableBlockBreakingPayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> { buf.writeEnum(p.hand); buf.writeBoolean(p.enabled); },
-                    buf -> new ToggleUnbreakableBlockBreakingPayload(buf.readEnum(InteractionHand.class), buf.readBoolean()));
+                    buf -> new ToggleUnbreakableBlockBreakingPayload(NetworkHandler.readEnumSafe(buf, InteractionHand.class), buf.readBoolean()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }
