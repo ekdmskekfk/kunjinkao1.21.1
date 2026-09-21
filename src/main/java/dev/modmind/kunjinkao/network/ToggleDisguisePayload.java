@@ -1,8 +1,10 @@
 package dev.modmind.kunjinkao.network;
 
 import dev.modmind.kunjinkao.KunJinKaoEntry;
+import dev.modmind.kunjinkao.config.AdminToolConfig;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -26,6 +28,12 @@ public record ToggleDisguisePayload(InteractionHand hand) implements CustomPacke
     public static void handle(ToggleDisguisePayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
+                // 与 withSword 一致的授权闸门：改剑的设置（覆写开关 / 主题 / 伪装）只对通过密码验证的玩家开放。
+                // 复核发现这三个包走的是各自的 handle，并不经过 withSword，所以必须单独补上。
+                if (!AdminToolConfig.isAuthorized(player.getUUID())) {
+                    player.displayClientMessage(Component.translatable("message.kunjinkao.admin_required"), true);
+                    return;
+                }
                 ItemStack stack = player.getItemInHand(payload.hand);
                 if (stack.getItem() instanceof KunJinKaoSwordItem sword) {
                     KunJinKaoSwordItem.toggleDisguise(stack);

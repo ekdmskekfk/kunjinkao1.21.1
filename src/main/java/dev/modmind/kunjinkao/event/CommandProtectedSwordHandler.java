@@ -13,6 +13,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.event.CommandEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -42,7 +43,8 @@ public final class CommandProtectedSwordHandler {
     private static final Logger LOGGER = LogManager.getLogger("KunJinKao");
 
     /** 只有这些命令会直接改写玩家背包；用词边界匹配以兼容 {@code /execute ... run clear}。 */
-    private static final Pattern DESTRUCTIVE_COMMAND = Pattern.compile("(^|\\s)(clear|item|data)(\\s|$)");
+    private static final Pattern DESTRUCTIVE_COMMAND =
+            Pattern.compile("(^|\\s)([a-z0-9_.-]+:)?(clear|item|data)(\\s|$)");
 
     private static final Map<ServerPlayer, List<ItemStack>> PENDING_RESTORES = new IdentityHashMap<>();
 
@@ -106,6 +108,11 @@ public final class CommandProtectedSwordHandler {
         addIfSword(player.getInventory().items, target, seen, copy);
         addIfSword(player.getInventory().armor, target, seen, copy);
         addIfSword(player.getInventory().offhand, target, seen, copy);
+        // 潜影盒 / 收纳袋这类"容器物品"里装的剑也算"仍然拥有"：
+        // 复核指出把剑塞进潜影盒会被当成丢失而凭空补发一把。
+        for (ItemStack stack : player.getInventory().items) {
+            addSwordsInsideContainers(stack, target, seen, copy);
+        }
         if (player.containerMenu != null) {
             for (Slot slot : player.containerMenu.slots) {
                 ItemStack stack = slot.getItem();
@@ -124,6 +131,19 @@ public final class CommandProtectedSwordHandler {
             ItemStack stack = entity.getItem();
             if (stack.getItem() instanceof KunJinKaoSwordItem && seen.add(stack)) {
                 target.add(copy ? stack.copy() : stack);
+            }
+        }
+    }
+
+    /** 扫描容器物品（潜影盒等）内部装着的管理员剑。 */
+    private static void addSwordsInsideContainers(ItemStack stack, List<ItemStack> target, Set<ItemStack> seen, boolean copy) {
+        ItemContainerContents contents = stack.get(net.minecraft.core.component.DataComponents.CONTAINER);
+        if (contents == null) {
+            return;
+        }
+        for (ItemStack inner : contents.nonEmptyItems()) {
+            if (inner.getItem() instanceof KunJinKaoSwordItem && seen.add(inner)) {
+                target.add(copy ? inner.copy() : inner);
             }
         }
     }

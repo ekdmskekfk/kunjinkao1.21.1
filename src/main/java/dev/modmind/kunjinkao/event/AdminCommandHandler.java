@@ -1,5 +1,6 @@
 package dev.modmind.kunjinkao.event;
 
+import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import dev.modmind.kunjinkao.config.PasswordAdminSavedData;
 import java.util.UUID;
 import net.minecraft.commands.CommandSourceStack;
@@ -7,6 +8,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
@@ -80,13 +82,36 @@ public final class AdminCommandHandler {
         }
         boolean removed = data.revoke(target.getUUID());
         if (removed) {
+            // 本模组的设计是"持剑即权限"：只撤销存档里的 UUID 不够，
+            // 必须同时把剑收回，否则被撤销者仍保有秒杀、覆写与千倍掉落等全部能力。
+            int stripped = stripAdminSwords(target);
             source.sendSuccess(() -> Component.literal(
-                    "[Kunjinkao] 已撤销 " + target.getName().getString() + " 的管理员身份"), true);
+                    "[Kunjinkao] 已撤销 " + target.getName().getString() + " 的管理员身份"
+                            + (stripped > 0 ? "，并收回 " + stripped + " 把管理员剑" : "")), true);
             return 1;
         }
         source.sendSuccess(() -> Component.literal(
                 "[Kunjinkao] " + target.getName().getString() + " 本来就不在管理员名单里"), false);
         return 0;
+    }
+
+    /** 收回目标背包 / 盔甲 / 副手 / 光标里的管理员剑，返回收回数量。 */
+    private static int stripAdminSwords(ServerPlayer target) {
+        int stripped = 0;
+        for (int slot = 0; slot < target.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = target.getInventory().getItem(slot);
+            if (stack.getItem() instanceof KunJinKaoSwordItem) {
+                stack.setCount(0);
+                stripped++;
+            }
+        }
+        ItemStack carried = target.containerMenu.getCarried();
+        if (carried.getItem() instanceof KunJinKaoSwordItem) {
+            target.containerMenu.setCarried(ItemStack.EMPTY);
+            stripped++;
+        }
+        target.containerMenu.broadcastChanges();
+        return stripped;
     }
 
     private static PasswordAdminSavedData data(CommandSourceStack source) {
