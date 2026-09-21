@@ -261,8 +261,15 @@ public final class KunJinKaoClientOverwriteEffects {
         return lastEndName;
     }
 
+    /**
+     * 残留标记的只读视图。
+     * <p>
+     * 原来直接返回内部可变 Map，而渲染端每帧遍历它的同时 {@code tick()} 会 removeIf/replaceAll ——
+     * 两者都在客户端主线程、当前不会真的抛 CME，但接口不该把并发风险暴露给调用方。
+     * 这里用 unmodifiableMap 视图（只包一层，不复制，因此没有每帧分配）。
+     */
     public static Map<Integer, ResidueMarker> getResidueMarkers() {
-        return RESIDUE_MARKERS;
+        return java.util.Collections.unmodifiableMap(RESIDUE_MARKERS);
     }
 
     public static int getResidueTicks() {

@@ -78,6 +78,23 @@ public final class HudOverlayRenderer {
         return Math.max(MARGIN, (guiHeight - totalHeight) / 2);
     }
 
+    /**
+     * 按钮标签缓存。
+     * <p>
+     * 枚举的翻译键是固定的，原来每帧每个按钮都新建一次 {@code Component.translatable}；
+     * 功能栏每帧都要画，缓存下来省掉这份无谓的分配。
+     */
+    private static final Component[] LABELS = buildLabels();
+
+    private static Component[] buildLabels() {
+        HudFunction[] functions = HudFunction.values();
+        Component[] labels = new Component[functions.length];
+        for (int index = 0; index < functions.length; index++) {
+            labels[index] = Component.translatable(functions[index].translationKey());
+        }
+        return labels;
+    }
+
     private static void renderButton(GuiGraphics graphics, HudFunction function, int x, int y,
                                      float progress, boolean hovered) {
         boolean active = HudFunctionManager.isActive(function);
@@ -96,7 +113,7 @@ public final class HudOverlayRenderer {
         int textAlpha = Math.round(255 * progress);
         int textColor = (textAlpha << 24) | (active || hovered ? 0xE9FBFF : 0x8FEAFF);
         graphics.drawString(minecraft.font, function.id(), x + 8, y + 9, textColor, false);
-        graphics.drawString(minecraft.font, Component.translatable(function.translationKey()), x + 31, y + 9, textColor, false);
+        graphics.drawString(minecraft.font, LABELS[function.ordinal()], x + 31, y + 9, textColor, false);
     }
 
     private static float ease(float value) {
