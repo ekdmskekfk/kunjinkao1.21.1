@@ -3,15 +3,8 @@ package dev.modmind.kunjinkao.client.gui;
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import dev.modmind.kunjinkao.client.KunJinKaoKeyBindings;
 import dev.modmind.kunjinkao.network.NetworkHandler;
-import dev.modmind.kunjinkao.network.SetAreaClearTargetModePayload;
-import dev.modmind.kunjinkao.network.SetSwordLootingModePayload;
-import dev.modmind.kunjinkao.network.SetSwordMiningSpeedPayload;
-import dev.modmind.kunjinkao.network.SetSwordOreDropMultiplierPayload;
-import dev.modmind.kunjinkao.network.SetSwordAttackDamageLimitPayload;
-import dev.modmind.kunjinkao.network.ToggleBlueScreenAttackPayload;
-import dev.modmind.kunjinkao.network.ToggleQuitStrikePayload;
-import dev.modmind.kunjinkao.network.ToggleUltimateDeathPayload;
-import dev.modmind.kunjinkao.network.ToggleUnbreakableBlockBreakingPayload;
+// 9 个剑设置包已合并为 SwordSettingPayload，导入与发包点一起收敛。
+import dev.modmind.kunjinkao.network.SwordSettingPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
@@ -22,6 +15,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
+import java.util.Arrays;
 import java.util.function.IntConsumer;
 
 /**
@@ -44,6 +38,20 @@ public final class SwordOptionsScreen extends Screen {
     private OreDropMultiplierSlider oreDropMultiplierSlider;
     private AttackDamageSlider attackDamageSlider;
     private SettingOption selectedOption = SettingOption.BLUE_SCREEN_ATTACK;
+
+    // ===== 滑条发包节流（本次新增）=====
+    // 三个滑条原来每变化一格就发一个包，拖一次最坏约 1000 个包（掉落倍数 1..1000）。
+    // 规则：同一 settingId 距上次真正发送 < 100ms，且数值相对上次发送没有跨过一"档"时跳过；
+    // 被跳过的数值记在 pending 里，render 每帧检查（窗口一过就补发）并在关屏时强制补发一次，
+    // 保证玩家最终选定的值一定到达服务端，不会因为节流丢设置。
+    // 开关/循环按钮不走节流：它们是离散操作，连点两下必须发两次。
+    private static final int SETTING_COUNT = 9;
+    private static final long SEND_INTERVAL_MS = 100L;
+    private static final int TIER_COUNT = 20;
+    private final long[] lastSendMillis = new long[SETTING_COUNT];
+    private final int[] lastSentValue = new int[SETTING_COUNT];
+    private final boolean[] hasPending = new boolean[SETTING_COUNT];
+    private final int[] pendingValue = new int[SETTING_COUNT];
 
     public SwordOptionsScreen(InteractionHand hand) {
         super(Component.translatable("screen.kunjinkao.settings_options"));
@@ -138,7 +146,18 @@ public final class SwordOptionsScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         // 背景与控件都由 super.render 负责；面板与选项名见上面的 renderBackground
+        // 每帧检查一次节流窗口：窗口一过就补发滑条最后的值（相当于拖动结束后的收尾发送）。
+        flushPendingSettings(false);
         super.render(graphics, mouseX, mouseY, partialTick);
+    }
+
+    /**
+     * 关屏时强制补发一次被节流跳过的滑条值，避免玩家拖完立刻 ESC 导致最后一次设置丢失。
+     */
+    @Override
+    public void onClose() {
+        flushPendingSettings(true);
+        super.onClose();
     }
 
     @Override
@@ -171,7 +190,8 @@ public final class SwordOptionsScreen extends Screen {
         // Client-side update is only for immediate button feedback. The server
         // independently validates the held item and remains authoritative.
         KunJinKaoSwordItem.setBlueScreenAttackEnabled(stack, enabled);
-        NetworkHandler.sendToServer(new ToggleBlueScreenAttackPayload(hand, enabled));
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.BLUE_SCREEN_ATTACK,
+                enabled ? 1 : 0));
         refreshToggleLabel();
     }
 
@@ -274,7 +294,8 @@ public final class SwordOptionsScreen extends Screen {
             return;
         }
         KunJinKaoSwordItem.setMiningSpeed(stack, speed);
-        NetworkHandler.sendToServer(new SetSwordMiningSpeedPayload(hand, speed));
+        // 该 settingId 走节流：拖动过程中同档碎变化合并，松手/窗口过后补发最后值。
+        sendSettingValue(SwordSettingPayload.MINING_SPEED, speed);
     }
 
     private void setOreDropMultiplier(int multiplier) {
@@ -289,7 +310,7 @@ public final class SwordOptionsScreen extends Screen {
             return;
         }
         KunJinKaoSwordItem.setOreDropMultiplier(stack, multiplier);
-        NetworkHandler.sendToServer(new SetSwordOreDropMultiplierPayload(hand, multiplier));
+        sendSettingValue(SwordSettingPayload.ORE_DROP_MULTIPLIER, multiplier);
     }
 
     private void toggleUnbreakableBlockBreaking() {
@@ -305,7 +326,8 @@ public final class SwordOptionsScreen extends Screen {
         }
         boolean enabled = !KunJinKaoSwordItem.canBreakUnbreakableBlocks(stack);
         KunJinKaoSwordItem.setBreakUnbreakableBlocks(stack, enabled);
-        NetworkHandler.sendToServer(new ToggleUnbreakableBlockBreakingPayload(hand, enabled));
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.UNBREAKABLE_BLOCK_BREAKING,
+                enabled ? 1 : 0));
         refreshToggleLabel();
     }
 
@@ -322,7 +344,8 @@ public final class SwordOptionsScreen extends Screen {
         }
         boolean enabled = !KunJinKaoSwordItem.isUltimateDeathEnabled(stack);
         KunJinKaoSwordItem.setUltimateDeathEnabled(stack, enabled);
-        NetworkHandler.sendToServer(new ToggleUltimateDeathPayload(hand, enabled));
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.ULTIMATE_DEATH,
+                enabled ? 1 : 0));
         refreshToggleLabel();
     }
 
@@ -339,7 +362,8 @@ public final class SwordOptionsScreen extends Screen {
         }
         boolean enabled = !KunJinKaoSwordItem.isQuitStrikeEnabled(stack);
         KunJinKaoSwordItem.setQuitStrikeEnabled(stack, enabled);
-        NetworkHandler.sendToServer(new ToggleQuitStrikePayload(hand, enabled));
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.QUIT_STRIKE,
+                enabled ? 1 : 0));
         refreshToggleLabel();
     }
 
@@ -355,7 +379,7 @@ public final class SwordOptionsScreen extends Screen {
             return;
         }
         KunJinKaoSwordItem.setAttackDamageLimit(stack, damageLimit);
-        NetworkHandler.sendToServer(new SetSwordAttackDamageLimitPayload(hand, damageLimit));
+        sendSettingValue(SwordSettingPayload.ATTACK_DAMAGE_LIMIT, damageLimit);
     }
 
     private void cycleAreaClearTargetMode() {
@@ -373,7 +397,8 @@ public final class SwordOptionsScreen extends Screen {
         KunJinKaoSwordItem.AreaClearTargetMode current = KunJinKaoSwordItem.getAreaClearTargetMode(stack);
         KunJinKaoSwordItem.AreaClearTargetMode next = modes[(current.ordinal() + 1) % modes.length];
         KunJinKaoSwordItem.setAreaClearTargetMode(stack, next);
-        NetworkHandler.sendToServer(new SetAreaClearTargetModePayload(hand, next.id()));
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.AREA_CLEAR_TARGET_MODE,
+                next.id()));
         refreshToggleLabel();
     }
 
@@ -390,8 +415,70 @@ public final class SwordOptionsScreen extends Screen {
         }
         int nextMode = (KunJinKaoSwordItem.getLootingMode(stack) + 1) % 3;
         KunJinKaoSwordItem.setLootingMode(stack, nextMode);
-        NetworkHandler.sendToServer(new SetSwordLootingModePayload(hand, nextMode));
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.LOOTING_MODE, nextMode));
         refreshToggleLabel();
+    }
+
+    /** 滑条专用：带节流地发送剑设置（离散开关不走这里）。 */
+    private void sendSettingValue(int settingId, int value) {
+        long now = System.currentTimeMillis();
+        boolean withinInterval = now - lastSendMillis[settingId] < SEND_INTERVAL_MS;
+        boolean crossedTier = Math.abs(value - lastSentValue[settingId]) >= tierWidthOf(settingId);
+        if (withinInterval && !crossedTier) {
+            hasPending[settingId] = true;
+            pendingValue[settingId] = value;
+            return;
+        }
+        hasPending[settingId] = false;
+        lastSendMillis[settingId] = now;
+        lastSentValue[settingId] = value;
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, settingId, value));
+    }
+
+    /**
+     * 补发被节流跳过的值。{@code force} 为 true 时立刻发（关屏），
+     * 否则只在 100ms 窗口过去后发（render 每帧调用一次，拖完自然会收尾）。
+     */
+    private void flushPendingSettings(boolean force) {
+        if (Minecraft.getInstance().player == null) {
+            // 已经退图/断线：服务端不会再接受设置，丢弃待发值，别往空连接上发包。
+            Arrays.fill(hasPending, false);
+            return;
+        }
+        long now = System.currentTimeMillis();
+        for (int settingId = 0; settingId < SETTING_COUNT; settingId++) {
+            if (!hasPending[settingId]) {
+                continue;
+            }
+            if (!force && now - lastSendMillis[settingId] < SEND_INTERVAL_MS) {
+                continue;
+            }
+            hasPending[settingId] = false;
+            lastSendMillis[settingId] = now;
+            lastSentValue[settingId] = pendingValue[settingId];
+            NetworkHandler.sendToServer(new SwordSettingPayload(hand, settingId, pendingValue[settingId]));
+        }
+    }
+
+    /**
+     * "一档"的宽度：把设置的取值范围等分成 {@link #TIER_COUNT} 档。
+     * 数值相对上次发送跨过至少一档就立刻发送（拖得快时界面数字仍能跟上），
+     * 同一档内的碎变化在 100ms 窗口内合并。
+     */
+    private static int tierWidthOf(int settingId) {
+        int min = 0;
+        int max = 1;
+        if (settingId == SwordSettingPayload.MINING_SPEED) {
+            min = KunJinKaoSwordItem.MIN_MINING_SPEED;
+            max = KunJinKaoSwordItem.MAX_MINING_SPEED;
+        } else if (settingId == SwordSettingPayload.ORE_DROP_MULTIPLIER) {
+            min = KunJinKaoSwordItem.MIN_ORE_DROP_MULTIPLIER;
+            max = KunJinKaoSwordItem.MAX_ORE_DROP_MULTIPLIER;
+        } else if (settingId == SwordSettingPayload.ATTACK_DAMAGE_LIMIT) {
+            min = 0;
+            max = KunJinKaoSwordItem.MAX_ATTACK_DAMAGE_LIMIT;
+        }
+        return Math.max(1, (max - min) / TIER_COUNT);
     }
 
     private static final class MiningSpeedSlider extends AbstractSliderButton {

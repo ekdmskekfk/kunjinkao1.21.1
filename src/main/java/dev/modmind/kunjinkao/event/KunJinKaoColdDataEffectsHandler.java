@@ -9,11 +9,9 @@ import dev.modmind.kunjinkao.network.HudEntityAction;
 import dev.modmind.kunjinkao.network.HudEntityActionResultPayload;
 import dev.modmind.kunjinkao.network.HudEntityData;
 import dev.modmind.kunjinkao.network.HudEntityListPayload;
-import dev.modmind.kunjinkao.network.HudMagnetStatePayload;
-import dev.modmind.kunjinkao.network.HudNightVisionStatePayload;
-import dev.modmind.kunjinkao.network.HudTrueInvisibilityStatePayload;
+// 4 个 HUD 状态回执包已合并为 HudStatePayload（带 stateId 判别）。
+import dev.modmind.kunjinkao.network.HudStatePayload;
 import dev.modmind.kunjinkao.network.NetworkHandler;
-import dev.modmind.kunjinkao.network.TacticalHudStatePayload;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
@@ -132,7 +130,9 @@ public final class KunJinKaoColdDataEffectsHandler {
     public static void handleToggleTacticalHudRequest(MinecraftServer server, Player source, boolean requestedEnabled) {
         if (!(source instanceof ServerPlayer player)) return;
         boolean authorized = AdminToolConfig.isAuthorized(player.getUUID());
-        NetworkHandler.sendToPlayer(player, new TacticalHudStatePayload(authorized && requestedEnabled, authorized));
+        // 线格式与语义未变，只是换成合并包 + stateId：两个 boolean 的含义仍是 (enabled, authorized)。
+        NetworkHandler.sendToPlayer(player,
+                new HudStatePayload(HudStatePayload.TACTICAL_HUD, authorized && requestedEnabled, authorized));
     }
 
     public static void handleToggleHudNightVision(MinecraftServer server, Player source) {
@@ -154,7 +154,7 @@ public final class KunJinKaoColdDataEffectsHandler {
                 player.getPersistentData().remove("KunJinKaoHudNightVision");
             }
         }
-        NetworkHandler.sendToPlayer(player, new HudNightVisionStatePayload(enabled, authorized));
+        NetworkHandler.sendToPlayer(player, new HudStatePayload(HudStatePayload.NIGHT_VISION, enabled, authorized));
     }
 
     public static void handleRequestEntityList(MinecraftServer server, Player source) {
@@ -199,14 +199,15 @@ public final class KunJinKaoColdDataEffectsHandler {
         if (!(source instanceof ServerPlayer player)) return;
         boolean authorized = AdminToolConfig.isAuthorized(player.getUUID());
         boolean enabled = authorized && TacticalHudTrueInvisibilityHandler.toggle(player);
-        NetworkHandler.sendToPlayer(player, new HudTrueInvisibilityStatePayload(enabled, authorized));
+        NetworkHandler.sendToPlayer(player,
+                new HudStatePayload(HudStatePayload.TRUE_INVISIBILITY, enabled, authorized));
     }
 
     public static void handleToggleHudMagnet(MinecraftServer server, Player source) {
         if (!(source instanceof ServerPlayer player)) return;
         boolean authorized = AdminToolConfig.isAuthorized(player.getUUID());
         boolean enabled = authorized && TacticalHudMagnetHandler.toggle(player);
-        NetworkHandler.sendToPlayer(player, new HudMagnetStatePayload(enabled, authorized));
+        NetworkHandler.sendToPlayer(player, new HudStatePayload(HudStatePayload.MAGNET, enabled, authorized));
     }
 
     public static void handleToggleBlueScreenAttack(Player player, InteractionHand hand, boolean enabled) {
@@ -292,8 +293,9 @@ public final class KunJinKaoColdDataEffectsHandler {
     /**
      * 剑设置类数据包的统一入口。
      * <p>
-     * 授权闸门放在这里而不是各个 handle 里：10 个设置包全部经过本方法，
-     * 一处校验即可保证"改剑的设置"与 HUD / 排除名单一样只对通过密码验证的玩家开放。
+     * 授权闸门放在这里而不是各个 handle 里：9 个剑设置项合并成 SwordSettingPayload 之后，
+     * 它们的每一个 settingId 分支仍然全部调用本方法，一处校验即可保证
+     * "改剑的设置"与 HUD / 排除名单一样只对通过密码验证的玩家开放（合并没有绕过它）。
      * <p>
      * 注意：剑本身的战斗能力仍按既定设计只看"手上有没有剑"，这里只拦设置写入。
      */

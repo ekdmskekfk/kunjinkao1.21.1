@@ -10,11 +10,22 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 public final class NetworkHandler {
 
-    public static final String PROTOCOL_VERSION = "20";
+    // 从 20 提到 21：本次把 18 个包合并成 3 个（判别 id 线格式），注册表与线格式都变了，
+    // 必须让版本号跟着变，否则新旧端会在握手时被当成兼容，然后在解码时错位。
+    public static final String PROTOCOL_VERSION = "21";
 
     private NetworkHandler() {
     }
 
+    /**
+     * 21 条注册 = 原来 36 条 - 被合并掉的 18 条 + 新的 3 条：
+     * <ul>
+     *     <li>{@link SwordSettingPayload}（C2S）替掉 9 个剑设置包；</li>
+     *     <li>{@link SimpleActionPayload}（C2S）替掉 5 个空载荷动作包；</li>
+     *     <li>{@link HudStatePayload}（S2C）替掉 4 个 HUD 状态回执包。</li>
+     * </ul>
+     * 其余 18 个包按原样保留，注册方向（playToServer / playToClient）也一概不变。
+     */
     public static void register(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar reg = event.registrar(PROTOCOL_VERSION);
         reg.playToServer(ToggleDisguisePayload.TYPE, ToggleDisguisePayload.STREAM_CODEC, ToggleDisguisePayload::handle);
@@ -24,33 +35,23 @@ public final class NetworkHandler {
         reg.playToServer(AcceleratorConfigPayload.TYPE, AcceleratorConfigPayload.STREAM_CODEC, AcceleratorConfigPayload::handle);
         reg.playToServer(AcceleratorShowRangePayload.TYPE, AcceleratorShowRangePayload.STREAM_CODEC, AcceleratorShowRangePayload::handle);
         reg.playToServer(ToggleTacticalHudPayload.TYPE, ToggleTacticalHudPayload.STREAM_CODEC, ToggleTacticalHudPayload::handle);
-        reg.playToClient(TacticalHudStatePayload.TYPE, TacticalHudStatePayload.STREAM_CODEC, TacticalHudStatePayload::handle);
-        reg.playToServer(ToggleHudNightVisionPayload.TYPE, ToggleHudNightVisionPayload.STREAM_CODEC, ToggleHudNightVisionPayload::handle);
-        reg.playToClient(HudNightVisionStatePayload.TYPE, HudNightVisionStatePayload.STREAM_CODEC, HudNightVisionStatePayload::handle);
-        reg.playToServer(RequestHudEntityListPayload.TYPE, RequestHudEntityListPayload.STREAM_CODEC, RequestHudEntityListPayload::handle);
+        // 原 TacticalHudStatePayload / HudNightVisionStatePayload / HudTrueInvisibilityStatePayload /
+        // HudMagnetStatePayload 四条注册合并为这一条，由 stateId 判别。
+        reg.playToClient(HudStatePayload.TYPE, HudStatePayload.STREAM_CODEC, HudStatePayload::handle);
+        // 原 RequestHudEntityListPayload / RequestExcludedPlayersPayload / ToggleHudNightVisionPayload /
+        // ToggleHudTrueInvisibilityPayload / ToggleHudMagnetPayload 五条注册合并为这一条，由 actionId 判别。
+        reg.playToServer(SimpleActionPayload.TYPE, SimpleActionPayload.STREAM_CODEC, SimpleActionPayload::handle);
         reg.playToClient(HudEntityListPayload.TYPE, HudEntityListPayload.STREAM_CODEC, HudEntityListPayload::handle);
         reg.playToServer(ManageHudEntityPayload.TYPE, ManageHudEntityPayload.STREAM_CODEC, ManageHudEntityPayload::handle);
         reg.playToClient(HudEntityActionResultPayload.TYPE, HudEntityActionResultPayload.STREAM_CODEC, HudEntityActionResultPayload::handle);
-        reg.playToServer(ToggleHudTrueInvisibilityPayload.TYPE, ToggleHudTrueInvisibilityPayload.STREAM_CODEC, ToggleHudTrueInvisibilityPayload::handle);
-        reg.playToClient(HudTrueInvisibilityStatePayload.TYPE, HudTrueInvisibilityStatePayload.STREAM_CODEC, HudTrueInvisibilityStatePayload::handle);
         reg.playToClient(HudTrueInvisibilityVisualPayload.TYPE, HudTrueInvisibilityVisualPayload.STREAM_CODEC, HudTrueInvisibilityVisualPayload::handle);
         reg.playToClient(HudShieldHitPayload.TYPE, HudShieldHitPayload.STREAM_CODEC, HudShieldHitPayload::handle);
-        reg.playToServer(ToggleBlueScreenAttackPayload.TYPE, ToggleBlueScreenAttackPayload.STREAM_CODEC, ToggleBlueScreenAttackPayload::handle);
-        reg.playToServer(SetSwordMiningSpeedPayload.TYPE, SetSwordMiningSpeedPayload.STREAM_CODEC, SetSwordMiningSpeedPayload::handle);
-        reg.playToServer(ToggleUnbreakableBlockBreakingPayload.TYPE, ToggleUnbreakableBlockBreakingPayload.STREAM_CODEC, ToggleUnbreakableBlockBreakingPayload::handle);
-        reg.playToServer(SetAreaClearTargetModePayload.TYPE, SetAreaClearTargetModePayload.STREAM_CODEC, SetAreaClearTargetModePayload::handle);
-        reg.playToServer(SetSwordAttackDamageLimitPayload.TYPE, SetSwordAttackDamageLimitPayload.STREAM_CODEC, SetSwordAttackDamageLimitPayload::handle);
+        // 原 4 个 (hand, boolean) 开关包 + 5 个 (hand, int) 设置包共九条注册合并为这一条，由 settingId 判别。
+        reg.playToServer(SwordSettingPayload.TYPE, SwordSettingPayload.STREAM_CODEC, SwordSettingPayload::handle);
         reg.playToClient(AdminEyeStatePayload.TYPE, AdminEyeStatePayload.STREAM_CODEC, AdminEyeStatePayload::handle);
-        reg.playToServer(SetSwordOreDropMultiplierPayload.TYPE, SetSwordOreDropMultiplierPayload.STREAM_CODEC, SetSwordOreDropMultiplierPayload::handle);
-        reg.playToServer(SetSwordLootingModePayload.TYPE, SetSwordLootingModePayload.STREAM_CODEC, SetSwordLootingModePayload::handle);
-        reg.playToServer(ToggleHudMagnetPayload.TYPE, ToggleHudMagnetPayload.STREAM_CODEC, ToggleHudMagnetPayload::handle);
-        reg.playToClient(HudMagnetStatePayload.TYPE, HudMagnetStatePayload.STREAM_CODEC, HudMagnetStatePayload::handle);
         reg.playToClient(SwordDrawAnimationPayload.TYPE, SwordDrawAnimationPayload.STREAM_CODEC, SwordDrawAnimationPayload::handle);
         reg.playToServer(SubmitAdminPasswordPayload.TYPE, SubmitAdminPasswordPayload.STREAM_CODEC, SubmitAdminPasswordPayload::handle);
         reg.playToClient(AdminPasswordResultPayload.TYPE, AdminPasswordResultPayload.STREAM_CODEC, AdminPasswordResultPayload::handle);
-        reg.playToServer(ToggleUltimateDeathPayload.TYPE, ToggleUltimateDeathPayload.STREAM_CODEC, ToggleUltimateDeathPayload::handle);
-        reg.playToServer(ToggleQuitStrikePayload.TYPE, ToggleQuitStrikePayload.STREAM_CODEC, ToggleQuitStrikePayload::handle);
-        reg.playToServer(RequestExcludedPlayersPayload.TYPE, RequestExcludedPlayersPayload.STREAM_CODEC, RequestExcludedPlayersPayload::handle);
         reg.playToClient(ExcludedPlayersPayload.TYPE, ExcludedPlayersPayload.STREAM_CODEC, ExcludedPlayersPayload::handle);
         reg.playToServer(ManageExcludedPlayerPayload.TYPE, ManageExcludedPlayerPayload.STREAM_CODEC, ManageExcludedPlayerPayload::handle);
     }

@@ -6,11 +6,8 @@ import dev.modmind.kunjinkao.client.function.HudFunctionManager;
 import dev.modmind.kunjinkao.client.KunJinKaoKeyBindings;
 import dev.modmind.kunjinkao.network.NetworkHandler;
 import dev.modmind.kunjinkao.network.ToggleTacticalHudPayload;
-import dev.modmind.kunjinkao.network.ToggleHudNightVisionPayload;
-import dev.modmind.kunjinkao.network.ToggleHudTrueInvisibilityPayload;
-import dev.modmind.kunjinkao.network.RequestHudEntityListPayload;
-import dev.modmind.kunjinkao.network.RequestExcludedPlayersPayload;
-import dev.modmind.kunjinkao.network.ToggleHudMagnetPayload;
+// 5 个空载荷动作包已合并为 SimpleActionPayload（带 actionId 判别）。
+import dev.modmind.kunjinkao.network.SimpleActionPayload;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -36,16 +33,17 @@ public final class HudScreen extends Screen {
         HudFunction function = HudOverlayRenderer.getFunctionAt(width, height, mouseX, mouseY);
         if (function != null && button == 0) {
             HudFunctionManager.activate(function);
+            // 每个按钮对应的 actionId 与原来那个包一一对应；服务端处理链完全没变。
             if (function == HudFunction.NIGHT_VISION) {
-                NetworkHandler.sendToServer(new ToggleHudNightVisionPayload());
+                NetworkHandler.sendToServer(new SimpleActionPayload(SimpleActionPayload.TOGGLE_HUD_NIGHT_VISION));
             } else if (function == HudFunction.TRUE_INVISIBILITY) {
-                NetworkHandler.sendToServer(new ToggleHudTrueInvisibilityPayload());
+                NetworkHandler.sendToServer(new SimpleActionPayload(SimpleActionPayload.TOGGLE_HUD_TRUE_INVISIBILITY));
             } else if (function == HudFunction.ENTITY_INFO) {
-                NetworkHandler.sendToServer(new RequestHudEntityListPayload());
+                NetworkHandler.sendToServer(new SimpleActionPayload(SimpleActionPayload.REQUEST_HUD_ENTITY_LIST));
             } else if (function == HudFunction.MAGNET) {
-                NetworkHandler.sendToServer(new ToggleHudMagnetPayload());
+                NetworkHandler.sendToServer(new SimpleActionPayload(SimpleActionPayload.TOGGLE_HUD_MAGNET));
             } else if (function == HudFunction.EXCLUSION_LIST) {
-                NetworkHandler.sendToServer(new RequestExcludedPlayersPayload());
+                NetworkHandler.sendToServer(new SimpleActionPayload(SimpleActionPayload.REQUEST_EXCLUDED_PLAYERS));
             }
             return true;
         }
