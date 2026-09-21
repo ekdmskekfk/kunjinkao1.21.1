@@ -78,5 +78,6 @@
   "message.kunjinkao.ultimate_death_blocked": "你已被终极死亡排除，无法进入本服务器。",
   "message.kunjinkao.quit_strike_kick": "你已被退出打击命中，离开了服务器。",
   "message.kunjinkao.exclusion_removed": "已解除排除：%s",
-  "message.kunjinkao.exclusion_remove_failed": "解除失败：该玩家不在排除名单中。"
+  "message.kunjinkao.exclusion_remove_failed": "解除失败：该玩家不在排除名单中。",
+  "message.kunjinkao.admin_required": "需要管理员权限"
 }

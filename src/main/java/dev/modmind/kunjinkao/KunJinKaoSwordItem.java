@@ -2,9 +2,11 @@ package dev.modmind.kunjinkao;
 
 import java.util.List;
 
+import dev.modmind.kunjinkao.config.AdminToolConfig;
 import dev.modmind.kunjinkao.event.KunJinKaoDeathEventHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoProtectionHandler;
 import dev.modmind.kunjinkao.overwrite.KunJinKaoOverwriteHandler;
+import dev.modmind.kunjinkao.recipe.AdminSwordRecipe;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -384,9 +386,32 @@ public class KunJinKaoSwordItem extends SwordItem {
     @Override
     public void inventoryTick(ItemStack stack, Level level, net.minecraft.world.entity.Entity entity, int slotId, boolean isSelected) {
         super.inventoryTick(stack, level, entity, slotId, isSelected);
-        if (!level.isClientSide() && stack.getDamageValue() > 0) {
+        if (level.isClientSide()) {
+            return;
+        }
+        if (stack.getDamageValue() > 0) {
             stack.setDamageValue(0);
         }
+        settlePendingCraft(stack, entity);
+    }
+
+    /**
+     * 结算"未验证的成品"。
+     * <p>
+     * 自定义配方产出的剑带 {@code kunjinkao:pending_admin_sword_craft} 标记，正常情况下由
+     * {@code AdminSwordCraftingHandler} 在 {@code ItemCraftedEvent} 里处理。但 1.21 的 Crafter
+     * 方块走 {@code RecipeManager.getRecipeFor} 合成，不会触发该事件，未授权玩家因此可以绕过授权拿到剑。
+     * 这里在剑进入任何生物/玩家背包后逐 tick 兜底：授权玩家放行并清标记，未授权玩家的剑直接销毁。
+     */
+    private static void settlePendingCraft(ItemStack stack, net.minecraft.world.entity.Entity holder) {
+        if (!AdminSwordRecipe.isPendingAdminSword(stack)) {
+            return;
+        }
+        if (holder instanceof Player owner && AdminToolConfig.isAuthorized(owner.getUUID())) {
+            AdminSwordRecipe.clearPendingCraftTag(stack);
+            return;
+        }
+        stack.setCount(0);
     }
 
     private InteractionResultHolder<ItemStack> cycleMode(Level level, Player player, InteractionHand hand) {

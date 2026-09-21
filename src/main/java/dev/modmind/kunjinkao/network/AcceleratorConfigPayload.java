@@ -7,7 +7,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -30,6 +30,7 @@ public record AcceleratorConfigPayload(BlockPos pos, int multiplier, int radius)
     public static void handle(AcceleratorConfigPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
+                if (!AcceleratorBlockEntity.mayEdit(player, payload.pos)) return;
                 Level level = player.level();
                 if (level == null || !level.hasChunkAt(payload.pos)) return;
                 BlockEntity be = level.getBlockEntity(payload.pos);
@@ -38,8 +39,8 @@ public record AcceleratorConfigPayload(BlockPos pos, int multiplier, int radius)
                 accelerator.setRadius(payload.radius);
                 accelerator.setChanged();
                 BlockState state = level.getBlockState(payload.pos);
+                // sendBlockUpdated 已把方块实体数据同步给追踪该区块的玩家，无需再手动重发一次。
                 level.sendBlockUpdated(payload.pos, state, state, 2);
-                player.connection.send(ClientboundBlockEntityDataPacket.create(accelerator));
                 int size = accelerator.getRadius() * 2 + 1;
                 player.displayClientMessage(Component.literal(
                         "§b[加速方块] §f倍率 " + accelerator.getMultiplier() + "x · 范围 " + size + "x" + size + "x" + size), true);

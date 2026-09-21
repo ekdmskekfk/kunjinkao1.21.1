@@ -284,9 +284,21 @@ public final class KunJinKaoColdDataEffectsHandler {
         return entries;
     }
 
+    /**
+     * 剑设置类数据包的统一入口。
+     * <p>
+     * 授权闸门放在这里而不是各个 handle 里：10 个设置包全部经过本方法，
+     * 一处校验即可保证"改剑的设置"与 HUD / 排除名单一样只对通过密码验证的玩家开放。
+     * <p>
+     * 注意：剑本身的战斗能力仍按既定设计只看"手上有没有剑"，这里只拦设置写入。
+     */
     private static void withSword(Player player, InteractionHand hand, java.util.function.Consumer<ItemStack> action) {
-        if (!(player instanceof ServerPlayer)) return;
-        ItemStack stack = player.getItemInHand(hand);
+        if (!(player instanceof ServerPlayer serverPlayer)) return;
+        if (!AdminToolConfig.isAuthorized(serverPlayer.getUUID())) {
+            serverPlayer.displayClientMessage(Component.translatable("message.kunjinkao.admin_required"), true);
+            return;
+        }
+        ItemStack stack = serverPlayer.getItemInHand(hand);
         if (stack.getItem() instanceof KunJinKaoSwordItem) action.accept(stack);
     }
 }

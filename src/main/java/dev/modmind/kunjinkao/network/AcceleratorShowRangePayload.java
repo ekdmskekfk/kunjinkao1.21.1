@@ -7,7 +7,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -30,6 +30,7 @@ public record AcceleratorShowRangePayload(BlockPos pos, boolean showRange) imple
     public static void handle(AcceleratorShowRangePayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
+                if (!AcceleratorBlockEntity.mayEdit(player, payload.pos)) return;
                 Level level = player.level();
                 if (level == null || !level.hasChunkAt(payload.pos)) return;
                 BlockEntity be = level.getBlockEntity(payload.pos);
@@ -37,12 +38,8 @@ public record AcceleratorShowRangePayload(BlockPos pos, boolean showRange) imple
                 accelerator.setShowRange(payload.showRange);
                 accelerator.setChanged();
                 BlockState state = level.getBlockState(payload.pos);
+                // 只同步给追踪该区块的玩家；原来遍历全服（含其它维度）发方块实体包是过度广播。
                 level.sendBlockUpdated(payload.pos, state, state, 2);
-                if (level.getServer() != null) {
-                    for (ServerPlayer other : level.getServer().getPlayerList().getPlayers()) {
-                        other.connection.send(ClientboundBlockEntityDataPacket.create(accelerator));
-                    }
-                }
                 player.displayClientMessage(Component.literal(payload.showRange
                         ? "§b[加速方块] §f已显示加速范围"
                         : "§b[加速方块] §f已隐藏加速范围"), true);

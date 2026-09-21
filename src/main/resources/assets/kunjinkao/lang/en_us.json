@@ -78,5 +78,6 @@
   "message.kunjinkao.ultimate_death_blocked": "You are excluded by Ultimate Death and cannot join this server.",
   "message.kunjinkao.quit_strike_kick": "You were struck by Quit Strike and left the server.",
   "message.kunjinkao.exclusion_removed": "Pardoned: %s",
-  "message.kunjinkao.exclusion_remove_failed": "Pardon failed: that player is not excluded."
+  "message.kunjinkao.exclusion_remove_failed": "Pardon failed: that player is not excluded.",
+  "message.kunjinkao.admin_required": "Admin permission required"
 }
