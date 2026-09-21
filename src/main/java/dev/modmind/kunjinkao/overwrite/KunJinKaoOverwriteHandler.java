@@ -506,7 +506,7 @@ public class KunJinKaoOverwriteHandler {
                 case OverwriteEffectPayload.PHASE_PROGRESS -> OverwriteEffectPayload.progress(entityId, remainingTicks);
                 case OverwriteEffectPayload.PHASE_CANCEL -> OverwriteEffectPayload.cancel(entityId);
                 case OverwriteEffectPayload.PHASE_DECISION -> OverwriteEffectPayload.decision(entityId, remainingTicks);
-                default -> new OverwriteEffectPayload(entityId, remainingTicks, phase, 0, false, 0, 0, 0, "", 0);
+                default -> new OverwriteEffectPayload(entityId, remainingTicks, phase, 0, false, 0, 0, 0);
             };
             NetworkHandler.sendToPlayer(player, payload);
         }
@@ -631,8 +631,9 @@ public class KunJinKaoOverwriteHandler {
                     data.remove(zone.record);
                 }
                 iterator.remove();
-            } else if (zone.record != null) {
-                // 刷新剩余时间：崩溃/退档后至少能知道当时还剩多久（兜底还原时会打进日志）
+            } else if (zone.record != null && zone.level.getGameTime() % 20L == 0L) {
+                // 剩余时间只用于崩溃后的日志，每 20 tick（1 秒）刷新一次即可：
+                // updateRemaining 会 setDirty()，而每次自动保存都会把整个 zones 列表全量序列化一遍。
                 data.updateRemaining(zone.record, remaining);
             }
         }
@@ -685,6 +686,9 @@ public class KunJinKaoOverwriteHandler {
                 LOGGER.warn("[OVERWRITE-ZONE] saved undefined zone dimension not found: {}", record.dimension());
                 continue;
             }
+            // 这里使用会按需加载区块的 getBlockState：启动期同步加载最多 2~4 个区块，
+            // 换来的是"崩溃遗留的屏障一定会被还原"。相比偶发的启动卡顿，
+            // 存档里永久留下普通玩家清不掉的屏障是更糟的结果，故有意保持同步。
             restoreZone(level, record.originals());
             data.remove(record);
             LOGGER.info("[OVERWRITE-ZONE] restored leftover undefined zone in {} ({} blocks, {} ticks left)",
@@ -758,8 +762,16 @@ public class KunJinKaoOverwriteHandler {
                 sendToAttacker(state.attacker, entity.getId(), 0, OverwriteEffectPayload.PHASE_CANCEL);
             }
         }
-        // 从 persistent data 恢复主手：这是"区块卸载吃过主手原件"那条后果的唯一补救点
-        entity.setItemInHand(InteractionHand.MAIN_HAND, readMainHandBackup(entity, ItemStack.EMPTY));
+        // 从 persistent data 恢复主手：这是"区块卸载吃过主手原件"那条后果的唯一补救点。
+        // 两道防护缺一不可：
+        // 1) 只在手上仍是泥土时才替换 —— cleanupDebuffs 可能刚刚已经恢复过主手，
+        //    无条件覆盖会把恢复好的原件（或实体本来的手持物）冲成备份值；
+        // 2) 备份键缺失时回退到内存备份而不是 EMPTY —— 传入 EMPTY 意味着
+        //    "一旦宁时序意外导致键已消失，就把主手清空"，那正是复核指出的丢物品路径。
+        if (entity.getMainHandItem().is(Items.DIRT)) {
+            ItemStack memoryBackup = state == null ? ItemStack.EMPTY : state.backupMainHand;
+            entity.setItemInHand(InteractionHand.MAIN_HAND, readMainHandBackup(entity, memoryBackup));
+        }
         clearMainHandBackup(entity);
         LOGGER.info("[OVERWRITE-RECOVER] restored overwritten main hand for {}", entity.getType());
     }

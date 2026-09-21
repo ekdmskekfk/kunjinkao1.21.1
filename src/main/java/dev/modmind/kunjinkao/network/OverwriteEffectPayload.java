@@ -10,8 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public record OverwriteEffectPayload(int entityId, int remainingTicks, int phase, int phaseDetail,
-                                     boolean hasPosition, int posX, int posY, int posZ,
-                                     String terminalText, int terminalLine) implements CustomPacketPayload {
+                                     boolean hasPosition, int posX, int posY, int posZ) implements CustomPacketPayload {
 
     public static final Type<OverwriteEffectPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "overwrite_effect"));
@@ -36,8 +35,6 @@ public record OverwriteEffectPayload(int entityId, int remainingTicks, int phase
                         buf.writeInt(p.posY);
                         buf.writeInt(p.posZ);
                     }
-                    buf.writeUtf(p.terminalText);
-                    buf.writeInt(p.terminalLine);
                 }
 
                 @Override
@@ -53,9 +50,7 @@ public record OverwriteEffectPayload(int entityId, int remainingTicks, int phase
                         y = buf.readInt();
                         z = buf.readInt();
                     }
-                    String text = buf.readUtf();
-                    int line = buf.readInt();
-                    return new OverwriteEffectPayload(eid, ticks, phase, detail, hasPos, x, y, z, text, line);
+                    return new OverwriteEffectPayload(eid, ticks, phase, detail, hasPos, x, y, z);
                 }
             };
 
@@ -67,24 +62,24 @@ public record OverwriteEffectPayload(int entityId, int remainingTicks, int phase
     }
 
     public static OverwriteEffectPayload start(int entityId, int ticks, int theme) {
-        return new OverwriteEffectPayload(entityId, ticks, PHASE_START, theme, false, 0, 0, 0, "", 0);
+        return new OverwriteEffectPayload(entityId, ticks, PHASE_START, theme, false, 0, 0, 0);
     }
 
     public static OverwriteEffectPayload progress(int entityId, int ticks) {
-        return new OverwriteEffectPayload(entityId, ticks, PHASE_PROGRESS, 0, false, 0, 0, 0, "", 0);
+        return new OverwriteEffectPayload(entityId, ticks, PHASE_PROGRESS, 0, false, 0, 0, 0);
     }
 
     public static OverwriteEffectPayload end(int entityId, BlockPos pos) {
         return new OverwriteEffectPayload(entityId, 0, PHASE_END, 0, pos != null,
-                pos != null ? pos.getX() : 0, pos != null ? pos.getY() : 0, pos != null ? pos.getZ() : 0, "", 0);
+                pos != null ? pos.getX() : 0, pos != null ? pos.getY() : 0, pos != null ? pos.getZ() : 0);
     }
 
     public static OverwriteEffectPayload cancel(int entityId) {
-        return new OverwriteEffectPayload(entityId, 0, PHASE_CANCEL, 0, false, 0, 0, 0, "", 0);
+        return new OverwriteEffectPayload(entityId, 0, PHASE_CANCEL, 0, false, 0, 0, 0);
     }
 
     public static OverwriteEffectPayload decision(int entityId, int ticks) {
-        return new OverwriteEffectPayload(entityId, ticks, PHASE_DECISION, 0, false, 0, 0, 0, "", 0);
+        return new OverwriteEffectPayload(entityId, ticks, PHASE_DECISION, 0, false, 0, 0, 0);
     }
 
     public static void handle(OverwriteEffectPayload payload, IPayloadContext context) {

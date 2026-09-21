@@ -10,7 +10,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 public final class NetworkHandler {
 
-    public static final String PROTOCOL_VERSION = "19";
+    public static final String PROTOCOL_VERSION = "20";
 
     private NetworkHandler() {
     }
@@ -88,7 +88,4 @@ public final class NetworkHandler {
         return ordinal >= 0 && ordinal < values.length ? values[ordinal] : values[0];
     }
 
-    public static String modId() {
-        return KunJinKaoEntry.MOD_ID;
-    }
 }
