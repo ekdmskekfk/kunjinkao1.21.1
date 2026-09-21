@@ -2,13 +2,18 @@ package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import dev.modmind.kunjinkao.config.PasswordAdminSavedData;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemContainerContents;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
@@ -95,7 +100,13 @@ public final class AdminCommandHandler {
         return 0;
     }
 
-    /** 收回目标背包 / 盔甲 / 副手 / 光标里的管理员剑，返回收回数量。 */
+    /**
+     * 收回目标身上所有能拿到的管理员剑：背包 / 盔甲 / 副手 / 光标 / 潜影盒等内容物 / 本人丢在地上的。
+     * <p>
+     * 命令保护那边已经把"容器内容物、附近掉落物"算作仍然持有，所以撤销只清背包槽是不够的 ——
+     * 被撤销者靠一个潜影盒或"先把剑丢在地上"就能保住秒杀/覆写/千倍掉落全部能力（审计指出）。
+     * 只处理 {@code getOwner()} 指向本人的掉落物，避免误删别人的东西。
+     */
     private static int stripAdminSwords(ServerPlayer target) {
         int stripped = 0;
         for (int slot = 0; slot < target.getInventory().getContainerSize(); slot++) {
@@ -103,14 +114,47 @@ public final class AdminCommandHandler {
             if (stack.getItem() instanceof KunJinKaoSwordItem) {
                 stack.setCount(0);
                 stripped++;
+                continue;
             }
+            stripped += stripSwordsInsideContainer(stack);
         }
         ItemStack carried = target.containerMenu.getCarried();
         if (carried.getItem() instanceof KunJinKaoSwordItem) {
             target.containerMenu.setCarried(ItemStack.EMPTY);
             stripped++;
+        } else {
+            stripped += stripSwordsInsideContainer(carried);
+        }
+        List<ItemEntity> dropped = target.level().getEntitiesOfClass(ItemEntity.class,
+                target.getBoundingBox().inflate(8.0D));
+        for (ItemEntity entity : dropped) {
+            if (target.getUUID().equals(entity.getOwner()) && entity.getItem().getItem() instanceof KunJinKaoSwordItem) {
+                entity.discard();
+                stripped++;
+            }
         }
         target.containerMenu.broadcastChanges();
+        return stripped;
+    }
+
+    /** 潜影盒 / 收纳袋这类容器物品里塞的剑；就地重建容器内容，返回收回数量。 */
+    private static int stripSwordsInsideContainer(ItemStack container) {
+        ItemContainerContents contents = container.get(DataComponents.CONTAINER);
+        if (contents == null) {
+            return 0;
+        }
+        List<ItemStack> kept = new ArrayList<>();
+        int stripped = 0;
+        for (ItemStack inner : contents.nonEmptyItems()) {
+            if (inner.getItem() instanceof KunJinKaoSwordItem) {
+                stripped++;
+            } else {
+                kept.add(inner);
+            }
+        }
+        if (stripped > 0) {
+            container.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(kept));
+        }
         return stripped;
     }
 

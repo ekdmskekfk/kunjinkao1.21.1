@@ -249,10 +249,12 @@ public class KunJinKaoOverwriteHandler {
         if (state.dirtApplied && target.getMainHandItem().is(Items.DIRT)) {
             // 优先用实体 persistent data 里的备份（内存备份在崩溃/退档后就没了），内存备份只作兜底
             target.setItemInHand(InteractionHand.MAIN_HAND, readMainHandBackup(target, state.backupMainHand));
+            // 只有真的恢复过才清备份与标记
+            clearMainHandBackup(target);
         }
-        // 无论走哪条恢复路径，都要把标记与备份一起清掉，
-        // 否则实体下次进入世界时会被当成上一局的遗留状态再恢复一次
-        clearMainHandBackup(target);
+        // 手上不是泥土时**不要**清：那说明覆写期间主手被别的来源（拾取/其它 mod）换过，
+        // 原件还留在 persistent data 里，清掉就等于永久丢失。这种实体下次进入世界时
+        // 由 EntityJoinLevelEvent 按备份恢复（审计指出的隐患）。
     }
 
     /**
@@ -483,6 +485,13 @@ public class KunJinKaoOverwriteHandler {
         }
         if (KunJinKaoSwordItem.isDisguised(sword)) {
             LOGGER.debug("[SWORD-ATTACK] sword disguised -> vanilla");
+            return false;
+        }
+        // 伤害上限被人为调低时不要接管这次攻击，交给原版按普通伤害结算。
+        // 这个判断必须放在这里：AttackEntityEvent 的处理会先取消原版攻击，
+        // 而 KunJinKaoProtectionHandler 里的上限判断走的是 LivingIncomingDamageEvent，
+        // 那条路径根本到不了 —— 审计指出的"上限对生物失效"就是这里漏判。
+        if (KunJinKaoSwordItem.getAttackDamageLimit(sword) < KunJinKaoSwordItem.MAX_ATTACK_DAMAGE_LIMIT) {
             return false;
         }
         if (!(level instanceof ServerLevel serverLevel)) {

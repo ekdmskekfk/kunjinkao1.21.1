@@ -1,6 +1,7 @@
 package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
+import dev.modmind.kunjinkao.config.AdminToolConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -41,10 +42,13 @@ public final class KunJinKaoUnbreakableBlockHandler {
             return;
         }
 
-        // 只有具备游戏管理员方块权限（创造模式或 OP 2 级）的玩家才允许走探针与破坏路径：
-        // 否则 fireBlockBreak 会让别的保护插件看到一次并未真正发生的破坏，
-        // 而普通玩家即使打开了开关也打不破屏障、还拿不到任何反馈。这里改成给一句提示后放行原版逻辑。
-        if (!player.canUseGameMasterBlocks()) {
+        // 放行条件：本模组的管理员（密码授权）或原版游戏管理员方块权限。
+        // 只认 canUseGameMasterBlocks() 会把"生存模式 OP"和"创造但未开作弊的单机玩家"一起挡掉，
+        // 与本模组"密码即权限"的模型自相矛盾（审计指出）；但也不能让普通持剑者绕过原版对
+        // 命令方块/屏障的保护，所以两条满足其一即可。
+        // 不满足时给一句提示并放行原版逻辑：fireBlockBreak 的探针会让别的保护插件
+        // 看到一次并未真正发生的破坏。
+        if (!player.canUseGameMasterBlocks() && !AdminToolConfig.isAuthorized(player.getUUID())) {
             player.displayClientMessage(Component.translatable("message.kunjinkao.admin_required"), true);
             return;
         }

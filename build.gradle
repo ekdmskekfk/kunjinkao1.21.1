@@ -15,7 +15,12 @@ def incrementPatchVersion = { String currentVersion ->
 }
 
 def nextModVersion = incrementPatchVersion(project.mod_version)
-version = nextModVersion
+// 只有显式 -PautoBump 才把补丁号推进一位；否则直接用 gradle.properties 里的值。
+// 否则默认构建会产出"属性值+1"的版本，属性值又停在上次 autoBump 的位置，
+// 导致版本号可倒退、同名不同内容覆盖已有 jar（审计指出）。
+def autoBump = providers.gradleProperty('autoBump').isPresent()
+def buildVersion = autoBump ? nextModVersion : project.mod_version
+version = buildVersion
 group = project.maven_group
 
 base {
@@ -87,7 +92,7 @@ tasks.named('processResources', ProcessResources).configure {
             minecraft_version: minecraft_version, minecraft_version_range: minecraft_version_range,
             neo_version: neo_version, neo_version_range: neo_version_range,
             loader_version_range: loader_version_range,
-            mod_id: mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: nextModVersion,
+            mod_id: mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: buildVersion,
             mod_authors: mod_authors, mod_description: mod_description,
             pack_format_number: pack_format_number,
     ]

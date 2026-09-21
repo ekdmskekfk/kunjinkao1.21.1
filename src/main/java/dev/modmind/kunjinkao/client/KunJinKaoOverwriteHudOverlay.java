@@ -27,15 +27,15 @@ public final class KunJinKaoOverwriteHudOverlay {
     private static float framePartialTick = 0.0F;
 
     private static double lerpX(Entity entity) {
-        return Mth.lerp(framePartialTick, entity.xOld, lerpX(entity));
+        return Mth.lerp(framePartialTick, entity.xOld, entity.getX());
     }
 
     private static double lerpY(Entity entity) {
-        return Mth.lerp(framePartialTick, entity.yOld, lerpY(entity));
+        return Mth.lerp(framePartialTick, entity.yOld, entity.getY());
     }
 
     private static double lerpZ(Entity entity) {
-        return Mth.lerp(framePartialTick, entity.zOld, lerpZ(entity));
+        return Mth.lerp(framePartialTick, entity.zOld, entity.getZ());
     }
 
     private KunJinKaoOverwriteHudOverlay() {
