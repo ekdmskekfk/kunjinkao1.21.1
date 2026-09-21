@@ -9,8 +9,13 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -27,17 +32,20 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.bus.api.SubscribeEvent;
 import org.joml.Vector3f;
 
@@ -61,6 +69,17 @@ public class KunJinKaoOverwriteHandler {
 
     public static final int OVERWRITE_TICKS = 40;
     private static final int ZONE_TICKS = 600;
+
+    /**
+     * 覆写期间写在目标实体 persistent data 里的两个键。
+     * <p>
+     * 主手原件以前只备份在内存字段里，而"损坏的泥土"是直接写进 HandItems 并随区块存盘的：
+     * 覆写中途区块卸载/退档，内存备份和状态一起没了，泥土却留在存档里，生物就此永久拿着泥土。
+     * 所以备份必须写进实体自己的 persistent data（NeoForge 会随实体 NBT 存盘），
+     * 并额外打一个"覆写进行中"的标记，供下次实体进入世界时判断是否属于上一局的遗留状态。
+     */
+    private static final String OVERWRITE_IN_PROGRESS_KEY = "KunJinKaoOverwriteInProgress";
+    private static final String MAIN_HAND_BACKUP_KEY = "KunJinKaoOverwriteMainHandBackup";
 
     private static final DustParticleOptions COLD_CORE =
             new DustParticleOptions(new Vector3f(0.00F, 0.90F, 1.00F), 0.95F);
@@ -102,6 +121,7 @@ public class KunJinKaoOverwriteHandler {
             this.lootingMode = lootingMode;
             this.armorValue = armorValue;
             this.theme = theme;
+            // 主题 1 / 4 在覆写期间额外冻结 AI：这是有意设计（这两个主题表现"完全停机"），不要当成 bug 去掉
             this.freezeAi = theme == 1 || theme == 4;
             this.wasNoAi = target instanceof Mob mob && mob.isNoAi();
             this.wasInvisible = target.isInvisible();
@@ -114,6 +134,8 @@ public class KunJinKaoOverwriteHandler {
         final BlockPos base;
         final long expireGameTime;
         final Map<BlockPos, BlockState> originals;
+        /** 落盘记录的句柄：到期还原之后要把它从存档里删掉，否则下次启动会再还原一次。 */
+        UndefinedZoneSavedData.ZoneRecord record;
 
         Zone(ServerLevel level, BlockPos base, long expireGameTime, Map<BlockPos, BlockState> originals) {
             this.level = level;
@@ -207,11 +229,10 @@ public class KunJinKaoOverwriteHandler {
             target.removeEffect(effect.getEffect());
         }
         if (!state.dirtApplied) {
-            ItemStack dirt = new ItemStack(Items.DIRT);
-            dirt.set(net.minecraft.core.component.DataComponents.CUSTOM_DATA,
-                    CustomData.of(new net.minecraft.nbt.CompoundTag()));
-            dirt.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA).copyTag().putBoolean("KunJinKaoBrokenDirt", true);
-            target.setItemInHand(InteractionHand.MAIN_HAND, dirt);
+            // 关键顺序：先把主手原件写进实体 persistent data（随实体存盘），再换成泥土。
+            // 反过来一旦在这两步之间崩溃/退档，存档里就只剩泥土，原件永久丢失。
+            writeMainHandBackup(target);
+            target.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.DIRT));
             state.dirtApplied = true;
         }
     }
@@ -226,8 +247,40 @@ public class KunJinKaoOverwriteHandler {
         }
         target.setInvisible(state.wasInvisible);
         if (state.dirtApplied && target.getMainHandItem().is(Items.DIRT)) {
-            target.setItemInHand(InteractionHand.MAIN_HAND, state.backupMainHand);
+            // 优先用实体 persistent data 里的备份（内存备份在崩溃/退档后就没了），内存备份只作兜底
+            target.setItemInHand(InteractionHand.MAIN_HAND, readMainHandBackup(target, state.backupMainHand));
         }
+        // 无论走哪条恢复路径，都要把标记与备份一起清掉，
+        // 否则实体下次进入世界时会被当成上一局的遗留状态再恢复一次
+        clearMainHandBackup(target);
+    }
+
+    /**
+     * 备份主手原件到实体 persistent data，并打上"覆写进行中"标记。
+     * 空手也照样打标记：恢复时才知道"原件本来就是空的"，不能把泥土留在手上。
+     */
+    private static void writeMainHandBackup(LivingEntity target) {
+        CompoundTag data = target.getPersistentData();
+        ItemStack mainHand = target.getMainHandItem();
+        if (!mainHand.isEmpty()) {
+            data.put(MAIN_HAND_BACKUP_KEY, mainHand.copy().save(target.level().registryAccess()));
+        }
+        data.putBoolean(OVERWRITE_IN_PROGRESS_KEY, true);
+    }
+
+    /** 从 persistent data 读取主手备份；没有备份键（原件为空手）时退回内存备份。 */
+    private static ItemStack readMainHandBackup(LivingEntity target, ItemStack memoryBackup) {
+        CompoundTag data = target.getPersistentData();
+        if (!data.contains(MAIN_HAND_BACKUP_KEY, Tag.TAG_COMPOUND)) {
+            return memoryBackup;
+        }
+        return ItemStack.parseOptional(target.level().registryAccess(), data.getCompound(MAIN_HAND_BACKUP_KEY));
+    }
+
+    private static void clearMainHandBackup(LivingEntity target) {
+        CompoundTag data = target.getPersistentData();
+        data.remove(MAIN_HAND_BACKUP_KEY);
+        data.remove(OVERWRITE_IN_PROGRESS_KEY);
     }
 
     private static void removeModifier(LivingEntity target, Holder<Attribute> attribute, ResourceLocation id) {
@@ -317,13 +370,36 @@ public class KunJinKaoOverwriteHandler {
                 }
             }
         }
-        ZONES.add(new Zone(level, center, level.getGameTime() + ZONE_TICKS, originals));
+        Zone zone = new Zone(level, center, level.getGameTime() + ZONE_TICKS, originals);
+        // 屏障是普通方块，会随区块一起写进存档，而内存里的还原表（ZONES）活不过一次崩溃/退档。
+        // 所以在放下屏障的同时把"原方块 + 剩余时间"也写进存档，供下次启动时兜底还原。
+        MinecraftServer server = level.getServer();
+        if (server != null && !originals.isEmpty()) {
+            zone.record = UndefinedZoneSavedData.get(server)
+                    .add(level.dimension().location(), ZONE_TICKS, originals);
+        }
+        ZONES.add(zone);
         level.sendParticles(COLD_PIXEL,
                 center.getX() + 0.5D, center.getY() + 1.0D, center.getZ() + 0.5D,
                 72, 1.15D, 0.85D, 1.15D, 0.06D);
         level.sendParticles(ParticleTypes.END_ROD,
                 center.getX() + 0.5D, center.getY() + 1.0D, center.getZ() + 0.5D,
                 20, 0.7D, 0.7D, 0.7D, 0.025D);
+    }
+
+    /**
+     * 还原未定义区块。
+     * <p>
+     * 只还原"当前仍然是屏障"的位置：这 30 秒内玩家放进区块里的方块必须保留（否则等于把玩家建筑一起删了），
+     * 其它来源（指令/其它模组）后来放下的方块同理不动。
+     */
+    private static void restoreZone(ServerLevel level, Map<BlockPos, BlockState> originals) {
+        for (Map.Entry<BlockPos, BlockState> entry : originals.entrySet()) {
+            if (!level.getBlockState(entry.getKey()).is(Blocks.BARRIER)) {
+                continue;
+            }
+            level.setBlock(entry.getKey(), entry.getValue(), 3);
+        }
     }
 
     private static void spawnOverwriteParticles(OverwriteState state) {
@@ -438,7 +514,11 @@ public class KunJinKaoOverwriteHandler {
 
     private static void sendToAttacker(ServerPlayer player, int entityId, BlockPos pos, int phase) {
         if (player != null) {
-            NetworkHandler.sendToPlayer(player, OverwriteEffectPayload.end(entityId, pos));
+            // 这个重载以前把 phase 参数丢掉了、无条件发 PHASE_END，
+            // 于是中断/取消会被客户端当成一次正常的"断未"演出；现在按传入的 phase 分发
+            NetworkHandler.sendToPlayer(player, phase == OverwriteEffectPayload.PHASE_CANCEL
+                    ? OverwriteEffectPayload.cancel(entityId)
+                    : OverwriteEffectPayload.end(entityId, pos));
         }
     }
 
@@ -535,14 +615,25 @@ public class KunJinKaoOverwriteHandler {
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
+        if (ZONES.isEmpty()) {
+            return;
+        }
+        // 只有存在存活区块时才需要维护落盘记录，没有区块时不必每 tick 去碰存档数据
+        UndefinedZoneSavedData data = UndefinedZoneSavedData.get(event.getServer());
         Iterator<Zone> iterator = ZONES.iterator();
         while (iterator.hasNext()) {
             Zone zone = iterator.next();
-            if (zone.level.getGameTime() >= zone.expireGameTime) {
-                for (Map.Entry<BlockPos, BlockState> entry : zone.originals.entrySet()) {
-                    zone.level.setBlock(entry.getKey(), entry.getValue(), 3);
+            long remaining = zone.expireGameTime - zone.level.getGameTime();
+            if (remaining <= 0) {
+                restoreZone(zone.level, zone.originals);
+                // 屏障已经还原：落盘记录必须同步删除，否则下次启动还会再还原一次
+                if (zone.record != null) {
+                    data.remove(zone.record);
                 }
                 iterator.remove();
+            } else if (zone.record != null) {
+                // 刷新剩余时间：崩溃/退档后至少能知道当时还剩多久（兜底还原时会打进日志）
+                data.updateRemaining(zone.record, remaining);
             }
         }
     }
@@ -565,5 +656,111 @@ public class KunJinKaoOverwriteHandler {
             Player player = event.getPlayer();
             player.displayClientMessage(Component.literal("§7§o未定义区块阻断了你的破坏……"), true);
         }
+    }
+
+    /**
+     * 服务器启动时兜底还原上一局遗留的未定义区块。
+     * <p>
+     * 上一局在 600 tick 内被强杀/崩溃，或者单机退档重进时，屏障方块已经随区块写进了存档，
+     * 而内存里的 ZONES 早就没了 —— 没有这一步，存档里就会永久留下 3×3×2 不可破坏屏障。
+     * <p>
+     * 这里直接还原而不是接着倒计时：跨重启续算"剩下的 25 秒"没有意义，
+     * 玩家下次进服时不该再看见上一局的屏障。
+     */
+    @SubscribeEvent
+    public void onServerStarted(ServerStartedEvent event) {
+        MinecraftServer server = event.getServer();
+        // 单机"退档重进"不重启 JVM，进程级 static 会带着上一局的 ServerLevel / ServerPlayer 强引用跨存档泄漏。
+        // 正常情况下 ServerStoppedEvent 已经清过；这里再清一次，防止上一局异常退出（没触发 StoppedEvent）留下脏引用。
+        // 主手恢复不在这里做：实体侧一律交给 EntityJoinLevelEvent 按 persistent data 兜底。
+        STATES.clear();
+        ZONES.clear();
+
+        UndefinedZoneSavedData data = UndefinedZoneSavedData.get(server);
+        for (UndefinedZoneSavedData.ZoneRecord record : data.snapshot()) {
+            ResourceKey<Level> key = ResourceKey.create(Registries.DIMENSION, record.dimension());
+            ServerLevel level = server.getLevel(key);
+            if (level == null) {
+                // 维度可能已经被数据包移除：宁可不还原，也不能把方块还原到别的地方，保留记录并记日志
+                LOGGER.warn("[OVERWRITE-ZONE] saved undefined zone dimension not found: {}", record.dimension());
+                continue;
+            }
+            restoreZone(level, record.originals());
+            data.remove(record);
+            LOGGER.info("[OVERWRITE-ZONE] restored leftover undefined zone in {} ({} blocks, {} ticks left)",
+                    record.dimension(), record.originals().size(), record.remainingTicks());
+        }
+    }
+
+    /**
+     * 服务器停止：把还在覆写中的目标恢复干净，并清空全部进程级静态状态。
+     * <p>
+     * 注意实体 NBT 在 ServerStoppedEvent 之前就已经落盘（stopServer 先 saveAllChunks 再发本事件），
+     * 所以这里的主手恢复只保证内存对象一致；真正修复存档的是下次进服时的 EntityJoinLevelEvent。
+     */
+    @SubscribeEvent
+    public void onServerStopped(ServerStoppedEvent event) {
+        for (OverwriteState state : new ArrayList<>(STATES.values())) {
+            cleanupDebuffs(state);
+            if (state.bossEvent != null) {
+                state.bossEvent.removeAllPlayers();
+            }
+        }
+        STATES.clear();
+        ZONES.clear();
+    }
+
+    /**
+     * 攻击者掉线时把该玩家从所有 BossBar 里摘掉。
+     * BossBar 是挂在玩家连接上的显示对象，不清掉就会一直持有这个 ServerPlayer 引用（悬挂 + 内存泄漏）。
+     */
+    @SubscribeEvent
+    public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        for (OverwriteState state : STATES.values()) {
+            if (state.bossEvent != null) {
+                state.bossEvent.removePlayer(player);
+            }
+        }
+    }
+
+    /**
+     * 实体进入世界时的兜底恢复。
+     * <p>
+     * 上一局崩溃/退档之后，内存里的覆写状态与主手备份都没了，只剩下实体 NBT 里的
+     * "覆写进行中"标记和主手备份（覆写中途区块卸载时，泥土已经写进 HandItems 存了盘）。
+     * 只要此刻没有指向该实体的内存状态，就说明这是遗留脏数据，必须把主手换回来并清掉标记。
+     */
+    @SubscribeEvent
+    public void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (event.getLevel().isClientSide()) {
+            return;
+        }
+        if (!(event.getEntity() instanceof LivingEntity entity)) {
+            return;
+        }
+        if (!entity.getPersistentData().getBoolean(OVERWRITE_IN_PROGRESS_KEY)) {
+            return;
+        }
+        OverwriteState state = STATES.get(entity.getUUID());
+        if (state != null && state.target == entity) {
+            // 同一局内的正常覆写流程：状态还在内存里，交给 tickOverwrite 管理，这里不要抢着恢复
+            return;
+        }
+        if (state != null) {
+            // 状态里持有的实体实例已被替换（例如覆写中途跨维度）：先按中断路径给旧状态收尾
+            STATES.remove(entity.getUUID());
+            cleanupDebuffs(state);
+            if (state.bossEvent != null) {
+                state.bossEvent.removePlayer(state.attacker);
+                sendToAttacker(state.attacker, entity.getId(), 0, OverwriteEffectPayload.PHASE_CANCEL);
+            }
+        }
+        // 从 persistent data 恢复主手：这是"区块卸载吃过主手原件"那条后果的唯一补救点
+        entity.setItemInHand(InteractionHand.MAIN_HAND, readMainHandBackup(entity, ItemStack.EMPTY));
+        clearMainHandBackup(entity);
+        LOGGER.info("[OVERWRITE-RECOVER] restored overwritten main hand for {}", entity.getType());
     }
 }
