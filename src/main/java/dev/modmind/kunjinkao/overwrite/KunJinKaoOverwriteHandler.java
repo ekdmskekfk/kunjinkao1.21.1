@@ -660,7 +660,7 @@ public class KunJinKaoOverwriteHandler {
         if (event.getLevel() instanceof Level level && isInsideAnyZone(level, event.getPos())) {
             event.setCanceled(true);
             Player player = event.getPlayer();
-            player.displayClientMessage(Component.literal("§7§o未定义区块阻断了你的破坏……"), true);
+            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_break_denied"), true);
         }
     }
 

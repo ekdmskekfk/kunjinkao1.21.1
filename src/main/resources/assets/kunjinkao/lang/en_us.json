@@ -104,5 +104,6 @@
 "message.kunjinkao.looting_mode_none": "§7No Looting",
 "message.kunjinkao.looting_mode_25": "§6Looting 25",
 "message.kunjinkao.looting_mode_50": "§6Looting 50",
-"message.kunjinkao.looting_mode_current": "§eOverwrite · Unset - current mode: %s"
+"message.kunjinkao.looting_mode_current": "§eOverwrite · Unset - current mode: %s",
+  "message.kunjinkao.zone_break_denied": "§7§oThe undefined zone blocked your attempt to break it..."
 }
