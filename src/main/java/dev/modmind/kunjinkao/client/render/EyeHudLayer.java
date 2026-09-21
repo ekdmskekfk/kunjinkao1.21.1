@@ -89,7 +89,10 @@ public final class EyeHudLayer extends RenderLayer<AbstractClientPlayer, PlayerM
     }
 
     private static void renderFloatingScreenAndBraces(PoseStack poseStack, MultiBufferSource buffer) {
-        VertexConsumer consumer = buffer.getBuffer(RenderType.lightning());
+        // lightning() 是加法混合（SRC_ALPHA, ONE）且输出到 weather framebuffer，alpha 不生效；
+        // 改用 debugQuads()：QUADS + 半透明混合 + 不剔除且无纹理。
+        // 两者的顶点格式同为 POSITION_COLOR，因此下面的顶点与颜色写法无需改动。
+        VertexConsumer consumer = buffer.getBuffer(RenderType.debugQuads());
         Matrix4f matrix = poseStack.last().pose();
 
         // 淡蓝色半透明悬浮屏，双面绘制，围绕玩家时两侧均可见。

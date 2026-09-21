@@ -10,9 +10,8 @@ import net.minecraft.network.chat.Component;
 /** Client-only 2D 功能栏；菜单交互将在后续 HudScreen 阶段接入。 */
 public final class HudOverlayRenderer {
 
+    /** 只保留真正有实现的功能：SCAN / TARGET_LOCK 是死功能（点击仅改高亮），已从栏位与命中检测中移除。 */
     private static final HudFunctionButton[] BUTTONS = {
-            new HudFunctionButton(HudFunction.SCAN),
-            new HudFunctionButton(HudFunction.TARGET_LOCK),
             new HudFunctionButton(HudFunction.ENTITY_INFO),
             new HudFunctionButton(HudFunction.NIGHT_VISION),
             new HudFunctionButton(HudFunction.TRUE_INVISIBILITY),

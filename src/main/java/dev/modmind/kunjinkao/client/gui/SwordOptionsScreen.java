@@ -101,9 +101,16 @@ public final class SwordOptionsScreen extends Screen {
         refreshOptionVisibility();
     }
 
+    /**
+     * 1.21.1 的 Screen.render 第一步就会调用 renderBackground，随后才画控件。
+     * 面板与选项名必须画在这里（即 super.renderBackground 之后），才能得到
+     * "背景只画一遍 → 面板 → 控件"的正确顺序：画到 super.render 之后会被 0xE0 的面板
+     * 盖住滑动条与开关按钮，画到 super.render 之前又会被背景纹理压暗（原 bug）。
+     */
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        renderBackground(graphics, mouseX, mouseY, partialTick);
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // 不再手动调用 renderBackground：背景由 super.render 内部负责，只保留这一次绘制
+        super.renderBackground(graphics, mouseX, mouseY, partialTick);
         int panelX = (width - PANEL_WIDTH) / 2;
         int panelY = (height - PANEL_HEIGHT) / 2;
         graphics.fill(panelX, panelY, panelX + PANEL_WIDTH, panelY + PANEL_HEIGHT, 0xE0122030);
@@ -126,6 +133,11 @@ public final class SwordOptionsScreen extends Screen {
             case QUIT_STRIKE -> Component.translatable("screen.kunjinkao.quit_strike");
         };
         graphics.drawCenteredString(font, optionName, width / 2, panelY + 73, 0xFF8FEAFF);
+    }
+
+    @Override
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // 背景与控件都由 super.render 负责；面板与选项名见上面的 renderBackground
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 

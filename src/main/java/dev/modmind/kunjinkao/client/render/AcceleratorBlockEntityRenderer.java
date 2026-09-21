@@ -34,12 +34,23 @@ public class AcceleratorBlockEntityRenderer implements BlockEntityRenderer<Accel
         Matrix4f pose = poseStack.last().pose();
 
         // 蓝色半透明填充
-        VertexConsumer fill = bufferSource.getBuffer(RenderType.debugFilledBox());
+        // DEBUG_FILLED_BOX 是 TRIANGLE_STRIP，而下面按 6 个独立四边形提交了 24 个顶点，
+        // 会被跨面缝合成杂散三角形；debugQuads() 才是 QUADS + 半透明混合。
+        VertexConsumer fill = bufferSource.getBuffer(RenderType.debugQuads());
         renderFilledBox(fill, pose, box, 0.15F, 0.45F, 1.0F, 0.16F);
 
         // 蓝色描边（renderLineBox 内部会用 poseStack 变换坐标）
         VertexConsumer lines = bufferSource.getBuffer(RenderType.lines());
         LevelRenderer.renderLineBox(poseStack, lines, box, 0.25F, 0.65F, 1.0F, 0.9F);
+    }
+
+    /**
+     * 默认包围盒只有方块本体 1x1x1，而范围框最大到 9x9x9；
+     * 方块本体离开视锥时整块范围框会一并消失，因此按加速半径扩大包围盒。
+     */
+    @Override
+    public AABB getRenderBoundingBox(AcceleratorBlockEntity blockEntity) {
+        return new AABB(blockEntity.getBlockPos()).inflate(blockEntity.getRadius() + 1.0D);
     }
 
     /** 用 6 个四边形画出一个半透明填充立方体。 */

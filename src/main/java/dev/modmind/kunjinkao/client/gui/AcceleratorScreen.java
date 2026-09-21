@@ -124,9 +124,17 @@ public class AcceleratorScreen extends Screen {
                 this.accelerator.getBlockPos(), show));
     }
 
+    /**
+     * 1.21.1 的 Screen.render 第一步就会调用 renderBackground，随后才画控件。
+     * 因此面板与标题必须画在这里（即 super.renderBackground 之后）：这是唯一能同时满足
+     * "背景只画一遍"与"背景 → 面板/标题 → 控件"正确顺序的位置。
+     * 若把面板画到 render 里 super.render 之后，alpha 0xD0 的面板会盖住滑轮与开关按钮；
+     * 画到 super.render 之前则会被背景纹理压暗（即原来的 bug）。
+     */
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(graphics, mouseX, mouseY, partialTick);
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // 手动调用 renderBackground 已删除：super.render 自带背景，这里只保留唯一的一次背景绘制
+        super.renderBackground(graphics, mouseX, mouseY, partialTick);
         int left = (this.width - PANEL_WIDTH) / 2;
         int top = (this.height - PANEL_HEIGHT) / 2;
 
@@ -145,7 +153,11 @@ public class AcceleratorScreen extends Screen {
         graphics.drawCenteredString(this.font,
                 Component.translatable("gui.kunjinkao.accelerator.hint"),
                 this.width / 2, top + 172, 0xFF7777AA);
+    }
 
+    @Override
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // 背景与控件都由 super.render 负责（背景只画这一遍）；面板绘制见上面的 renderBackground
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 

@@ -20,8 +20,11 @@ public final class HudFunctionManager {
         activeFunction = function;
     }
 
+    /**
+     * HUD 开启时不预选任何功能：原先默认高亮的 SCAN 是无实现的死功能，已从枚举删除。
+     */
     public static void activateDefault() {
-        activate(HudFunction.SCAN);
+        deactivateAll();
     }
 
     public static void deactivate(HudFunction function) {

@@ -34,6 +34,23 @@ public final class HoneycombShieldLayer extends RenderLayer<AbstractClientPlayer
             {-1.5F, -0.8660254F}, {0.0F, -SQRT_THREE}, {1.5F, -0.8660254F}
     };
 
+    /**
+     * 单位圆上正六边形顶点的偏移量（已乘 CELL_RADIUS），下标为 2 * 顶点序号，
+     * 偶数位是 X、奇数位是 Y。预计算成常量表后，每帧不再分配数组、也不再调用 12 次 cos/sin。
+     * 计算方法与原逐帧实现逐字一致，半径与角度换算不变，视觉结果保持不变。
+     */
+    private static final float[] HEX_VERTEX_OFFSETS = createHexVertexOffsets();
+
+    private static float[] createHexVertexOffsets() {
+        float[] offsets = new float[12];
+        for (int i = 0; i < 6; i++) {
+            double angle = Math.toRadians(i * 60.0D);
+            offsets[i * 2] = (float) Math.cos(angle) * CELL_RADIUS;
+            offsets[i * 2 + 1] = (float) Math.sin(angle) * CELL_RADIUS;
+        }
+        return offsets;
+    }
+
     public HoneycombShieldLayer(RenderLayerParent<AbstractClientPlayer, PlayerModel<AbstractClientPlayer>> parent) {
         super(parent);
     }
@@ -111,20 +128,15 @@ public final class HoneycombShieldLayer extends RenderLayer<AbstractClientPlayer
 
     private static void renderHexagon(VertexConsumer lines, PoseStack.Pose pose,
                                       float centerX, float centerY, float opacity) {
-        float[] x = new float[6];
-        float[] y = new float[6];
-        for (int i = 0; i < 6; i++) {
-            double angle = Math.toRadians(i * 60.0D);
-            x[i] = centerX + (float) Math.cos(angle) * CELL_RADIUS;
-            y[i] = centerY + (float) Math.sin(angle) * CELL_RADIUS;
-        }
-
         Matrix4f matrix = pose.pose();
         // Lines deliberately keep the shield transparent while remaining visible at a distance.
         int lineAlpha = Math.round(210.0F * opacity);
         for (int i = 0; i < 6; i++) {
             int next = (i + 1) % 6;
-            line(lines, pose, matrix, x[i], y[i], x[next], y[next], lineAlpha);
+            line(lines, pose, matrix,
+                    centerX + HEX_VERTEX_OFFSETS[i * 2], centerY + HEX_VERTEX_OFFSETS[i * 2 + 1],
+                    centerX + HEX_VERTEX_OFFSETS[next * 2], centerY + HEX_VERTEX_OFFSETS[next * 2 + 1],
+                    lineAlpha);
         }
     }
 

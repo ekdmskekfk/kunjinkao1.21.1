@@ -14,6 +14,10 @@ import org.lwjgl.glfw.GLFW;
 /** 】键打开的管理员密码验证窗口。密码是否正确只由服务器决定。 */
 public final class AdminPasswordScreen extends Screen {
     private EditBox passwordBox;
+    /** 提交按钮：等待服务端回包期间禁用，防止反复提交。 */
+    private Button submitButton;
+    /** 是否已提交、正在等待服务端结果；等待期间忽略再次提交（包括回车键路径）。 */
+    private boolean awaitingResult;
 
     public AdminPasswordScreen() {
         super(Component.literal("管理员验证"));
@@ -29,14 +33,21 @@ public final class AdminPasswordScreen extends Screen {
         passwordBox.setMaxLength(64);
         passwordBox.setHint(Component.literal("输入管理员密码"));
         addRenderableWidget(passwordBox);
-        addRenderableWidget(Button.builder(Component.literal("验证"), button -> submit())
+        submitButton = addRenderableWidget(Button.builder(Component.literal("验证"), button -> submit())
                 .bounds(x + 70, y + 72, 80, 20).build());
         setInitialFocus(passwordBox);
     }
 
+    /**
+     * 1.21.1 的 Screen.render 第一步就会调用 renderBackground，随后才画控件。
+     * 因此面板与标题必须画在这里（即 super.renderBackground 之后），才能得到
+     * "背景只画一遍 → 面板 → 控件"的正确顺序：画到 super.render 之后会被 0xE0 的面板
+     * 盖住输入框与按钮，画到 super.render 之前又会被背景纹理压暗（原 bug）。
+     */
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        renderBackground(graphics, mouseX, mouseY, partialTick);
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // 不再手动调用 renderBackground：背景由 super.render 内部负责，只保留这一次绘制
+        super.renderBackground(graphics, mouseX, mouseY, partialTick);
         int panelWidth = 220;
         int panelHeight = 105;
         int x = (width - panelWidth) / 2;
@@ -46,6 +57,11 @@ public final class AdminPasswordScreen extends Screen {
         graphics.fill(x, y + panelHeight - 1, x + panelWidth, y + panelHeight, 0xFF57CFFF);
         graphics.drawCenteredString(font, title, width / 2, y + 16, 0xFFE9FBFF);
         graphics.drawString(font, "密码", x + 20, y + 30, 0xFF8FEAFF);
+    }
+
+    @Override
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // 背景与控件都由 super.render 负责；密码面板见上面的 renderBackground
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 
@@ -62,11 +78,31 @@ public final class AdminPasswordScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
+    /**
+     * 提交后立即清空输入框并禁用按钮：明文密码不再停留在屏幕上，
+     * 等待回包期间也无法反复提交（服务端某些分支不回包时尤其重要）。
+     */
     private void submit() {
-        if (passwordBox == null) {
+        if (passwordBox == null || awaitingResult) {
             return;
         }
         NetworkHandler.sendToServer(new SubmitAdminPasswordPayload(passwordBox.getValue()));
+        passwordBox.setValue("");
+        awaitingResult = true;
+        if (submitButton != null) {
+            submitButton.active = false;
+        }
+    }
+
+    /** 收到服务端结果（成功或失败）后恢复提交能力；成功时界面本身会被关闭。 */
+    public void onResult() {
+        awaitingResult = false;
+        if (submitButton != null) {
+            submitButton.active = true;
+        }
+        if (passwordBox != null) {
+            passwordBox.setValue("");
+        }
     }
 
     @Override

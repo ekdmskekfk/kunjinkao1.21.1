@@ -1,5 +1,6 @@
 package dev.modmind.kunjinkao.client.hud;
 
+import dev.modmind.kunjinkao.client.ClientHudState;
 import dev.modmind.kunjinkao.client.function.HudFunction;
 import dev.modmind.kunjinkao.client.function.HudFunctionManager;
 import dev.modmind.kunjinkao.client.KunJinKaoKeyBindings;
@@ -70,6 +71,19 @@ public final class HudScreen extends Screen {
         // 仍由服务端白名单链路确认关闭，客户端不直接伪造 HUD 状态。
         NetworkHandler.sendToServer(new ToggleTacticalHudPayload(false));
         return true;
+    }
+
+    /**
+     * ESC 关闭界面时必须同步关闭 HUD 状态：否则 ClientHudState 仍认为 HUD 处于开启状态，
+     * 功能栏会以非交互方式继续绘制（可见不可点），且下次按切换键会被当成"再次开启"。
+     * 这里同时按既有链路通知服务端，避免客户端与服务端的开关状态不一致。
+     */
+    @Override
+    public void onClose() {
+        ClientHudState.disable();
+        HudFunctionManager.deactivateAll();
+        NetworkHandler.sendToServer(new ToggleTacticalHudPayload(false));
+        super.onClose();
     }
 
     @Override
