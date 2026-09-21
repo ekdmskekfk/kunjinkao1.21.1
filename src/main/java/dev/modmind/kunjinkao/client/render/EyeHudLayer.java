@@ -102,8 +102,6 @@ public final class EyeHudLayer extends RenderLayer<AbstractClientPlayer, PlayerM
                 SCREEN_CENTER_X + halfWidth, SCREEN_CENTER_Y + halfHeight, 125, 222, 255, 88, false);
         colorQuad(consumer, matrix, SCREEN_CENTER_X - halfWidth, SCREEN_CENTER_Y - halfHeight, SCREEN_Z + 0.001F,
                 SCREEN_CENTER_X + halfWidth, SCREEN_CENTER_Y + halfHeight, 125, 222, 255, 88, true);
-
-        // 两根白色支架连接屏幕和命令方块的内侧。
     }
 
     /** 使用原版白色混凝土的立体方杆，保证支架在所有渲染设置下均清晰可见。 */
@@ -111,18 +109,6 @@ public final class EyeHudLayer extends RenderLayer<AbstractClientPlayer, PlayerM
         // 两组弯曲支架：从屏幕右缘折弯，最后插入命令方块的前面。
         renderSupportRod(poseStack, buffer, 0.205F, -0.1725F, -0.375F, 0.100F, 0.0F);
         renderSupportRod(poseStack, buffer, 0.205F, -0.1025F, -0.375F, 0.100F, 0.0F);
-    }
-
-    private static void renderCurvedSupport(PoseStack poseStack, MultiBufferSource buffer, boolean upper) {
-        if (upper) {
-            renderSupportRod(poseStack, buffer, 0.205F, -0.2775F, -0.415F, 0.050F, -66.0F);
-            renderSupportRod(poseStack, buffer, 0.235F, -0.320F, -0.415F, 0.057F, -45.0F);
-            renderSupportRod(poseStack, buffer, 0.2825F, -0.340F, -0.415F, 0.060F, 0.0F);
-            return;
-        }
-        renderSupportRod(poseStack, buffer, 0.2075F, -0.195F, -0.415F, 0.056F, -63.0F);
-        renderSupportRod(poseStack, buffer, 0.2375F, -0.240F, -0.415F, 0.053F, -49.0F);
-        renderSupportRod(poseStack, buffer, 0.2825F, -0.260F, -0.415F, 0.060F, 0.0F);
     }
 
     private static void renderSupportRod(PoseStack poseStack, MultiBufferSource buffer,
@@ -136,15 +122,6 @@ public final class EyeHudLayer extends RenderLayer<AbstractClientPlayer, PlayerM
         Minecraft.getInstance().getBlockRenderer().renderSingleBlock(WHITE_SUPPORT_STATE, poseStack, buffer,
                 LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
         poseStack.popPose();
-    }
-
-    private static void brace(VertexConsumer consumer, Matrix4f matrix,
-                              float x1, float y1, float z1, float x2, float y2, float z2) {
-        float thickness = 0.026F;
-        consumer.addVertex(matrix, x1 - thickness, y1, z1).setColor(244, 251, 255, 235);
-        consumer.addVertex(matrix, x1 + thickness, y1, z1).setColor(244, 251, 255, 235);
-        consumer.addVertex(matrix, x2 + thickness, y2, z2).setColor(244, 251, 255, 235);
-        consumer.addVertex(matrix, x2 - thickness, y2, z2).setColor(244, 251, 255, 235);
     }
 
     private static void colorQuad(VertexConsumer consumer, Matrix4f matrix,

@@ -1,10 +1,5 @@
 package dev.modmind.kunjinkao;
 
-import net.minecraft.core.particles.DustParticleOptions;
-import net.minecraft.core.particles.ParticleOptions;
-import net.minecraft.core.particles.ParticleTypes;
-import org.joml.Vector3f;
-
 /**
  * 覆写·断未「五主题异象」主题数据表（对应 docs/overwrite_themes.md）。
  * 仅供数据与逻辑使用，不触碰任何客户端渲染类型，服务端可安全引用。
@@ -13,9 +8,6 @@ import org.joml.Vector3f;
 public final class KunJinKaoTheme {
 
     public static final int COUNT = 5;
-    public static final int PHASE_ONE = 0;
-    public static final int PHASE_TWO = 1;
-    public static final int PHASE_THREE = 2;
 
     public record ThemeEntry(
             int id,
@@ -133,19 +125,6 @@ public final class KunJinKaoTheme {
         return get(theme).endText();
     }
 
-    public static int color(int theme, int phase) {
-        ThemeEntry entry = get(theme);
-        return switch (phase) {
-            case PHASE_TWO -> entry.phase2Color();
-            case PHASE_THREE -> entry.phase3Color();
-            default -> entry.phase1Color();
-        };
-    }
-
-    public static float[] tint(int theme) {
-        return get(theme).tint();
-    }
-
     /**
      * 阶段二可见日志行数。elapsedTicks 为阶段二内的进度（0 起步，每 tick +1）。
      * 行 i 在累计间隔不超过当前进度时显示（行 0 立即显示）。
@@ -167,17 +146,5 @@ public final class KunJinKaoTheme {
         return Math.max(1, Math.min(logs.length, lines));
     }
 
-    /**
-     * 服务端覆写/断未粒子的主题对应类型（docs/overwrite_themes.md 主题索引总览）。
-     * 主题 4 使用蓝色调色尘粒子（ENTITY_EFFECT 需额外载荷，Dust 为安全等价实现）。
-     */
-    public static ParticleOptions particle(int theme) {
-        return switch (get(theme).id()) {
-            case 1 -> ParticleTypes.CLOUD;
-            case 2 -> ParticleTypes.SOUL_FIRE_FLAME;
-            case 3 -> ParticleTypes.SMOKE;
-            case 4 -> new DustParticleOptions(new Vector3f(0.25F, 0.55F, 1.0F), 1.0F);
-            default -> ParticleTypes.END_ROD;
-        };
-    }
+
 }

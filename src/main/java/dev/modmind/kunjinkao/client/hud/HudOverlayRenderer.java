@@ -11,12 +11,12 @@ import net.minecraft.network.chat.Component;
 public final class HudOverlayRenderer {
 
     /** 只保留真正有实现的功能：SCAN / TARGET_LOCK 是死功能（点击仅改高亮），已从栏位与命中检测中移除。 */
-    private static final HudFunctionButton[] BUTTONS = {
-            new HudFunctionButton(HudFunction.ENTITY_INFO),
-            new HudFunctionButton(HudFunction.NIGHT_VISION),
-            new HudFunctionButton(HudFunction.TRUE_INVISIBILITY),
-            new HudFunctionButton(HudFunction.MAGNET),
-            new HudFunctionButton(HudFunction.EXCLUSION_LIST)
+    private static final HudFunction[] BUTTONS = {
+            HudFunction.ENTITY_INFO,
+            HudFunction.NIGHT_VISION,
+            HudFunction.TRUE_INVISIBILITY,
+            HudFunction.MAGNET,
+            HudFunction.EXCLUSION_LIST
     };
     private static final int MARGIN = 8;
     private static final int WIDTH = 112;
@@ -47,9 +47,9 @@ public final class HudOverlayRenderer {
         float progress = ease(ClientHudState.getAnimationProgress());
         int x = menuX(progress);
         int y = menuY(guiHeight);
-        for (HudFunctionButton button : BUTTONS) {
+        for (HudFunction function : BUTTONS) {
             if (mouseX >= x && mouseX < x + WIDTH && mouseY >= y && mouseY < y + HEIGHT) {
-                return button.function();
+                return function;
             }
             y += HEIGHT + GAP;
         }
@@ -62,9 +62,9 @@ public final class HudOverlayRenderer {
         int x = menuX(progress);
         int y = Math.max(MARGIN, (guiHeight - totalHeight) / 2);
 
-        for (HudFunctionButton button : BUTTONS) {
+        for (HudFunction function : BUTTONS) {
             boolean hovered = mouseX >= x && mouseX < x + WIDTH && mouseY >= y && mouseY < y + HEIGHT;
-            renderButton(graphics, button, x, y, progress, hovered);
+            renderButton(graphics, function, x, y, progress, hovered);
             y += HEIGHT + GAP;
         }
     }
@@ -78,9 +78,9 @@ public final class HudOverlayRenderer {
         return Math.max(MARGIN, (guiHeight - totalHeight) / 2);
     }
 
-    private static void renderButton(GuiGraphics graphics, HudFunctionButton button, int x, int y,
+    private static void renderButton(GuiGraphics graphics, HudFunction function, int x, int y,
                                      float progress, boolean hovered) {
-        boolean active = HudFunctionManager.isActive(button.function());
+        boolean active = HudFunctionManager.isActive(function);
         int alpha = Math.round((active ? 150 : hovered ? 128 : 84) * progress);
         int borderAlpha = Math.round((active ? 240 : hovered ? 220 : 160) * progress);
         int background = (alpha << 24) | (active ? 0x0D5270 : hovered ? 0x0B3F59 : 0x08283A);
@@ -95,8 +95,8 @@ public final class HudOverlayRenderer {
         Minecraft minecraft = Minecraft.getInstance();
         int textAlpha = Math.round(255 * progress);
         int textColor = (textAlpha << 24) | (active || hovered ? 0xE9FBFF : 0x8FEAFF);
-        graphics.drawString(minecraft.font, button.function().id(), x + 8, y + 9, textColor, false);
-        graphics.drawString(minecraft.font, Component.translatable(button.function().translationKey()), x + 31, y + 9, textColor, false);
+        graphics.drawString(minecraft.font, function.id(), x + 8, y + 9, textColor, false);
+        graphics.drawString(minecraft.font, Component.translatable(function.translationKey()), x + 31, y + 9, textColor, false);
     }
 
     private static float ease(float value) {

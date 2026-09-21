@@ -12,8 +12,6 @@
   "key.kunjinkao.toggle_overwrite": "切换覆写流程",
   "key.kunjinkao.cycle_theme": "切换异象主题",
   "key.kunjinkao.toggle_hud": "切换战术 HUD",
-  "hud.kunjinkao.function.scan": "扫描",
-  "hud.kunjinkao.function.target_lock": "锁定",
   "hud.kunjinkao.function.entity_info": "生物",
   "hud.kunjinkao.function.night_vision": "视觉",
   "screen.kunjinkao.tactical_hud": "战术 HUD",

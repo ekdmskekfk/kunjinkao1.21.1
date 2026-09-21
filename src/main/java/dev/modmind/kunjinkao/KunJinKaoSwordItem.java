@@ -11,7 +11,6 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -249,40 +248,37 @@ public class KunJinKaoSwordItem extends SwordItem {
         }
         tooltipComponents.add(Component.empty());
         tooltipComponents.add(Component.translatable("item.modifiers.mainhand").withStyle(ChatFormatting.GRAY));
-        MutableComponent damageLine = Component.literal("");
-        damageLine.append(Component.literal("∞"));
-        damageLine.append(Component.literal(" 攻击伤害").withStyle(ChatFormatting.DARK_GREEN));
-        tooltipComponents.add(damageLine);
-        MutableComponent speedLine = Component.literal("+2.0").withStyle(ChatFormatting.DARK_GREEN);
-        speedLine.append(Component.literal(" 攻击速度").withStyle(ChatFormatting.DARK_GREEN));
-        tooltipComponents.add(speedLine);
+        tooltipComponents.add(Component.literal("∞ ")
+                .append(Component.translatable("tooltip.kunjinkao.kun_jin_kao.attack_damage").withStyle(ChatFormatting.DARK_GREEN)));
+        tooltipComponents.add(Component.literal("+2.0 ")
+                .append(Component.translatable("tooltip.kunjinkao.kun_jin_kao.attack_speed").withStyle(ChatFormatting.DARK_GREEN)));
         tooltipComponents.add(Component.empty());
-        tooltipComponents.add(Component.literal("上古代码洪流中遗落的碎片所铸，").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal("剑身无锋，却刻满流动的乱码铭文。").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal("此剑同时承载两种互斥的法则：").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_1").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_2").withStyle(ChatFormatting.GRAY));
         tooltipComponents.add(Component.empty());
-        tooltipComponents.add(Component.literal("覆写 —— 强制修改对手在“世界系统”中的底层属性。").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal("防御、速度、抗性、乃至“存在”本身，").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal("在剑锋触及的瞬间，全部被覆盖成剑主定义的数值。").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_3").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_4").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_5").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_6").withStyle(ChatFormatting.GRAY));
         tooltipComponents.add(Component.empty());
-        tooltipComponents.add(Component.literal("断未 —— 追加一击，不伤实体，只清除目标的“定义”。").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal("你不是被削弱、被封印、被击败，").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal("你只是变成系统无法识别的“未定义项”，").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal("系统会因无法处理你而自行将你忽略、遗忘、清零。").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_7").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_8").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_9").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_10").withStyle(ChatFormatting.GRAY));
         tooltipComponents.add(Component.empty());
-        tooltipComponents.add(Component.literal("敌人的苦修、装备、Buff，在覆写面前").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal("只是一行可被 Ctrl+C 覆盖的文本；").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal("敌人引以为傲的底牌，在断未之后连“被记住”的资格都被剥夺。").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal("对手不是在对抗一个剑客，").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal("而是在对抗一个手握“编辑世界源代码权限”的疯子。").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_11").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_12").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_13").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_14").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_15").withStyle(ChatFormatting.GRAY));
         tooltipComponents.add(Component.empty());
-        tooltipComponents.add(Component.literal("覆写流程：").withStyle(ChatFormatting.DARK_GRAY)
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.overwrite_state").withStyle(ChatFormatting.DARK_GRAY)
                 .append(isOverwriteEnabled(stack)
-                        ? Component.literal("开启（无条件覆写+断未）").withStyle(ChatFormatting.DARK_GREEN)
-                        : Component.literal("关闭（瞬杀）").withStyle(ChatFormatting.DARK_RED)));
-        tooltipComponents.add(Component.literal("异象主题：").withStyle(ChatFormatting.DARK_GRAY)
+                        ? Component.translatable("tooltip.kunjinkao.kun_jin_kao.overwrite_on").withStyle(ChatFormatting.DARK_GREEN)
+                        : Component.translatable("tooltip.kunjinkao.kun_jin_kao.overwrite_off").withStyle(ChatFormatting.DARK_RED)));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.theme").withStyle(ChatFormatting.DARK_GRAY)
                 .append(Component.literal(KunJinKaoTheme.displayName(getTheme(stack))).withStyle(ChatFormatting.LIGHT_PURPLE)));
-        tooltipComponents.add(Component.literal("按键 P 循环切换主题").withStyle(ChatFormatting.DARK_GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.theme_hint").withStyle(ChatFormatting.DARK_GRAY));
     }
 
     @Override
@@ -424,12 +420,12 @@ public class KunJinKaoSwordItem extends SwordItem {
         int newMode = (currentMode + 1) % 3;
         setLootingMode(stack, newMode);
 
-        String modeText = switch (newMode) {
-            case 1 -> "§6抢夺 25 级";
-            case 2 -> "§6抢夺 50 级";
-            default -> "§7无抢夺";
+        Component modeText = switch (newMode) {
+            case 1 -> Component.translatable("message.kunjinkao.looting_mode_25");
+            case 2 -> Component.translatable("message.kunjinkao.looting_mode_50");
+            default -> Component.translatable("message.kunjinkao.looting_mode_none");
         };
-        player.displayClientMessage(Component.literal("§e覆写·断未 - 当前模式: " + modeText), true);
+        player.displayClientMessage(Component.translatable("message.kunjinkao.looting_mode_current", modeText), true);
         return InteractionResultHolder.consume(stack);
     }
 

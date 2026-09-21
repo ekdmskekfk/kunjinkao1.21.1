@@ -17,8 +17,6 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 
-import java.util.List;
-
 public class SwordRegistry {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(KunJinKaoEntry.MOD_ID);
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, KunJinKaoEntry.MOD_ID);
@@ -27,18 +25,6 @@ public class SwordRegistry {
 
     public static final DeferredItem<Item> KUN_JIN_KAO_SWORD = ITEMS.register("kun_jin_kao",
         () -> new KunJinKaoSwordItem(Tiers.DIAMOND, new Item.Properties())
-    );
-
-    /** 仅供客户端拔剑编译动画使用，不加入创造模式物品栏。 */
-    public static final List<DeferredItem<Item>> KUN_JIN_KAO_COMPILE_STAGES = List.of(
-            ITEMS.register("kun_jin_kao_compile_0", () -> new Item(new Item.Properties())),
-            ITEMS.register("kun_jin_kao_compile_1", () -> new Item(new Item.Properties())),
-            ITEMS.register("kun_jin_kao_compile_2", () -> new Item(new Item.Properties())),
-            ITEMS.register("kun_jin_kao_compile_3", () -> new Item(new Item.Properties())),
-            ITEMS.register("kun_jin_kao_compile_4", () -> new Item(new Item.Properties())),
-            ITEMS.register("kun_jin_kao_compile_5", () -> new Item(new Item.Properties())),
-            ITEMS.register("kun_jin_kao_compile_6", () -> new Item(new Item.Properties())),
-            ITEMS.register("kun_jin_kao_compile_7", () -> new Item(new Item.Properties()))
     );
 
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<AdminSwordRecipe>> ADMIN_SWORD_RECIPE =

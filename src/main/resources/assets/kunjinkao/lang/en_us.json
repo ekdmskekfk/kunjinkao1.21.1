@@ -6,8 +6,6 @@
   "key.kunjinkao.toggle_overwrite": "Toggle Overwrite Flow",
   "key.kunjinkao.cycle_theme": "Cycle Anomaly Theme",
   "key.kunjinkao.toggle_hud": "Toggle Tactical HUD",
-  "hud.kunjinkao.function.scan": "Scan",
-  "hud.kunjinkao.function.target_lock": "Target Lock",
   "hud.kunjinkao.function.entity_info": "Entities",
   "hud.kunjinkao.function.night_vision": "Vision",
   "hud.kunjinkao.function.true_invisibility": "True Invisibility",
