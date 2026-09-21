@@ -45,6 +45,27 @@ public final class PasswordAdminSavedData extends SavedData {
         }
     }
 
+    /**
+     * 撤销一名玩家的管理员身份。
+     * <p>
+     * 改配置里的密码**不会**影响已经写入存档的 UUID，所以必须有一条显式的回收路径
+     * （由 {@code /kunjinkao-admin revoke} 调用），否则误授权或密码泄露后无法补救。
+     *
+     * @return true 表示该玩家原本在名单里、现已移除
+     */
+    public boolean revoke(UUID playerUuid) {
+        if (authorizedUuids.remove(playerUuid)) {
+            setDirty();
+            return true;
+        }
+        return false;
+    }
+
+    /** 只读快照，供管理命令列出当前管理员。 */
+    public Set<UUID> snapshot() {
+        return Set.copyOf(authorizedUuids);
+    }
+
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         ListTag entries = new ListTag();

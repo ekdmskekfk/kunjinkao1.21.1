@@ -2,6 +2,7 @@ package dev.modmind.kunjinkao;
 
 import dev.modmind.kunjinkao.config.AdminToolConfig;
 import dev.modmind.kunjinkao.event.AdminAdventureSwordGrantHandler;
+import dev.modmind.kunjinkao.event.AdminCommandHandler;
 import dev.modmind.kunjinkao.event.AdminEyeSyncHandler;
 import dev.modmind.kunjinkao.event.AdminSwordCraftingHandler;
 import dev.modmind.kunjinkao.event.CommandProtectedSwordHandler;
@@ -54,6 +55,7 @@ public final class KunJinKaoEntry {
         NeoForge.EVENT_BUS.register(AdminSwordCraftingHandler.class);
         NeoForge.EVENT_BUS.register(CommandProtectedSwordHandler.class);
         NeoForge.EVENT_BUS.register(AdminEyeSyncHandler.class);
+        NeoForge.EVENT_BUS.register(AdminCommandHandler.class);
 
 
         System.out.println("[Kunjinkao] NeoForge 1.21.1 锟斤拷烫烫烫 initialized");
