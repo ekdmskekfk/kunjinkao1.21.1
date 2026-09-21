@@ -18,6 +18,11 @@ public final class AdminPasswordScreen extends Screen {
     private Button submitButton;
     /** 是否已提交、正在等待服务端结果；等待期间忽略再次提交（包括回车键路径）。 */
     private boolean awaitingResult;
+    /** 服务端迟迟不回包时的等待 tick 数（100 tick = 5 秒）。 */
+    private static final int RESULT_TIMEOUT_TICKS = 100;
+    private int awaitingTicks;
+    /** 超时提示；null 表示当前没有提示。 */
+    private Component hint;
 
     public AdminPasswordScreen() {
         super(Component.literal("管理员验证"));
@@ -57,6 +62,23 @@ public final class AdminPasswordScreen extends Screen {
         graphics.fill(x, y + panelHeight - 1, x + panelWidth, y + panelHeight, 0xFF57CFFF);
         graphics.drawCenteredString(font, title, width / 2, y + 16, 0xFFE9FBFF);
         graphics.drawString(font, "密码", x + 20, y + 30, 0xFF8FEAFF);
+        if (hint != null) {
+            // 提示画在面板下方：面板 105 高、按钮底边在 y+92，塞进面板会挤到按钮
+            graphics.drawCenteredString(font, hint, width / 2, y + panelHeight + 8, 0xFFFFD166);
+        }
+    }
+
+    /**
+     * 超时兜底：服务端在某些分支或卡顿时可能不回包，此时提交按钮会永久禁用、回车也无效，
+     * 界面就变成了死路。等待超过 {@link #RESULT_TIMEOUT_TICKS} 后重新放开提交并给出提示。
+     */
+    @Override
+    public void tick() {
+        super.tick();
+        if (awaitingResult && ++awaitingTicks > RESULT_TIMEOUT_TICKS) {
+            onResult();
+            hint = Component.translatable("message.kunjinkao.admin_password_timeout");
+        }
     }
 
     @Override
@@ -89,14 +111,20 @@ public final class AdminPasswordScreen extends Screen {
         NetworkHandler.sendToServer(new SubmitAdminPasswordPayload(passwordBox.getValue()));
         passwordBox.setValue("");
         awaitingResult = true;
+        awaitingTicks = 0;
+        hint = null;
         if (submitButton != null) {
             submitButton.active = false;
         }
     }
 
-    /** 收到服务端结果（成功或失败）后恢复提交能力；成功时界面本身会被关闭。 */
+    /**
+     * 收到服务端结果（成功或失败）后恢复提交能力；成功时界面本身会被关闭。
+     * 也是 {@link #tick()} 里的超时恢复路径 —— 因此它不再是零调用方法。
+     */
     public void onResult() {
         awaitingResult = false;
+        awaitingTicks = 0;
         if (submitButton != null) {
             submitButton.active = true;
         }
