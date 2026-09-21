@@ -458,15 +458,20 @@ public class KunJinKaoOverwriteHandler {
      * 从攻击者主手/副手查找覆写·断未剑；未找到返回 EMPTY。
      */
     private static ItemStack findSword(LivingEntity holder) {
+        // 这里只排除"未验证的合成成品"（pending），伪装的剑仍要交给 handleSwordAttack 走原版分支，
+        // 否则伪装玩法会失效。
         ItemStack main = holder.getMainHandItem();
-        if (!main.isEmpty() && main.getItem() instanceof KunJinKaoSwordItem) {
+        if (isOverwriteSword(main)) {
             return main;
         }
         ItemStack off = holder.getOffhandItem();
-        if (!off.isEmpty() && off.getItem() instanceof KunJinKaoSwordItem) {
-            return off;
-        }
-        return ItemStack.EMPTY;
+        return isOverwriteSword(off) ? off : ItemStack.EMPTY;
+    }
+
+    private static boolean isOverwriteSword(ItemStack stack) {
+        return !stack.isEmpty()
+                && stack.getItem() instanceof KunJinKaoSwordItem
+                && !KunJinKaoSwordItem.isPendingCraft(stack);
     }
 
     /**

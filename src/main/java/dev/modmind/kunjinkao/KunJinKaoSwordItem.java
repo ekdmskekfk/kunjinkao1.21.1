@@ -220,6 +220,23 @@ public class KunJinKaoSwordItem extends SwordItem {
         writeDataTag(stack, tag);
     }
 
+    /**
+     * 剑是否处于"惰性"状态：伪装中，或仍是未经验证的合成成品（pending 标记）。
+     * <p>
+     * pending 剑必须在能力入口就被拒绝，不能只靠 {@code inventoryTick} 事后销毁 ——
+     * 对抗性复核指出"捡起 → 下一 tick 销毁"之间存在窗口（ItemEntity 不 tick，
+     * 同刻丢回地上还能保住标记），期间 pending 剑是一把满配武器。
+     * 惰性的剑在这里一律退化成普通剑行为（等同于伪装分支的处理）。
+     */
+    public static boolean isInert(ItemStack stack) {
+        return isDisguised(stack) || AdminSwordRecipe.isPendingAdminSword(stack);
+    }
+
+    /** 是否仍是"未验证的合成成品"（Crafter 等绕过 ItemCraftedEvent 的路径留下的标记）。 */
+    public static boolean isPendingCraft(ItemStack stack) {
+        return AdminSwordRecipe.isPendingAdminSword(stack);
+    }
+
     private static int clampMiningSpeed(int speed) {
         return Math.max(MIN_MINING_SPEED, Math.min(MAX_MINING_SPEED, speed));
     }
@@ -255,8 +272,8 @@ public class KunJinKaoSwordItem extends SwordItem {
         tooltipComponents.add(Component.empty());
         tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_1").withStyle(ChatFormatting.GRAY));
         tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_2").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.empty());
         tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_3").withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.empty());
         tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_4").withStyle(ChatFormatting.GRAY));
         tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_5").withStyle(ChatFormatting.GRAY));
         tooltipComponents.add(Component.translatable("tooltip.kunjinkao.kun_jin_kao.line_6").withStyle(ChatFormatting.GRAY));
@@ -284,7 +301,7 @@ public class KunJinKaoSwordItem extends SwordItem {
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
-        if (isDisguised(stack)) {
+        if (isInert(stack)) {
             return super.use(level, player, hand);
         }
         if (player.isShiftKeyDown()) {
@@ -323,7 +340,7 @@ public class KunJinKaoSwordItem extends SwordItem {
 
     @Override
     public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
-        if (isDisguised(stack)) {
+        if (isInert(stack)) {
             return super.hurtEnemy(stack, target, attacker);
         }
         if (target instanceof Player) {
@@ -333,7 +350,7 @@ public class KunJinKaoSwordItem extends SwordItem {
                 return super.hurtEnemy(stack, target, attacker);
             }
             if (!attacker.level().isClientSide()) {
-                LOGGER.info("[HURT-ENEMY] player target -> instant kill target={}", target.getName().getString());
+                LOGGER.debug("[HURT-ENEMY] player target -> instant kill target={}", target.getName().getString());
                 applyExecutionMark(target, stack);
                 target.kill();
             }
@@ -344,11 +361,11 @@ public class KunJinKaoSwordItem extends SwordItem {
         }
         if (!attacker.level().isClientSide()) {
             if (isOverwriteEnabled(stack)) {
-                LOGGER.info("[HURT-ENEMY] overwriteEnabled=true -> startOverwrite target={}", target.getType());
+                LOGGER.debug("[HURT-ENEMY] overwriteEnabled=true -> startOverwrite target={}", target.getType());
                 KunJinKaoOverwriteHandler.startOverwrite(attacker, target, stack, (ServerLevel) attacker.level());
                 return true;
             }
-            LOGGER.info("[HURT-ENEMY] overwriteEnabled=false -> instant kill target={}", target.getType());
+            LOGGER.debug("[HURT-ENEMY] overwriteEnabled=false -> instant kill target={}", target.getType());
             applyKunJinKaoMark(target, stack);
             target.kill();
         }
@@ -360,7 +377,7 @@ public class KunJinKaoSwordItem extends SwordItem {
 
     @Override
     public float getDestroySpeed(ItemStack stack, BlockState state) {
-        if (isDisguised(stack)) {
+        if (isInert(stack)) {
             return super.getDestroySpeed(stack, state);
         }
         return getMiningSpeed(stack);
@@ -368,7 +385,7 @@ public class KunJinKaoSwordItem extends SwordItem {
 
     @Override
     public boolean isCorrectToolForDrops(ItemStack stack, BlockState state) {
-        if (isDisguised(stack)) {
+        if (isInert(stack)) {
             return super.isCorrectToolForDrops(stack, state);
         }
         return true;
