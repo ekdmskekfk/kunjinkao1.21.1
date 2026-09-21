@@ -29,12 +29,13 @@
 | 客户端 State 无生命周期清理（跨存档串味） | ✅ 6 个 State 补 reset + `LoggingOut` 统一清理 | `bb3e065` `1e3eb11` |
 | HUD 功能开关不在清理路径 | ✅ | `b8adea7` |
 | 列表界面：坐标列越界、过滤归零滚动、滚轮吞事件、刷新重建界面 | ✅ | `bb3e065` |
+| 密码界面在服务端不回包时按钮永久禁用（界面变死路） | ✅ 加 5 秒超时恢复，并使原来的死方法 `onResult()` 成为该路径入口 | `31fe114` |
 
 ## 三、P2（工程 / 性能 / 死代码 / 本地化）
 
 | 报告结论 | 状态 | 提交 |
 |---|---|---|
-| payload 样板膨胀（36 个里 22 个是克隆） | 🟡 **只合并形状完全相同的三组（36 → 21）**：剑设置 9→1、HUD 空载荷 5→1、HUD 状态回执 4→1；其余形状各异的包收益小、协议风险相同，未动 | 见 Batch 6 |
+| payload 样板膨胀（36 个里 22 个是克隆） | ✅ **只合并形状完全相同的三组（36 → 21）**：剑设置 9→1（`SwordSettingPayload`，id 0..8）、HUD 空载荷 5→1（`SimpleActionPayload`，id 0..4）、HUD 状态回执 4→1（`HudStatePayload`，id 0..3）；删除 18 个旧类，注册 36→21 条，`PROTOCOL_VERSION` 20→21；其余形状各异的包收益小、协议风险相同，未动。顺带为三个滑条加了发送节流（100ms 窗口 + 跨档补发） | `f839036` |
 | 热路径日志刷屏 / `System.out.println` | ✅ 命中与攻击路径降 debug，3 处 `System.out` 全部改 log4j | `d9f0bb4` `2eb035b` |
 | 死代码：钻石投射物整套 | ✅ 删除（实体类 + 注册 + 渲染器 + 死分支） | `24cba65` |
 | 死代码：8 个 compile 空物品、Theme 三个方法、`HudFunctionButton`、`EyeHudLayer.brace`、`NetworkHandler.modId()`、`OverwriteEffectPayload.terminalText/terminalLine` | ✅ | `350e8fa` `64aa4e5` |
@@ -49,13 +50,15 @@
 3. **限流与"密码错误"在客户端不可区分**：两者都回 `authorized=false`，管理员可能误判。改法要给 `AdminPasswordResultPayload` 加原因码（协议改动）。
 4. **加速方块面板的服务端拒绝不会回滚客户端本地状态**（超距/未授权时客户端显示已改、服务端未改，重开 GUI 才对齐）。
 5. **`ThemeEntry.tint` 访问器零调用**：删它会改变 record 形状，收益极低，保留。
-6. **`AdminPasswordScreen.onResult()` 是死方法**：回包路径由 `ClientPayloadHandlers` 直接关窗；只有"服务端完全不回包"时按钮会一直禁用（可按 ESC 关窗）。
+6. ~~`AdminPasswordScreen.onResult()` 是零调用死方法~~ → **已修**（`31fe114`）：现在由 `tick()` 的 5 秒超时路径调用，服务端不回包时按钮会自动恢复可用并提示。
 
 ## 五、验证方式
 
 - 每批改动均跑 `gradle build --offline`（含 `processResources`/`jar`），编译失败不提交。
 - 两次**对抗性复核**（逐条对照 `neoforge-21.1.118-sources.jar` 与字节码）：覆写持久化、Batch 1 安全修复 —— 后者的三处证伪（三个剑开关包无闸门、命令保护正则漏命名空间、`revoke` 不收回剑）已在本汇总的提交里修掉。
 - 发现并修正过一次"提交树编译不过"（并发代理的连带改动未跟上），此后以 HEAD 树为准复核。
+- **逐个提交验证**：把 `f9b1b98..HEAD` 的 **22 个提交依次检出到工作树并跑 `compileJava`**，结果 **22/22 全部通过（0 失败）** —— 即每个提交自身都是可编译的，不存在"中间提交坏掉、必须跳到后面才能构建"的情况。
+- 协议改动（payload 收敛）已做过专项自检：注册条数 21、三张 id 表与分发目标逐条核对、客户端按 stateId 的分派与原来四个 `applyXxx` 一一对应、18 个旧类名与旧 TYPE 资源名零残留（仅剩说明性注释）。
 
 ## 六、建议实机验证的项（静态审计无法覆盖）
 
