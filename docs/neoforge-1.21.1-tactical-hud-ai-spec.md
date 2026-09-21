@@ -76,6 +76,21 @@ admin_uuids = [
 3. `AuthService.isAuthorized(UUID)` 每次服务器处理请求时都读取当前配置值；不要把客户端提供的 UUID 当作授权依据。
 4. 仅配置修改后重启或按 NeoForge 配置重载事件生效即可；不要在客户端复制、同步或暴露白名单内容。
 
+### 实现现状（与本文档不同之处）
+
+上文（含「全局 UUID 白名单配置」一节）描述的是**最初的 UUID 白名单设计，已被取代**；当前实现见 `config/AdminToolConfig.java`、`config/PasswordAdminSavedData.java`、`event/AdminCommandHandler.java` 与 `docs/kunjinkao-admin.toml.example`。差异如下：
+
+| 项 | 本文档（旧设计） | 实现现状 |
+|---|---|---|
+| 配置文件名 | `config/tactical-hud-admin.toml` | `config/kunjinkao-admin.toml` |
+| 授权依据 | 配置里的 `admin_uuids` 列表（UUID 白名单） | 管理员密码（配置项 `["admin"] password`，比对用 `MessageDigest.isEqual`，空密码一律拒绝）；另有一个公开的默认密码，服务器上必须改掉 |
+| 授权记录位置 | 仅配置文件，改文件即改权限 | 当前存档的 `PasswordAdminSavedData`（写入主世界 `DataStorage` 的 UUID 集）——**换存档即失效；改配置里的密码不会收回已授权的 UUID** |
+| 授予 / 撤销 | 编辑 `admin_uuids` 后重载配置 | 游戏内命令 `/kunjinkao-admin list` / `/kunjinkao-admin grant <玩家>` / `/kunjinkao-admin revoke <玩家>`（另有客户端密码界面提交密码） |
+| 授权检查 | 读配置，无存档状态 | `AdminToolConfig.isAuthorized(UUID)`，每次服务端处理请求时读取存档 UUID 集；客户端提供的 UUID 一律不作为授权依据 |
+| 是否依赖 OP | 不依赖 OP，白名单是唯一条件 | 同样不依赖 OP；但撤销入口是命令（需要 OP 等级），且 1.21 的 Crafter 方块可绕过合成授权拿到剑，取证见 `docs/structure-report.md` §3.3 |
+
+`kunjinkao-admin.toml` 只保存密码，**不再有 `admin_uuids` 列表**：按本文旧设计去配置 `admin_uuids` 不会产生任何授权效果。本文档其余功能描述（HUD 状态机、实体管理、服务端复检等）仍然有效，但 C2S 载荷的类名与实现不同。
+
 ## H 键与 HUD 状态机
 
 ### 键位注册

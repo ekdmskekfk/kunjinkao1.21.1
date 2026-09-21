@@ -101,8 +101,19 @@ tasks.named('processResources', ProcessResources).configure {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 版本号回写是**可选**的：只有显式传 -PautoBump 时才把 gradle.properties 的
+// mod_version 改写成本次构建的版本（nextModVersion）。
+// 不传时版本号保持仓库里的值不动，工作区不会被每次 build 弄脏；jar 文件名与
+// jar 内 neoforge.mods.toml 的版本仍然一致（二者都取自 nextModVersion）。
+//   gradle build -PautoBump         构建并自增（本仓库的 gradlew 不可用，见结构报告 1.1）
+//   gradle build                    仅构建，不回写
+// ---------------------------------------------------------------------------
 tasks.named('build').configure {
     doLast {
+        if (!providers.gradleProperty('autoBump').isPresent()) {
+            return
+        }
         def propertiesFile = file('gradle.properties')
         propertiesFile.text = propertiesFile.getText('UTF-8').replaceFirst(
                 /(?m)^mod_version=.*/,
