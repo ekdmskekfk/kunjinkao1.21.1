@@ -5,6 +5,7 @@ import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 
@@ -15,6 +16,28 @@ public final class KunJinKaoOverwriteHudOverlay {
     private static final int OVERWRITE_MAX_TICKS = 40;
     private static final int PHASE_START_TICKS = 20;
 
+    /**
+     * 当前帧的部分 tick。
+     * <p>
+     * 实体坐标每 tick 才更新，直接取 {@code getX()} 会让文字比实体模型慢一帧、移动时抖动。
+     * 投影统一走 {@link #lerpX} / {@link #lerpY} / {@link #lerpZ} 插值到渲染时刻。
+     * 本类全是静态工具方法且只在渲染线程调用，所以用一个静态字段承载这一帧的值，
+     * 避免为了一个 float 改动所有渲染方法的签名。
+     */
+    private static float framePartialTick = 0.0F;
+
+    private static double lerpX(Entity entity) {
+        return Mth.lerp(framePartialTick, entity.xOld, lerpX(entity));
+    }
+
+    private static double lerpY(Entity entity) {
+        return Mth.lerp(framePartialTick, entity.yOld, lerpY(entity));
+    }
+
+    private static double lerpZ(Entity entity) {
+        return Mth.lerp(framePartialTick, entity.zOld, lerpZ(entity));
+    }
+
     private KunJinKaoOverwriteHudOverlay() {
     }
 
@@ -22,6 +45,11 @@ public final class KunJinKaoOverwriteHudOverlay {
         if (!KunJinKaoClientOverwriteEffects.isOverwriteActive()) {
             return;
         }
+        // 打开任意界面（背包、暂停、聊天）时不要把裂纹/黑条/文字画在界面之下。
+        if (Minecraft.getInstance().screen != null) {
+            return;
+        }
+        framePartialTick = partialTick;
 
         float intensity = Math.min(1.0F, KunJinKaoClientOverwriteEffects.getMaxRemainingTicks() / (float) OVERWRITE_MAX_TICKS);
 
@@ -100,8 +128,8 @@ public final class KunJinKaoOverwriteHudOverlay {
             charOffset += lines[i].length();
         }
 
-        double[] screenPos = projectToScreen(mc, entity.getX(),
-                entity.getY() + entity.getEyeHeight() + 0.45D, entity.getZ(), screenWidth, screenHeight);
+        double[] screenPos = projectToScreen(mc, lerpX(entity),
+                lerpY(entity) + entity.getEyeHeight() + 0.45D, lerpZ(entity), screenWidth, screenHeight);
         if (screenPos != null) {
             // 光标常亮，不做明暗交替
             guiGraphics.drawString(mc.font, "_",
@@ -127,8 +155,8 @@ public final class KunJinKaoOverwriteHudOverlay {
         double anchorX;
         double anchorY;
         if (entity != null) {
-            double[] screenPos = projectToScreen(mc, entity.getX(), entity.getY() + entity.getEyeHeight() + 0.35D,
-                    entity.getZ(), screenWidth, screenHeight);
+            double[] screenPos = projectToScreen(mc, lerpX(entity), lerpY(entity) + entity.getEyeHeight() + 0.35D,
+                    lerpZ(entity), screenWidth, screenHeight);
             if (screenPos == null) {
                 return;
             }
@@ -167,8 +195,8 @@ public final class KunJinKaoOverwriteHudOverlay {
         double anchorX = screenWidth / 2.0D;
         double anchorY = screenHeight / 2.0D - 80;
         if (entity != null) {
-            double[] screenPos = projectToScreen(mc, entity.getX(), entity.getY() + entity.getEyeHeight() + 0.6D,
-                    entity.getZ(), screenWidth, screenHeight);
+            double[] screenPos = projectToScreen(mc, lerpX(entity), lerpY(entity) + entity.getEyeHeight() + 0.6D,
+                    lerpZ(entity), screenWidth, screenHeight);
             if (screenPos != null) {
                 anchorX = screenPos[0];
                 anchorY = screenPos[1] - 44;
@@ -311,7 +339,8 @@ public final class KunJinKaoOverwriteHudOverlay {
             return null;
         }
 
-        double fov = 70.0D;
+        // 用玩家实际的 FOV：写死 70 会让所有非默认视角的玩家看到文字偏离目标，距离越远越明显。
+        double fov = mc.options.fov().get();
         double scale = (screenHeight / 2.0D) / Math.tan(Math.toRadians(fov) / 2.0D);
         double screenX = screenWidth / 2.0D + pitchX / pitchZ * scale;
         double screenY = screenHeight / 2.0D - pitchY / pitchZ * scale;
