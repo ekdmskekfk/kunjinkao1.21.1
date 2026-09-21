@@ -1,7 +1,6 @@
 package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
-import dev.modmind.kunjinkao.entity.DiamondProjectile;
 import dev.modmind.kunjinkao.network.HudShieldHitPayload;
 import dev.modmind.kunjinkao.network.NetworkHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoDeathEventHandler;
@@ -144,9 +143,7 @@ public class KunJinKaoProtectionHandler {
                 && hasSwordInInventory(player)) {
             sendHitShield(player, direct != null ? direct : attacker);
         }
-        if (direct instanceof DiamondProjectile) {
-            return;
-        }
+
         if (!(direct instanceof LivingEntity livingAttacker) || !isHoldingKunJinKaoSword(livingAttacker)) {
             // 非锟斤拷之剑来源：持剑玩家保持完全免疫。
             // 例外：该玩家已被剑打上处决标记时不能拦——target.kill() 用的 genericKill 没有来源实体，
