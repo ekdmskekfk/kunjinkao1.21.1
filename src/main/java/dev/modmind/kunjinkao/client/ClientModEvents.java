@@ -4,6 +4,7 @@ import dev.modmind.kunjinkao.AcceleratorRegistry;
 import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.SwordRegistry;
 import dev.modmind.kunjinkao.clientbridge.ClientHooks;
+import dev.modmind.kunjinkao.client.function.HudFunctionManager;
 import dev.modmind.kunjinkao.client.render.AcceleratorBlockEntityRenderer;
 import dev.modmind.kunjinkao.client.render.EyeHudLayer;
 import dev.modmind.kunjinkao.client.render.HoneycombShieldLayer;
@@ -123,6 +124,7 @@ public class ClientModEvents {
             RemoteSwordDrawVisualState.clear();
             KunJinKaoClientOverwriteEffects.reset();
             KunJinKaoClientSwordVisuals.clear();
+            HudFunctionManager.resetAll();
         }
     }
 }

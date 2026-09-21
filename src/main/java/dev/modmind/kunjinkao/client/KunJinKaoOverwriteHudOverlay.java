@@ -95,7 +95,7 @@ public final class KunJinKaoOverwriteHudOverlay {
     }
 
     /**
-     * 阶段一：左上角终端框，逐字输出主题 terminalText，目标头顶常亮光标。
+     * 阶段一：左上角终端框，逐字输出主题的开场文案（KunJinKaoTheme.stageOneText），目标头顶常亮光标。
      */
     private static void renderPhaseOne(GuiGraphics guiGraphics, Entity entity, int screenWidth, int screenHeight,
                                       int remaining, int theme) {

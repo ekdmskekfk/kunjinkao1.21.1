@@ -37,6 +37,19 @@ public final class HudFunctionManager {
         activeFunction = null;
     }
 
+    /**
+     * 全部归零（登出/切世界时调用）。
+     * <p>
+     * 三个开关是纯客户端的镜像值，登录后由服务端回包重新覆盖；但登出后若留着上次的值，
+     * HUD 重开时按钮会显示成"已启用"而服务端状态未必如此 —— 所以生命周期结束时一并清掉。
+     */
+    public static void resetAll() {
+        activeFunction = null;
+        nightVisionEnabled = false;
+        trueInvisibilityEnabled = false;
+        magnetEnabled = false;
+    }
+
     public static boolean isActive(HudFunction function) {
         return activeFunction == function
                 || (function == HudFunction.NIGHT_VISION && nightVisionEnabled)
