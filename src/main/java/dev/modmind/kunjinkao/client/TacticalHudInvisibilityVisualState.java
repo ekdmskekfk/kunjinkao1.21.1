@@ -23,4 +23,12 @@ public final class TacticalHudInvisibilityVisualState {
     public static boolean isTrueInvisible(UUID playerUuid) {
         return TRUE_INVISIBLE_PLAYERS.contains(playerUuid);
     }
+
+    /**
+     * 断线/退出世界时清空真隐形视觉集合：集合只会增/改不会减，
+     * 不清理会让上个存档里处于真隐形的 UUID 在新世界继续被当成隐形目标。
+     */
+    public static void reset() {
+        TRUE_INVISIBLE_PLAYERS.clear();
+    }
 }

@@ -37,6 +37,9 @@ public final class KunJinKaoClientOverwriteEffects {
     // 断未后目标位置的主题色 ? 残留标记（按目标实体 id 追踪，独立于已移除实体）
     private static final Map<Integer, ResidueMarker> RESIDUE_MARKERS = new HashMap<>();
 
+    // getActiveEntityIds() 是每 tick + 每帧的调用点，这里缓存不可变快照，仅在 id 集合变化时重建。
+    private static Set<Integer> activeIdCache;
+
     public record ResidueMarker(double x, double y, double z, int theme, int ageTicks) {
     }
 
@@ -53,6 +56,7 @@ public final class KunJinKaoClientOverwriteEffects {
         LAST_LINE_PLAYED.put(entityId, -1);
         RESIDUE_MARKERS.remove(entityId);
         fadeOutTicks = -1;
+        activeIdCache = null;
     }
 
     public static void update(int entityId, int ticks) {
@@ -74,6 +78,7 @@ public final class KunJinKaoClientOverwriteEffects {
         PLAYED_TERMINAL.remove(entityId);
         LAST_LINE_PLAYED.remove(entityId);
         RESIDUE_MARKERS.remove(entityId);
+        activeIdCache = null;
     }
 
     public static void endFlash(int entityId) {
@@ -109,6 +114,7 @@ public final class KunJinKaoClientOverwriteEffects {
         endMessageTicks = END_MESSAGE_TICKS;
         // 断未完成瞬间：屏幕中央偏下的灰色渐隐替代反馈，共 20 tick
         fadeOutTicks = 20;
+        activeIdCache = null;
     }
 
     /**
@@ -118,6 +124,7 @@ public final class KunJinKaoClientOverwriteEffects {
         REMAINING.put(entityId, Math.max(1, ticks));
         PHASE_TICKS.put(entityId, 0);
         PHASE_DETAIL.put(entityId, 0);
+        activeIdCache = null;
     }
 
     public static void tick() {
@@ -130,20 +137,54 @@ public final class KunJinKaoClientOverwriteEffects {
                 fadeOutTicks = -1;
             }
         }
+        int trackedBefore = REMAINING.size() + PHASE_TICKS.size();
         REMAINING.entrySet().removeIf(entry -> entry.getValue() <= 1);
         REMAINING.replaceAll((entityId, ticks) -> ticks - 1);
         PHASE_TICKS.replaceAll((entityId, ticks) -> ticks - 1);
         // 防泄漏：裁决状态最多保留 100 tick，避免目标异常消失后 HUD 永久残留
         PHASE_TICKS.entrySet().removeIf(entry -> entry.getValue() < -100);
+        if (trackedBefore != REMAINING.size() + PHASE_TICKS.size()) {
+            // 只有 id 集合真的变化时才让快照失效，避免"本 tick 什么都没过期"也重建一次。
+            activeIdCache = null;
+        }
         // 残留标记淡出计时
         RESIDUE_MARKERS.entrySet().removeIf(entry -> entry.getValue().ageTicks() >= RESIDUE_TICKS);
         RESIDUE_MARKERS.replaceAll((id, marker) -> new ResidueMarker(marker.x(), marker.y(), marker.z(), marker.theme(), marker.ageTicks() + 1));
     }
 
     public static Set<Integer> getActiveEntityIds() {
-        Set<Integer> ids = new HashSet<>(REMAINING.keySet());
-        ids.addAll(PHASE_TICKS.keySet());
-        return ids;
+        // 调用方（每 tick 的音效驱动与每帧的 HUD 覆盖层）只做只读遍历，因此这里返回缓存的
+        // 不可变快照：仅在内部集合变化时重建，避免每帧 new HashSet 的分配。
+        // 缓存是整体替换而不是原地修改，调用方遍历期间发生状态变化不会触发并发修改异常。
+        Set<Integer> cached = activeIdCache;
+        if (cached == null) {
+            Set<Integer> ids = new HashSet<>(REMAINING.keySet());
+            ids.addAll(PHASE_TICKS.keySet());
+            cached = Set.copyOf(ids);
+            activeIdCache = cached;
+        }
+        return cached;
+    }
+
+    /**
+     * 断线/退出世界时清空全部覆写演出状态。
+     * 残留标记存的是上个存档的绝对世界坐标与目标名，PHASE_DETAIL 更是没有衰减规则，
+     * 不清理会在新世界里继续绘制旧的断未残留（并持续泄漏）。
+     */
+    public static void reset() {
+        REMAINING.clear();
+        PHASE_TICKS.clear();
+        PHASE_DETAIL.clear();
+        THEME_BY_ENTITY.clear();
+        PLAYED_BEEP.clear();
+        PLAYED_TERMINAL.clear();
+        LAST_LINE_PLAYED.clear();
+        RESIDUE_MARKERS.clear();
+        endMessageTicks = 0;
+        fadeOutTicks = -1;
+        lastEndTheme = 0;
+        lastEndName = "目标";
+        activeIdCache = null;
     }
 
     public static int getRemainingTicks(int entityId) {

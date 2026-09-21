@@ -4,6 +4,7 @@ import com.mojang.math.Axis;
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.client.KunJinKaoClientSwordVisuals;
+import dev.modmind.kunjinkao.client.TacticalHudInvisibilityVisualState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.entity.EntityRenderer;
@@ -35,6 +36,14 @@ public final class KunJinKaoIdleDataRefreshHandler {
     public static void onRenderHand(RenderHandEvent event) {
         Player player = Minecraft.getInstance().player;
         if (player == null || player.level() == null) {
+            return;
+        }
+
+        // 真隐形时本处理器必须自己退出：TrueInvisibilityRenderHandler 虽然也会取消 RenderHandEvent，
+        // 但取消事件并不会阻止同一事件上的其它订阅者继续执行，而本处理器自绘的手臂不经过
+        // 原版手部渲染链路，会被照常画出来 —— 表现为"真隐形 + 编译伸手"同时成立时，
+        // 本地玩家仍然看到自己的手臂。这里只需一个静态集合查询。
+        if (TacticalHudInvisibilityVisualState.isTrueInvisible(player.getUUID())) {
             return;
         }
 

@@ -23,10 +23,18 @@ public final class RemoteSwordDrawVisualState {
         }
     }
 
+    /**
+     * 断线/退出世界时清空远端取剑动画计时。
+     * 计时以 level.getGameTime() 为基准，跨存档保留会与上个存档的起始 tick 进行比较。
+     */
+    public static void clear() {
+        ACTIVE.clear();
+    }
+
     public static void tick() {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null) {
-            ACTIVE.clear();
+            clear();
             return;
         }
         long now = minecraft.level.getGameTime();

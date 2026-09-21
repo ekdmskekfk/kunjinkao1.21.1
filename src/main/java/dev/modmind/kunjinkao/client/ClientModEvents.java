@@ -16,6 +16,7 @@ import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.client.renderer.entity.ThrownItemRenderer;
 import net.neoforged.api.distmarker.Dist;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
@@ -91,5 +92,35 @@ public class ClientModEvents {
         EyeHudLayer.addToPlayerRenderers(event);
         HoneycombShieldLayer.addToPlayerRenderers(event);
         KunJinKaoThirdPersonGrabLayer.addToPlayerRenderers(event);
+    }
+
+    /**
+     * 客户端静态状态的生命周期清理入口。
+     *
+     * <p>本模组的客户端状态全部是进程级 static 字段（State/Visual 工具类），断线、退出世界、
+     * 单机退回主菜单时都不会自动归零；而多处状态以 {@code level.getGameTime()} 或上个存档的
+     * UUID 集合为基准，跨存档串味会产生可见错误（例如 ShieldHitVisualState 的护盾定格）。
+     * 因此在这里统一清空，而不是让每个读取点各自兜底。</p>
+     *
+     * <p>NeoForge 21.1 的 {@code ClientPlayerNetworkEvent.LoggingOut} 挂在游戏总线
+     * （{@code NeoForge.EVENT_BUS}）上，而外层类的 {@code @EventBusSubscriber} 声明的是 MOD 总线，
+     * 所以单独用这个默认（GAME 总线）+ 客户端专用的嵌套订阅类来接收。</p>
+     */
+    @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, value = Dist.CLIENT)
+    public static final class ClientStateCleanup {
+
+        private ClientStateCleanup() {
+        }
+
+        @SubscribeEvent
+        public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+            ClientHudState.reset();
+            AdminEyeVisualState.reset();
+            TacticalHudInvisibilityVisualState.reset();
+            ShieldHitVisualState.reset();
+            RemoteSwordDrawVisualState.clear();
+            KunJinKaoClientOverwriteEffects.reset();
+            KunJinKaoClientSwordVisuals.clear();
+        }
     }
 }

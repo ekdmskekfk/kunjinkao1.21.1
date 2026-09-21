@@ -22,4 +22,12 @@ public final class AdminEyeVisualState {
     public static boolean isEnabled(UUID playerUuid) {
         return ENABLED_PLAYERS.contains(playerUuid);
     }
+
+    /**
+     * 断线/退出世界时清空客户端缓存的管理员眼部名单。
+     * 该集合只会增/改不会减，不清理会把上个存档（或上个服务器）的 UUID 带到下一个世界。
+     */
+    public static void reset() {
+        ENABLED_PLAYERS.clear();
+    }
 }

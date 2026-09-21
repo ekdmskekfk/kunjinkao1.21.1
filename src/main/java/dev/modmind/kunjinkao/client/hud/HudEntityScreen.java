@@ -26,6 +26,9 @@ public final class HudEntityScreen extends Screen {
 
     private final List<HudEntityData> entities;
     private final List<HudEntityData> filteredEntities = new ArrayList<>();
+    // 行显示文本缓存：Component.translatable(...).getString() 与坐标 String.format 只在
+    // 数据或过滤条件变化时算一次，否则列表打开期间每帧每行都要重算一遍。
+    private final List<RowText> rowTexts = new ArrayList<>();
     private UUID selectedEntityUuid;
     private int scrollOffset;
     private EditBox searchBox;
@@ -34,6 +37,11 @@ public final class HudEntityScreen extends Screen {
         super(Component.translatable("screen.kunjinkao.entity_manager"));
         this.entities = new ArrayList<>(entities);
         this.filteredEntities.addAll(entities);
+        rebuildRowTexts();
+    }
+
+    /** 一行预先算好的显示文本（与 filteredEntities 下标一一对应）。 */
+    private record RowText(String name, String type, String position) {
     }
 
     @Override
@@ -83,14 +91,12 @@ public final class HudEntityScreen extends Screen {
                 graphics.fill(panelX + 4, rowY, panelX + panelWidth - 4, rowY + ROW_HEIGHT - 1,
                         selected ? 0xB0206B86 : 0x80114157);
             }
-            String name = entity.displayName().isBlank()
-                    ? Component.translatable(entity.typeTranslationKey()).getString()
-                    : entity.displayName();
-            String type = Component.translatable(entity.typeTranslationKey()).getString();
-            String position = String.format(Locale.ROOT, "%.1f, %.1f, %.1f", entity.x(), entity.y(), entity.z());
-            graphics.drawString(font, trim(name, 145), panelX + 10, rowY + 6, 0xFFE9FBFF, false);
-            graphics.drawString(font, trim(type, 105), panelX + 158, rowY + 6, 0xFF8FEAFF, false);
-            graphics.drawString(font, position, panelX + panelWidth - 104, rowY + 6, 0xFFB9F5FF, false);
+            RowText text = rowTexts.get(entityIndex);
+            graphics.drawString(font, trim(text.name(), 145), panelX + 10, rowY + 6, 0xFFE9FBFF, false);
+            graphics.drawString(font, trim(text.type(), 105), panelX + 158, rowY + 6, 0xFF8FEAFF, false);
+            // 坐标列此前是唯一没有做宽度裁剪的列：坐标量级大时（如 30000000.0, ...）会画出面板外。
+            // 该列起点是 panelX+panelWidth-104，到面板右内边只剩约 100px 可用宽度。
+            graphics.drawString(font, trim(text.position(), 100), panelX + panelWidth - 104, rowY + 6, 0xFFB9F5FF, false);
         }
 
         @Nullable HudEntityData selected = selectedEntity();
@@ -146,9 +152,25 @@ public final class HudEntityScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double deltaX, double deltaY) {
+        // 只在指针确实位于列表区域时滚动：否则（例如指针停在搜索框上）滚轮事件应交给上层，
+        // 而不是被列表无条件吞掉。
+        if (!isOverListArea(mouseX, mouseY) || deltaY == 0.0D) {
+            return super.mouseScrolled(mouseX, mouseY, deltaX, deltaY);
+        }
         int maxScroll = Math.max(0, filteredEntities.size() - visibleRows());
-        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - (int) Math.signum(deltaY) * 3));
+        // 按 deltaY 的方向滚动一行（正值为向上滚，列表向前）。
+        int step = deltaY > 0.0D ? -1 : 1;
+        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset + step));
         return true;
+    }
+
+    /** 指针是否位于可滚动的列表区域（与 mouseClicked 的命中范围保持一致）。 */
+    private boolean isOverListArea(double mouseX, double mouseY) {
+        int panelX = panelX();
+        int listTop = MARGIN + HEADER_HEIGHT;
+        int footerY = MARGIN + panelHeight() - FOOTER_HEIGHT;
+        return mouseX >= panelX + 4 && mouseX < panelX + panelWidth() - 4
+                && mouseY >= listTop && mouseY < footerY - 4;
     }
 
     @Override
@@ -171,6 +193,16 @@ public final class HudEntityScreen extends Screen {
         } else if (action == HudEntityAction.TELEPORT) {
             Minecraft.getInstance().setScreen(new HudScreen());
         }
+    }
+
+    /**
+     * 就地替换实体数据（服务端刷新列表时使用）：保留选中项、搜索词与滚动位置，
+     * 避免每次刷新都重建界面（重建会丢掉玩家正在浏览的位置）。
+     */
+    public void replaceEntities(List<HudEntityData> updated) {
+        entities.clear();
+        entities.addAll(updated);
+        filterEntities(searchBox == null ? "" : searchBox.getValue());
     }
 
     @Nullable
@@ -225,7 +257,22 @@ public final class HudEntityScreen extends Screen {
         if (selectedEntity() == null) {
             selectedEntityUuid = null;
         }
-        scrollOffset = 0;
+        // 过滤后不能把 scrollOffset 直接归零：否则每敲一个字符列表都跳回顶部。
+        // 只夹紧到合法范围，玩家原本的滚动位置在结果集仍够长时得以保留。
+        int maxScroll = Math.max(0, filteredEntities.size() - visibleRows());
+        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
+        rebuildRowTexts();
+    }
+
+    /** 在过滤结果变化后重建行文本缓存（渲染时直接取用，不再每帧做翻译与格式化）。 */
+    private void rebuildRowTexts() {
+        rowTexts.clear();
+        for (HudEntityData entity : filteredEntities) {
+            String translatedType = Component.translatable(entity.typeTranslationKey()).getString();
+            String name = entity.displayName().isBlank() ? translatedType : entity.displayName();
+            String position = String.format(Locale.ROOT, "%.1f, %.1f, %.1f", entity.x(), entity.y(), entity.z());
+            rowTexts.add(new RowText(name, translatedType, position));
+        }
     }
 
     private String trim(String text, int maxWidth) {

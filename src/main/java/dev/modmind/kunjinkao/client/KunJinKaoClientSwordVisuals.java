@@ -390,6 +390,15 @@ public final class KunJinKaoClientSwordVisuals {
         return data == null ? new CompoundTag() : data.copyTag();
     }
 
+    /**
+     * 断线/退出世界时的清理入口：复用既有私有 reset()，不对外暴露内部计时字段。
+     * 注意 tick() 在 player/level 为空时本来就会调用 reset()，因此该入口只保证
+     * "退出世界立刻清空"，不改变进世界时的表现。
+     */
+    public static void clear() {
+        reset();
+    }
+
     private static void reset() {
         wasHoldingSword = false;
         compileHand = InteractionHand.MAIN_HAND;

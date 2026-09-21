@@ -140,9 +140,25 @@ public final class HudExclusionScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double deltaX, double deltaY) {
+        // 只在指针确实位于列表区域时滚动：否则（例如指针停在搜索框上）滚轮事件应交给上层，
+        // 而不是被列表无条件吞掉。
+        if (!isOverListArea(mouseX, mouseY) || deltaY == 0.0D) {
+            return super.mouseScrolled(mouseX, mouseY, deltaX, deltaY);
+        }
         int maxScroll = Math.max(0, filteredPlayers.size() - visibleRows());
-        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - (int) Math.signum(deltaY) * 3));
+        // 按 deltaY 的方向滚动一行（正值为向上滚，列表向前）。
+        int step = deltaY > 0.0D ? -1 : 1;
+        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset + step));
         return true;
+    }
+
+    /** 指针是否位于可滚动的列表区域（与 mouseClicked 的命中范围保持一致）。 */
+    private boolean isOverListArea(double mouseX, double mouseY) {
+        int panelX = panelX();
+        int listTop = MARGIN + HEADER_HEIGHT;
+        int footerY = MARGIN + panelHeight() - FOOTER_HEIGHT;
+        return mouseX >= panelX + 4 && mouseX < panelX + panelWidth() - 4
+                && mouseY >= listTop && mouseY < footerY - 4;
     }
 
     @Override
@@ -204,7 +220,10 @@ public final class HudExclusionScreen extends Screen {
         if (selectedPlayer() == null) {
             selectedPlayerUuid = null;
         }
-        scrollOffset = 0;
+        // 过滤后不能把 scrollOffset 直接归零：否则每敲一个字符列表都跳回顶部。
+        // 只夹紧到合法范围，玩家原本的滚动位置在结果集仍够长时得以保留。
+        int maxScroll = Math.max(0, filteredPlayers.size() - visibleRows());
+        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
     }
 
     private String trim(String text, int maxWidth) {

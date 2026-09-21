@@ -32,6 +32,10 @@ import net.neoforged.neoforge.client.event.RenderPlayerEvent;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
 /** 第三人称拔剑编译后半段的真实玩家手臂取剑动画。 */
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public final class KunJinKaoThirdPersonGrabLayer
@@ -66,12 +70,20 @@ public final class KunJinKaoThirdPersonGrabLayer
                 getCompileArm(player), false);
     }
 
+    /**
+     * 恢复共享 PlayerModel 的手臂可见性。
+     *
+     * <p>这里刻意不再判断 isReachActive：手臂只在 Pre 里被隐藏，而 Pre 与 Post 之间动画可能刚好结束
+     * （或本层的 render 提前 return）。如果恢复也被同一个条件挡住，共享模型的手/袖子会永久留在
+     * 不可见状态，之后每一帧的手臂都会消失。真隐形的判断则与 Pre 保持对称 —— 那种情况下整次玩家
+     * 渲染都被取消，Post 本来也不会触发。</p>
+     */
     @SubscribeEvent
     public static void onRenderPlayerPost(RenderPlayerEvent.Post event) {
         if (!(event.getEntity() instanceof AbstractClientPlayer player)) {
             return;
         }
-        if (!isReachActive(player)) {
+        if (TacticalHudInvisibilityVisualState.isTrueInvisible(player.getUUID())) {
             return;
         }
         setAnimatedArmVisible(event.getRenderer().getModel(),
@@ -82,7 +94,9 @@ public final class KunJinKaoThirdPersonGrabLayer
     public void render(PoseStack poseStack, MultiBufferSource buffer, int packedLight,
                        AbstractClientPlayer player, float limbSwing, float limbSwingAmount,
                        float partialTick, float ageInTicks, float netHeadYaw, float headPitch) {
-        if (!isReachActive(player)) {
+        // 守卫与 Pre 对称：真隐形时整次玩家渲染已被取消，这里也不应再自绘手臂。
+        if (!isReachActive(player)
+                || TacticalHudInvisibilityVisualState.isTrueInvisible(player.getUUID())) {
             return;
         }
 
@@ -95,25 +109,29 @@ public final class KunJinKaoThirdPersonGrabLayer
         float progress = getReachProgress(player);
         float inward = side == HumanoidArm.RIGHT ? -0.28F : 0.28F;
 
-        renderRemoteCompileSword(poseStack, buffer, packedLight, player, side);
+        try {
+            renderRemoteCompileSword(poseStack, buffer, packedLight, player, side);
 
-        arm.visible = true;
-        sleeve.visible = true;
-        // 从当前走路/待机姿势平滑抬起，并伸向角色正前方的编译剑。
-        arm.xRot = Mth.lerp(progress, arm.xRot, -1.38F);
-        arm.yRot = Mth.lerp(progress, arm.yRot, inward);
-        arm.zRot = Mth.lerp(progress, arm.zRot, 0.0F);
-        sleeve.copyFrom(arm);
+            arm.visible = true;
+            sleeve.visible = true;
+            // 从当前走路/待机姿势平滑抬起，并伸向角色正前方的编译剑。
+            arm.xRot = Mth.lerp(progress, arm.xRot, -1.38F);
+            arm.yRot = Mth.lerp(progress, arm.yRot, inward);
+            arm.zRot = Mth.lerp(progress, arm.zRot, 0.0F);
+            sleeve.copyFrom(arm);
 
-        VertexConsumer consumer = buffer.getBuffer(RenderType.entityTranslucent(player.getSkin().texture()));
-        arm.render(poseStack, consumer, packedLight, OverlayTexture.NO_OVERLAY);
-        sleeve.render(poseStack, consumer, packedLight, OverlayTexture.NO_OVERLAY);
-
-        arm.loadPose(armPose);
-        sleeve.loadPose(sleevePose);
-        // 后续层不应再次画默认手臂；RenderPlayerEvent.Post 会恢复共享模型状态。
-        arm.visible = false;
-        sleeve.visible = false;
+            VertexConsumer consumer = buffer.getBuffer(RenderType.entityTranslucent(player.getSkin().texture()));
+            arm.render(poseStack, consumer, packedLight, OverlayTexture.NO_OVERLAY);
+            sleeve.render(poseStack, consumer, packedLight, OverlayTexture.NO_OVERLAY);
+        } finally {
+            // PlayerModel 是渲染器级共享状态：无论渲染中途是否抛异常，都必须还原姿势与可见性，
+            // 否则会把"变形的手臂"或"永远不可见的手臂"泄漏到后续帧。
+            arm.loadPose(armPose);
+            sleeve.loadPose(sleevePose);
+            // 后续层不应再次画默认手臂；可见性由 RenderPlayerEvent.Post 无条件恢复。
+            arm.visible = false;
+            sleeve.visible = false;
+        }
     }
 
     private static void setAnimatedArmVisible(PlayerModel<AbstractClientPlayer> model,
@@ -151,10 +169,37 @@ public final class KunJinKaoThirdPersonGrabLayer
         return player.getMainArm() == HumanoidArm.RIGHT ? HumanoidArm.LEFT : HumanoidArm.RIGHT;
     }
 
+    // 远端编译剑的展示栈缓存：原先每个远端玩家每帧都要 copy() 物品栈 + copyTag() + new CustomData，
+    // 这里按"玩家 + 当前手持物内容"缓存，只有手持物变化（ItemStack.matches 为假）时才重建。
+    private static final Map<UUID, RemoteSwordVisual> REMOTE_SWORD_CACHE = new HashMap<>();
+
+    /** 缓存项：source 为原始手持栈（副本），visual 为带编译标记的展示栈。 */
+    private record RemoteSwordVisual(ItemStack source, ItemStack visual) {
+    }
+
+    private static ItemStack cachedRemoteVisualStack(AbstractClientPlayer player, ItemStack sword) {
+        RemoteSwordVisual cached = REMOTE_SWORD_CACHE.get(player.getUUID());
+        if (cached != null && ItemStack.matches(cached.source(), sword)) {
+            return cached.visual();
+        }
+        ItemStack visualStack = sword.copy();
+        CompoundTag modelTag = visualStack.get(DataComponents.CUSTOM_DATA) == null
+                ? new CompoundTag() : visualStack.get(DataComponents.CUSTOM_DATA).copyTag();
+        modelTag.putBoolean("KunJinKaoCompileHudModel", true);
+        visualStack.set(DataComponents.CUSTOM_DATA, CustomData.of(modelTag));
+        // source 也必须 copy()：如果直接保存玩家手上的同一个实例，后续改动会让 ItemStack.matches 失去意义。
+        REMOTE_SWORD_CACHE.put(player.getUUID(), new RemoteSwordVisual(sword.copy(), visualStack));
+        return visualStack;
+    }
+
     private void renderRemoteCompileSword(PoseStack poseStack, MultiBufferSource buffer, int packedLight,
                                           AbstractClientPlayer player, HumanoidArm side) {
-        if (player == Minecraft.getInstance().player
-                || !RemoteSwordDrawVisualState.isCompiling(player.getUUID())) {
+        if (player == Minecraft.getInstance().player) {
+            return;
+        }
+        if (!RemoteSwordDrawVisualState.isCompiling(player.getUUID())) {
+            // 编译结束后清掉缓存，避免为不再渲染的玩家长期保留物品栈副本。
+            REMOTE_SWORD_CACHE.remove(player.getUUID());
             return;
         }
 
@@ -166,11 +211,7 @@ public final class KunJinKaoThirdPersonGrabLayer
 
         float progress = RemoteSwordDrawVisualState.getCompileProgress(player.getUUID());
         float sideOffset = side == HumanoidArm.RIGHT ? -0.16F : 0.16F;
-        ItemStack visualStack = sword.copy();
-        CompoundTag modelTag = visualStack.get(DataComponents.CUSTOM_DATA) == null
-                ? new CompoundTag() : visualStack.get(DataComponents.CUSTOM_DATA).copyTag();
-        modelTag.putBoolean("KunJinKaoCompileHudModel", true);
-        visualStack.set(DataComponents.CUSTOM_DATA, CustomData.of(modelTag));
+        ItemStack visualStack = cachedRemoteVisualStack(player, sword);
 
         poseStack.pushPose();
         getParentModel().body.translateAndRotate(poseStack);
