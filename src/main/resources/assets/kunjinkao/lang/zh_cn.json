@@ -106,5 +106,8 @@
 "message.kunjinkao.looting_mode_50": "§6抢夺 50 级",
 "message.kunjinkao.looting_mode_current": "§e覆写·断未 - 当前模式: %s",
   "message.kunjinkao.zone_break_denied": "§7§o未定义区块阻断了你的破坏……",
-  "message.kunjinkao.admin_password_timeout": "服务端未响应，已重新允许提交"
+  "message.kunjinkao.admin_password_timeout": "服务端未响应，已重新允许提交",
+  "screen.kunjinkao.ore_drop_multiplier": "矿石掉落倍数",
+  "screen.kunjinkao.looting_mode": "抢夺模式",
+  "screen.kunjinkao.ore_drop_multiplier_value": "掉落倍数：%s 倍"
 }

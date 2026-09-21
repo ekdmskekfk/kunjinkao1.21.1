@@ -130,13 +130,13 @@ public final class SwordOptionsScreen extends Screen {
         Component optionName = switch (selectedOption) {
             case BLUE_SCREEN_ATTACK -> Component.translatable("screen.kunjinkao.blue_screen_attack");
             case MINING_SPEED -> Component.translatable("screen.kunjinkao.mining_speed");
-            case ORE_DROP_MULTIPLIER -> Component.literal("矿石掉落倍数");
-            case LOOTING_MODE -> Component.literal("抢夺模式");
+            case ORE_DROP_MULTIPLIER -> Component.translatable("screen.kunjinkao.ore_drop_multiplier");
+            case LOOTING_MODE -> Component.translatable("screen.kunjinkao.looting_mode");
             case BREAK_UNBREAKABLE_BLOCKS -> Component.translatable("screen.kunjinkao.break_unbreakable_blocks");
             case AREA_CLEAR_TARGETS -> Component.translatable("screen.kunjinkao.area_clear_targets");
             // Keep the newly added control readable even in older installations
             // that still carry the project's malformed legacy zh_cn resource.
-            case ATTACK_DAMAGE_LIMIT -> Component.literal("单次伤害上限");
+            case ATTACK_DAMAGE_LIMIT -> Component.translatable("screen.kunjinkao.attack_damage_limit");
             case ULTIMATE_DEATH -> Component.translatable("screen.kunjinkao.ultimate_death");
             case QUIT_STRIKE -> Component.translatable("screen.kunjinkao.quit_strike");
         };
@@ -536,7 +536,7 @@ public final class SwordOptionsScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            setMessage(Component.literal("掉落倍数：" + currentMultiplier + " 倍"));
+            setMessage(Component.translatable("screen.kunjinkao.ore_drop_multiplier_value", currentMultiplier));
         }
 
         @Override
@@ -577,9 +577,10 @@ public final class SwordOptionsScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            String valueText = currentDamage >= KunJinKaoSwordItem.MAX_ATTACK_DAMAGE_LIMIT
-                    ? "无限" : Integer.toString(currentDamage);
-            setMessage(Component.literal("伤害：" + valueText));
+            Component valueText = currentDamage >= KunJinKaoSwordItem.MAX_ATTACK_DAMAGE_LIMIT
+                    ? Component.translatable("screen.kunjinkao.unlimited")
+                    : Component.literal(Integer.toString(currentDamage));
+            setMessage(Component.translatable("screen.kunjinkao.attack_damage_value", valueText));
         }
 
         @Override
