@@ -22,6 +22,7 @@ import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 
@@ -30,6 +31,9 @@ public class ClientModEvents {
 
     static {
         ClientHooks.registerClientHandlers(ClientPayloadHandlers::handle, ClientBlockScreens::openAcceleratorScreen);
+        // 显式注册，而不是依赖 @EventBusSubscriber 对"嵌套类"的扫描：
+        // 这个订阅负责客户端静态状态的生命周期清理，万一没被扫到就会静默失效（状态永不清理）。
+        NeoForge.EVENT_BUS.register(ClientStateCleanup.class);
     }
 
     public static ResourceLocation compileModelLocation(int stage) {
@@ -104,9 +108,9 @@ public class ClientModEvents {
      *
      * <p>NeoForge 21.1 的 {@code ClientPlayerNetworkEvent.LoggingOut} 挂在游戏总线
      * （{@code NeoForge.EVENT_BUS}）上，而外层类的 {@code @EventBusSubscriber} 声明的是 MOD 总线，
-     * 所以单独用这个默认（GAME 总线）+ 客户端专用的嵌套订阅类来接收。</p>
+     * 所以放在这个客户端专用的嵌套类里，并由外层 static 块显式注册
+     * （不依赖注解扫描，避免嵌套类万一没被扫到导致清理静默失效）。</p>
      */
-    @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, value = Dist.CLIENT)
     public static final class ClientStateCleanup {
 
         private ClientStateCleanup() {
