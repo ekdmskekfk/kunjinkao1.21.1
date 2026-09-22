@@ -109,5 +109,11 @@
   "message.kunjinkao.admin_password_timeout": "No response from the server; you can submit again",
   "screen.kunjinkao.ore_drop_multiplier": "Ore drop multiplier",
   "screen.kunjinkao.looting_mode": "Looting mode",
-  "screen.kunjinkao.ore_drop_multiplier_value": "Drop multiplier: %sx"
+  "screen.kunjinkao.ore_drop_multiplier_value": "Drop multiplier: %sx",
+  "gui.kunjinkao.accelerator.filter_match_nbt": "Match NBT",
+  "gui.kunjinkao.accelerator.filter_none": "Empty list: no filtering",
+  "gui.kunjinkao.accelerator.filter_whitelist": "Whitelist",
+  "gui.kunjinkao.accelerator.filter_ignore_nbt": "Ignore NBT",
+  "gui.kunjinkao.accelerator.filter_blacklist": "Blacklist",
+  "gui.kunjinkao.accelerator.filter": "Filter (drag blocks in from JEI)"
 }

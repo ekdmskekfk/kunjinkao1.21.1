@@ -12,7 +12,7 @@ public final class NetworkHandler {
 
     // 从 20 提到 21：本次把 18 个包合并成 3 个（判别 id 线格式），注册表与线格式都变了，
     // 必须让版本号跟着变，否则新旧端会在握手时被当成兼容，然后在解码时错位。
-    public static final String PROTOCOL_VERSION = "21";
+    public static final String PROTOCOL_VERSION = "22";
 
     private NetworkHandler() {
     }
@@ -34,6 +34,7 @@ public final class NetworkHandler {
         reg.playToServer(ToggleThemePayload.TYPE, ToggleThemePayload.STREAM_CODEC, ToggleThemePayload::handle);
         reg.playToServer(AcceleratorConfigPayload.TYPE, AcceleratorConfigPayload.STREAM_CODEC, AcceleratorConfigPayload::handle);
         reg.playToServer(AcceleratorShowRangePayload.TYPE, AcceleratorShowRangePayload.STREAM_CODEC, AcceleratorShowRangePayload::handle);
+        reg.playToServer(AcceleratorFilterPayload.TYPE, AcceleratorFilterPayload.STREAM_CODEC, AcceleratorFilterPayload::handle);
         reg.playToServer(ToggleTacticalHudPayload.TYPE, ToggleTacticalHudPayload.STREAM_CODEC, ToggleTacticalHudPayload::handle);
         // 原 TacticalHudStatePayload / HudNightVisionStatePayload / HudTrueInvisibilityStatePayload /
         // HudMagnetStatePayload 四条注册合并为这一条，由 stateId 判别。

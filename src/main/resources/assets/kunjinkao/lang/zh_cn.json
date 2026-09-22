@@ -109,5 +109,11 @@
   "message.kunjinkao.admin_password_timeout": "服务端未响应，已重新允许提交",
   "screen.kunjinkao.ore_drop_multiplier": "矿石掉落倍数",
   "screen.kunjinkao.looting_mode": "抢夺模式",
-  "screen.kunjinkao.ore_drop_multiplier_value": "掉落倍数：%s 倍"
+  "screen.kunjinkao.ore_drop_multiplier_value": "掉落倍数：%s 倍",
+  "gui.kunjinkao.accelerator.filter_match_nbt": "匹配 NBT",
+  "gui.kunjinkao.accelerator.filter_none": "列表为空：不过滤",
+  "gui.kunjinkao.accelerator.filter_whitelist": "白名单",
+  "gui.kunjinkao.accelerator.filter_ignore_nbt": "忽略 NBT",
+  "gui.kunjinkao.accelerator.filter_blacklist": "黑名单",
+  "gui.kunjinkao.accelerator.filter": "过滤器（可从 JEI 拖入方块）"
 }

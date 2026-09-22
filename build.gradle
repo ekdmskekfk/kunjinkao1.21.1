@@ -31,6 +31,11 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 repositories {
     mavenLocal()
+    // JEI 的官方 maven（只为编译期提供 IGhostIngredientHandler 等接口，运行时不打包进去）
+    maven {
+        name = 'BlameJared'
+        url = 'https://maven.blamejared.com'
+    }
 }
 
 neoForge {
@@ -72,6 +77,12 @@ tasks.withType(JavaCompile).configureEach {
 
 java {
     withSourcesJar()
+}
+
+dependencies {
+    // JEI：只做编译期依赖（compileOnly）+ 运行时由玩家自备。
+    // 用 "19.+" 让 Gradle 解析 1.21.1 对应的最新 19.x；确认无误后可以钉成具体版本。
+    compileOnly "mezz.jei:jei-1.21.1-neoforge:19.+"
 }
 
 publishing {

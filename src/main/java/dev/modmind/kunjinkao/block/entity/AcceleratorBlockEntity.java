@@ -4,6 +4,12 @@ import dev.modmind.kunjinkao.AcceleratorRegistry;
 import dev.modmind.kunjinkao.config.AdminToolConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.NonNullList;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -45,13 +51,26 @@ public class AcceleratorBlockEntity extends BlockEntity {
     /** 允许修改配置的最大距离（格）的平方：约 8 格。 */
     public static final double MAX_EDIT_DISTANCE_SQR = 64.0D;
 
+    /** 过滤列表槽位数（GUI 里排成一行）。 */
+    public static final int FILTER_SLOTS = 9;
+
     private static final String TAG_MULTIPLIER = "Multiplier";
     private static final String TAG_RADIUS = "Radius";
     private static final String TAG_SHOW_RANGE = "ShowRange";
+    private static final String TAG_FILTER = "Filter";
+    private static final String TAG_WHITELIST = "FilterWhitelist";
+    private static final String TAG_MATCH_NBT = "FilterMatchNbt";
 
     private int multiplier = MULTIPLIERS[0];
     private int radius = RADII[0];
     private boolean showRange = false;
+
+    /** 过滤列表：只放方块物品；空槽为 EMPTY。列表里一个都没有时视为"不过滤"。 */
+    private final NonNullList<ItemStack> filter = NonNullList.withSize(FILTER_SLOTS, ItemStack.EMPTY);
+    /** true = 白名单（只加速命中的），false = 黑名单（命中的不加速）。 */
+    private boolean whitelist = true;
+    /** 是否要求命中项的 NBT 与过滤项记录的基准一致。 */
+    private boolean matchNbt = false;
 
     public AcceleratorBlockEntity(BlockPos pos, BlockState state) {
         super(AcceleratorRegistry.ACCELERATOR_BE.get(), pos, state);
@@ -89,6 +108,10 @@ public class AcceleratorBlockEntity extends BlockEntity {
                         continue;
                     }
                     BlockEntity targetEntity = serverLevel.getBlockEntity(target);
+                    // 过滤：列表为空直接放行；否则按黑白名单决定是否加速
+                    if (!matchesFilter(serverLevel, targetState, targetEntity)) {
+                        continue;
+                    }
                     if (targetEntity != null) {
                         budget -= tickBlockEntityExtra(serverLevel, target, targetState, targetEntity, extra, budget);
                     } else if (targetState.isRandomlyTicking()) {
@@ -144,6 +167,107 @@ public class AcceleratorBlockEntity extends BlockEntity {
         return player.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(pos)) <= MAX_EDIT_DISTANCE_SQR;
     }
 
+
+    public ItemStack getFilterEntry(int slot) {
+        return slot >= 0 && slot < FILTER_SLOTS ? this.filter.get(slot) : ItemStack.EMPTY;
+    }
+
+    /** 过滤列表里是否至少有一项。 */
+    public boolean hasFilterEntries() {
+        for (int i = 0; i < FILTER_SLOTS; i++) {
+            if (!this.filter.get(i).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean isWhitelist() {
+        return this.whitelist;
+    }
+
+    public boolean isMatchNbt() {
+        return this.matchNbt;
+    }
+
+    /**
+     * 服务端校验后写入整份过滤状态（客户端发来的列表不可信）。
+     * <p>
+     * 只接受方块物品、数量归 1、只取前 {@link #FILTER_SLOTS} 项；返回是否真的有改动。
+     */
+    public boolean applyFilter(java.util.List<ItemStack> incoming, boolean whitelist, boolean matchNbt) {
+        boolean changed = false;
+        for (int i = 0; i < FILTER_SLOTS; i++) {
+            ItemStack wanted = i < incoming.size() ? incoming.get(i) : ItemStack.EMPTY;
+            ItemStack sanitized = ItemStack.EMPTY;
+            if (!wanted.isEmpty() && wanted.getItem() instanceof BlockItem) {
+                sanitized = wanted.copy();
+                sanitized.setCount(1);
+            }
+            if (!ItemStack.matches(this.filter.get(i), sanitized)) {
+                this.filter.set(i, sanitized);
+                changed = true;
+            }
+        }
+        if (this.whitelist != whitelist) {
+            this.whitelist = whitelist;
+            changed = true;
+        }
+        if (this.matchNbt != matchNbt) {
+            this.matchNbt = matchNbt;
+            changed = true;
+        }
+        return changed;
+    }
+
+    /** 过滤项记录的 NBT 基准（方块物品的 block_entity_data 组件）；没有记录则返回 null。 */
+    private static CompoundTag filterNbtBasis(ItemStack entry) {
+        CustomData data = entry.get(DataComponents.BLOCK_ENTITY_DATA);
+        return data == null ? null : data.copyTag();
+    }
+
+    /**
+     * 目标方块是否通过过滤。
+     * <p>
+     * 语义（与 GUI 上的两个开关对应）：
+     * <ul>
+     *   <li>列表为空 → 一律通过（不过滤）；</li>
+     *   <li>白名单 → 只有命中列表的才加速；黑名单 → 命中列表的反而不加速；</li>
+     *   <li>开启"匹配 NBT"时，命中项还要求目标方块实体的 NBT 与过滤项记录的基准**完全相同**；
+     *       过滤项本身没有记录 NBT 时只按方块类型判定（该项不受开关影响）。</li>
+     * </ul>
+     */
+    public boolean matchesFilter(Level level, BlockState state, BlockEntity targetEntity) {
+        if (!hasFilterEntries()) {
+            return true;
+        }
+        boolean matched = false;
+        for (int i = 0; i < FILTER_SLOTS; i++) {
+            ItemStack entry = this.filter.get(i);
+            if (entry.isEmpty() || !(entry.getItem() instanceof BlockItem blockItem)) {
+                continue;
+            }
+            if (blockItem.getBlock() != state.getBlock()) {
+                continue;
+            }
+            if (this.matchNbt) {
+                CompoundTag basis = filterNbtBasis(entry);
+                if (basis != null) {
+                    if (targetEntity == null) {
+                        continue;
+                    }
+                    CompoundTag actual = targetEntity.saveWithoutMetadata(level.registryAccess());
+                    if (!basis.equals(actual)) {
+                        continue;
+                    }
+                }
+            }
+            matched = true;
+            break;
+        }
+        return this.whitelist == matched;
+    }
+
     public int getMultiplier() {
         return this.multiplier;
     }
@@ -194,6 +318,20 @@ public class AcceleratorBlockEntity extends BlockEntity {
         tag.putInt(TAG_MULTIPLIER, this.multiplier);
         tag.putInt(TAG_RADIUS, this.radius);
         tag.putBoolean(TAG_SHOW_RANGE, this.showRange);
+        ListTag filterTag = new ListTag();
+        for (int i = 0; i < FILTER_SLOTS; i++) {
+            ItemStack entry = this.filter.get(i);
+            if (entry.isEmpty()) {
+                continue;
+            }
+            CompoundTag slotTag = new CompoundTag();
+            slotTag.putByte("Slot", (byte) i);
+            slotTag.put("Item", entry.save(registries));
+            filterTag.add(slotTag);
+        }
+        tag.put(TAG_FILTER, filterTag);
+        tag.putBoolean(TAG_WHITELIST, this.whitelist);
+        tag.putBoolean(TAG_MATCH_NBT, this.matchNbt);
     }
 
     @Override
@@ -202,5 +340,19 @@ public class AcceleratorBlockEntity extends BlockEntity {
         this.multiplier = clampMultiplier(tag.getInt(TAG_MULTIPLIER));
         this.radius = clampRadius(tag.getInt(TAG_RADIUS));
         this.showRange = tag.getBoolean(TAG_SHOW_RANGE);
+        for (int i = 0; i < FILTER_SLOTS; i++) {
+            this.filter.set(i, ItemStack.EMPTY);
+        }
+        ListTag filterTag = tag.getList(TAG_FILTER, CompoundTag.TAG_COMPOUND);
+        for (int index = 0; index < filterTag.size(); index++) {
+            CompoundTag slotTag = filterTag.getCompound(index);
+            int slot = slotTag.getByte("Slot") & 0xFF;
+            if (slot >= FILTER_SLOTS) {
+                continue;
+            }
+            this.filter.set(slot, ItemStack.parseOptional(registries, slotTag.getCompound("Item")));
+        }
+        this.whitelist = !tag.contains(TAG_WHITELIST) || tag.getBoolean(TAG_WHITELIST);
+        this.matchNbt = tag.getBoolean(TAG_MATCH_NBT);
     }
 }

@@ -2,6 +2,7 @@ package dev.modmind.kunjinkao.client.gui;
 
 import dev.modmind.kunjinkao.block.entity.AcceleratorBlockEntity;
 import dev.modmind.kunjinkao.network.AcceleratorConfigPayload;
+import dev.modmind.kunjinkao.network.AcceleratorFilterPayload;
 import dev.modmind.kunjinkao.network.AcceleratorShowRangePayload;
 import dev.modmind.kunjinkao.network.NetworkHandler;
 import net.minecraft.client.Minecraft;
@@ -10,7 +11,12 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 加速方块配置 GUI。
@@ -21,7 +27,15 @@ import net.minecraft.network.chat.Component;
 public class AcceleratorScreen extends Screen {
 
     private static final int PANEL_WIDTH = 240;
-    private static final int PANEL_HEIGHT = 190;
+    // 加高面板以容纳底部的过滤区（9 个格位 + 两个开关），原来的 190 排不下
+    private static final int PANEL_HEIGHT = 244;
+
+    /** 过滤格位边长与间距。 */
+    private static final int FILTER_SLOT_SIZE = 18;
+    private static final int FILTER_SLOT_STEP = 20;
+
+    /** 过滤区尺寸：9 格一行。 */
+    private static final int FILTER_ROW_WIDTH = AcceleratorBlockEntity.FILTER_SLOTS * FILTER_SLOT_STEP - 2;
 
     private static final int COLOR_PANEL = 0xD0101018;
     private static final int COLOR_BORDER = 0xFF33335A;
@@ -34,6 +48,10 @@ public class AcceleratorScreen extends Screen {
     private OptionWheel multiplierWheel;
     private OptionWheel radiusWheel;
     private ToggleRangeButton toggleButton;
+    private DualLabelToggle whitelistToggle;
+    private DualLabelToggle nbtToggle;
+    /** 过滤列表的本地草稿：JEI 拖入或点击清除都改它，然后整份发回服务端。 */
+    private final List<ItemStack> filterDraft = new ArrayList<>();
 
     public AcceleratorScreen(AcceleratorBlockEntity accelerator) {
         super(Component.translatable("gui.kunjinkao.accelerator.title"));
@@ -67,9 +85,47 @@ public class AcceleratorScreen extends Screen {
                 Component.translatable("gui.kunjinkao.accelerator.show_range"),
                 this.accelerator.shouldShowRange(), this::sendShowRange);
 
+        this.filterDraft.clear();
+        for (int slot = 0; slot < AcceleratorBlockEntity.FILTER_SLOTS; slot++) {
+            this.filterDraft.add(this.accelerator.getFilterEntry(slot));
+        }
+        int toggleWidth = (PANEL_WIDTH - 40 - 8) / 2;
+        this.whitelistToggle = new DualLabelToggle(left + 20, top + 184, toggleWidth, 22,
+                Component.translatable("gui.kunjinkao.accelerator.filter_whitelist"),
+                Component.translatable("gui.kunjinkao.accelerator.filter_blacklist"),
+                this.accelerator.isWhitelist(), this::sendFilter);
+        this.nbtToggle = new DualLabelToggle(left + 20 + toggleWidth + 8, top + 184, toggleWidth, 22,
+                Component.translatable("gui.kunjinkao.accelerator.filter_match_nbt"),
+                Component.translatable("gui.kunjinkao.accelerator.filter_ignore_nbt"),
+                this.accelerator.isMatchNbt(), this::sendFilter);
+
         this.addRenderableWidget(this.multiplierWheel);
         this.addRenderableWidget(this.radiusWheel);
         this.addRenderableWidget(this.toggleButton);
+        this.addRenderableWidget(this.whitelistToggle);
+        this.addRenderableWidget(this.nbtToggle);
+    }
+
+    /** 第 slot 个过滤格位的屏幕矩形（JEI 用它做拖拽目标高亮，也用于点击命中）。 */
+    public Rect2i filterSlotArea(int slot) {
+        int left = (this.width - PANEL_WIDTH) / 2;
+        int top = (this.height - PANEL_HEIGHT) / 2;
+        int rowLeft = left + (PANEL_WIDTH - FILTER_ROW_WIDTH) / 2;
+        return new Rect2i(rowLeft + slot * FILTER_SLOT_STEP, top + 158, FILTER_SLOT_SIZE, FILTER_SLOT_SIZE);
+    }
+
+    /**
+     * 由 JEI 拖拽处理器调用：把拖进来的方块放进指定格位。
+     * 只接受方块物品（与服务端校验一致），数量一律按 1 处理。
+     */
+    public void acceptFilterDrop(int slot, ItemStack stack) {
+        if (slot < 0 || slot >= AcceleratorBlockEntity.FILTER_SLOTS || stack.isEmpty()) {
+            return;
+        }
+        ItemStack entry = stack.copy();
+        entry.setCount(1);
+        this.filterDraft.set(slot, entry);
+        this.sendFilter();
     }
 
     /** 点击滑轮 / 按钮：左半部分上一档，右半部分下一档；开关按钮直接切换。 */
@@ -79,6 +135,26 @@ public class AcceleratorScreen extends Screen {
             if (this.toggleButton.isMouseOver(mouseX, mouseY)) {
                 this.toggleButton.toggle();
                 return true;
+            }
+            if (this.whitelistToggle.isMouseOver(mouseX, mouseY)) {
+                this.whitelistToggle.toggle();
+                return true;
+            }
+            if (this.nbtToggle.isMouseOver(mouseX, mouseY)) {
+                this.nbtToggle.toggle();
+                return true;
+            }
+            // 左键点已占用的过滤格位 = 清空该格（JEI 拖入是另一条路径）
+            for (int slot = 0; slot < AcceleratorBlockEntity.FILTER_SLOTS; slot++) {
+                Rect2i area = filterSlotArea(slot);
+                if (mouseX >= area.getX() && mouseX < area.getX() + area.getWidth()
+                        && mouseY >= area.getY() && mouseY < area.getY() + area.getHeight()) {
+                    if (!this.filterDraft.get(slot).isEmpty()) {
+                        this.filterDraft.set(slot, ItemStack.EMPTY);
+                        this.sendFilter();
+                    }
+                    return true;
+                }
             }
             if (this.multiplierWheel.isMouseOver(mouseX, mouseY)) {
                 this.multiplierWheel.clickAt(mouseX);
@@ -116,6 +192,15 @@ public class AcceleratorScreen extends Screen {
                 this.accelerator.getBlockPos(), multiplier, radius));
     }
 
+    /** 过滤状态有改动时：写回本地 BE（供重开界面时显示）并把整份状态发给服务端。 */
+    private void sendFilter() {
+        boolean whitelist = this.whitelistToggle.isToggled();
+        boolean matchNbt = this.nbtToggle.isToggled();
+        this.accelerator.applyFilter(this.filterDraft, whitelist, matchNbt);
+        NetworkHandler.sendToServer(new AcceleratorFilterPayload(
+                this.accelerator.getBlockPos(), new ArrayList<>(this.filterDraft), whitelist, matchNbt));
+    }
+
     /** 切换显示范围：写入本地方块实体并发送给服务端。 */
     private void sendShowRange() {
         boolean show = this.toggleButton.isToggled();
@@ -146,13 +231,40 @@ public class AcceleratorScreen extends Screen {
 
         graphics.drawCenteredString(this.font, this.title, this.width / 2, top + 12, COLOR_ACCENT);
 
+        // ===== 过滤区 =====
+        graphics.drawString(this.font, Component.translatable("gui.kunjinkao.accelerator.filter"),
+                left + 20, top + 146, COLOR_ACCENT);
+        boolean hasEntries = false;
+        for (int slot = 0; slot < AcceleratorBlockEntity.FILTER_SLOTS; slot++) {
+            ItemStack entry = this.filterDraft.get(slot);
+            if (!entry.isEmpty()) {
+                hasEntries = true;
+            }
+            Rect2i area = filterSlotArea(slot);
+            boolean hovered = mouseX >= area.getX() && mouseX < area.getX() + area.getWidth()
+                    && mouseY >= area.getY() && mouseY < area.getY() + area.getHeight();
+            graphics.fill(area.getX(), area.getY(), area.getX() + area.getWidth(),
+                    area.getY() + area.getHeight(), hovered ? 0xFF2C2C48 : 0xFF1A1A2A);
+            graphics.fill(area.getX(), area.getY(), area.getX() + area.getWidth(), area.getY() + 1,
+                    entry.isEmpty() ? COLOR_BORDER : COLOR_ACCENT);
+            if (!entry.isEmpty()) {
+                graphics.renderItem(entry, area.getX() + 1, area.getY() + 1);
+            }
+        }
+        if (!hasEntries) {
+            // 列表为空 = 不过滤，明确写出来免得以为配置没生效
+            graphics.drawCenteredString(this.font,
+                    Component.translatable("gui.kunjinkao.accelerator.filter_none"),
+                    this.width / 2, top + 232, 0xFF7777AA);
+        }
+
         int size = this.radiusWheel.getValue() * 2 + 1;
         Component footer = Component.translatable("gui.kunjinkao.accelerator.footer",
                 this.multiplierWheel.getValue() + "x", size + "x" + size + "x" + size);
-        graphics.drawCenteredString(this.font, footer, this.width / 2, top + 150, COLOR_SUB);
+        graphics.drawCenteredString(this.font, footer, this.width / 2, top + 212, COLOR_SUB);
         graphics.drawCenteredString(this.font,
                 Component.translatable("gui.kunjinkao.accelerator.hint"),
-                this.width / 2, top + 172, 0xFF7777AA);
+                this.width / 2, top + 226, 0xFF7777AA);
     }
 
     @Override
@@ -239,6 +351,56 @@ public class AcceleratorScreen extends Screen {
             graphics.drawString(font, this.label, x + 20, textY, COLOR_SUB);
             graphics.drawCenteredString(font, this.options[this.index],
                     x + w / 2 + 10, textY, this.isHovered ? COLOR_ACCENT : COLOR_TEXT);
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput narrationElementOutput) {
+            this.defaultButtonNarrationText(narrationElementOutput);
+        }
+    }
+
+    /** 双标签开关：按钮文字随状态切换（白名单/黑名单、匹配 NBT/不匹配 NBT）。 */
+    private static class DualLabelToggle extends AbstractWidget {
+
+        private final Component labelOn;
+        private final Component labelOff;
+        private final Runnable onChange;
+        private boolean toggled;
+
+        DualLabelToggle(int x, int y, int width, int height, Component labelOn, Component labelOff,
+                        boolean toggled, Runnable onChange) {
+            super(x, y, width, height, toggled ? labelOn : labelOff);
+            this.labelOn = labelOn;
+            this.labelOff = labelOff;
+            this.toggled = toggled;
+            this.onChange = onChange;
+        }
+
+        boolean isToggled() {
+            return this.toggled;
+        }
+
+        void toggle() {
+            this.toggled = !this.toggled;
+            this.setMessage(this.toggled ? this.labelOn : this.labelOff);
+            this.onChange.run();
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+            this.isHovered = this.isMouseOver(mouseX, mouseY);
+            int x = this.getX();
+            int y = this.getY();
+            int w = this.getWidth();
+            int h = this.getHeight();
+            graphics.fill(x, y, x + w, y + h, this.isHovered ? 0xFF3A3A5A : 0xFF26263C);
+            graphics.fill(x, y, x + w, y + 1, this.toggled ? COLOR_ACCENT : 0xFF44446A);
+            graphics.fill(x, y + h - 1, x + w, y + h, 0xFF1C1C2E);
+            graphics.fill(x, y, x + 1, y + h, 0xFF44446A);
+            graphics.fill(x + w - 1, y, x + w, y + h, 0xFF44446A);
+            Font font = Minecraft.getInstance().font;
+            graphics.drawCenteredString(font, this.getMessage(), x + w / 2, y + (h - font.lineHeight) / 2,
+                    this.toggled ? COLOR_ACCENT : COLOR_SUB);
         }
 
         @Override
