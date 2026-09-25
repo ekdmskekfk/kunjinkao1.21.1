@@ -106,6 +106,16 @@ public final class SwordTimeAcceleration {
     private static float previousTickrate = BASE_TICKRATE;
     /** 状态广播节拍计数，见 {@link #STATUS_INTERVAL_TICKS}。 */
     private static int statusTicker;
+    /**
+     * 每个玩家上一次切换的时刻。
+     * <p>
+     * 按住右键时原版会每隔几 tick 重复触发一次 useOn，若每次都翻转开关，
+     * 一次长按就会"开了又停"，玩家看到的是"再点一下就说已停止"。
+     * 这里做一个很短的静默窗，把同一次长按产生的重复调用吃掉；
+     * 隔开时间再点才算真正的第二次操作。
+     */
+    private static final long TOGGLE_DEBOUNCE_MILLIS = 350L;
+    private static final Map<java.util.UUID, Long> LAST_TOGGLE = new HashMap<>();
 
     private SwordTimeAcceleration() {
     }
@@ -159,6 +169,12 @@ public final class SwordTimeAcceleration {
         }
         if (level instanceof ServerLevel serverLevel) {
             MinecraftServer server = serverLevel.getServer();
+            long now = System.currentTimeMillis();
+            Long last = LAST_TOGGLE.get(player.getUUID());
+            if (last != null && now - last < TOGGLE_DEBOUNCE_MILLIS) {
+                return true;
+            }
+            LAST_TOGGLE.put(player.getUUID(), now);
             captureBaseline(server);
             Session previous = BLOCK_SESSIONS.remove(blockKey(serverLevel.dimension(), pos));
             if (previous == null) {

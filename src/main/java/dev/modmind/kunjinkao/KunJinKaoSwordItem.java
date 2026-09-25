@@ -525,14 +525,25 @@ public class KunJinKaoSwordItem extends SwordItem {
         Level level = context.getLevel();
         BlockPos clickedPos = context.getClickedPos();
 
-        // ---- 0) shift + 右键：时间加速 ----
-        // 必须排在所有行为之前：其余行为都把 shift 当作"这次别触发"的修饰键，
-        // 只有它把 shift 当触发键，所以要在下面的分支之前先问它。
+        // ---- 0) shift + 右键：加速 ----
+        // 开了加速时，shift+右键 一律在这里处理完 —— 关键是不能漏到 use() 去：
+        // useOn 返回 PASS 时原版会接着调 use()，那里也会看 shift + 加速开关，
+        // 于是"点了一个不可加速的方块"会莫名其妙触发整体时间加速，
+        // 而真正想立的机器加速场根本没建起来（悬浮提示因此也一直是空的）。
         if (player.isShiftKeyDown()) {
+            int accelMode = SwordTimeAcceleration.clampMode(getTimeAccelMode(stack));
+            if (accelMode == SwordTimeAcceleration.MODE_OFF) {
+                return super.useOn(context);
+            }
             if (SwordTimeAcceleration.tryToggleBlock(player, level, clickedPos, stack)) {
                 return InteractionResult.sidedSuccess(level.isClientSide());
             }
-            return super.useOn(context);
+            // 目标不可加速：吃掉这次右键并说明原因，而不是让它落到 use() 触发整体加速。
+            if (!level.isClientSide()) {
+                player.displayClientMessage(
+                        Component.translatable("message.kunjinkao.time_accel_not_acceleratable"), true);
+            }
+            return InteractionResult.sidedSuccess(level.isClientSide());
         }
 
         // ---- 1) 放置类核心（建筑手杖 / 天使核心）----
