@@ -1,16 +1,25 @@
 package dev.modmind.kunjinkao.client;
 
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
+import dev.modmind.kunjinkao.KunJinKaoEntry;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.item.ItemProperties;
+import net.minecraft.client.renderer.item.ItemPropertyFunction;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -19,6 +28,7 @@ import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.phys.Vec3;
@@ -38,6 +48,15 @@ public final class KunJinKaoClientSwordVisuals {
     private static final int DRAW_COMPtLE_TtCKS = 48;
     private static final int GRAB_SWORD_TtCKS = 14;
 
+    /**
+     * 抓取阶段里，屏幕中央那把剑的淡出时长（tick）。
+     * <p>
+     * 只占抓取阶段的<b>开头</b>一小段：编译一结束就把剑交给手。
+     * 早先这里铺满整个 {@link #GRAB_SWORD_TtCKS}，结果编译动画早就结束、
+     * 手臂也把剑收回去了，屏幕中央却还挂着一把半透明的剑将近一秒。
+     */
+    private static final int CENTER_FADE_TICKS = 3;
+
     private static final DustParticleOptions SCAN_BLUE =
             new DustParticleOptions(new Vector3f(0.00F, 0.90F, 1.00F), 0.72F);
     private static final DustParticleOptions SCAN_WHtTE =
@@ -55,6 +74,32 @@ public final class KunJinKaoClientSwordVisuals {
     private static boolean compileRenderObserved;
     private static boolean compileModelLogged;
 
+    /**
+     * 是否让自己的手持剑在编译期间切换到 kun_jin_kao_compile_* 模型。
+     * <p>
+     * 默认 false，原因是素材形态不匹配：剑本体（kun_jin_kao_3d 经 ItemModelGenerator 生成）
+     * 是一张 1254×1254 平面贴图、占满 16 单位；而那 8 个编译阶段是 3.4~13 单位的 3D 方块几何。
+     * 一切换，玩家看到的就是「手里的大剑消失、剩一个小方块」。
+     * <p>
+     * 关闭后：手持物品始终是完整剑；逐级成形由屏幕中央的裁剪揭示动画呈现
+     * （见 {@link #renderCompileModel}，它用完整模型自上而下揭示）。
+     * 远端编译玩家那条分支不受影响 —— 第三人称仍会隐藏其手持剑，由抓取层代画。
+     */
+    private static final boolean SWITCH_LOCAL_HAND_MODEL = false;
+
+    /** 排查编译动画时打开：每次动画开始时打印一行诊断，排查完请关掉以免刷日志。 */
+    private static final boolean DEBUG_COMPILE_LOG = false;
+
+    private static boolean centerDrawLogged;
+
+    /**
+     * 编译阶段模型是否真的有几何体。
+     * <p>
+     * 若为 false，物品模型谓词一律返回 -1（完整剑），避免切换到空模型导致"手里的剑消失"。
+     * 每次动画开始时重新探测一次。
+     */
+    private static boolean compileStageModelsUsable = true;
+
     private KunJinKaoClientSwordVisuals() {
     }
 
@@ -69,6 +114,7 @@ public final class KunJinKaoClientSwordVisuals {
         boolean holdingSword = isHoldingVisibleSword(player);
         if (holdingSword && !wasHoldingSword) {
             compileHand = findVisibleSwordHand(player);
+            compileStageModelsUsable = areCompileStageModelsUsable(player);
             drawCompileTicks = DRAW_COMPtLE_TtCKS;
             compileRenderObserved = false;
             compileModelLogged = false;
@@ -151,63 +197,69 @@ public final class KunJinKaoClientSwordVisuals {
     }
 
     /**
-     * 在 HUD 最上层直接绘制当前编译阶段的烘焙物品模型。
-     * 这与背包物品使用同一条稳定渲染管线，不再依赖本地临时展示实体。
+     * 屏幕中央的编译展示。
+     * <p>
+     * 这里用最原始的 2D 贴图绘制（{@code GuiGraphics.blit}），而不是绘制 3D 物品模型。
+     * 理由：战术 HUD 证明本模组的 GUI 图层渲染正常，而
+     * {@code GuiGraphics.renderItem} 与 {@code ItemRenderer.renderStatic} 在这套阶段模型上
+     * 始终画不出任何东西（GUI 图层与世界渲染两条路都试过）。
+     * <p>
+     * {@code kun_jin_kao_stage_0..7.png} 是同一张剑图的递进揭示版本，
+     * 逐帧切换就得到"剑在屏幕中央一块块拼起来"的效果，且完全不依赖模型烘焙。
      */
-    public static void renderCompileModel(GuiGraphics graphics, int screenWidth, int screenHeight) {
-        if (drawCompileTicks <= 0) {
+    public static void renderCompileModel(GuiGraphics graphics, int screenWidth, int screenHeight, float partialTick) {
+        boolean compiling = drawCompileTicks > 0;
+        boolean grabbing = grabSwordTicks > 0;
+        if (!compiling && !grabbing) {
             return;
         }
 
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player == null || minecraft.level == null) {
-            return;
+        float reveal;   // 0..1 —— 剑的揭示进度（连续，不再离散跳级）
+        float alpha;    // 0..1 —— 整体透明度
+        if (compiling) {
+            float elapsed = (DRAW_COMPtLE_TtCKS - drawCompileTicks) + partialTick;
+            reveal = Mth.clamp(elapsed / DRAW_COMPtLE_TtCKS, 0.0F, 1.0F);
+            // smoothstep：起步与收尾都放缓，中段推进，避免匀速的机械感
+            reveal = reveal * reveal * (3.0F - 2.0F * reveal);
+            // 开场 5 tick 淡入，避免第一帧突然冒出来
+            alpha = Mth.clamp(elapsed / 5.0F, 0.0F, 1.0F);
+        } else {
+            reveal = 1.0F;
+            // 抓取阶段：中央这一把在开头 CENTER_FADE_TICKS tick 内就交给手，不陪着整段淡出。
+            float elapsedInGrab = GRAB_SWORD_TtCKS - grabSwordTicks;
+            alpha = Mth.clamp(1.0F - elapsedInGrab / (float) CENTER_FADE_TICKS, 0.0F, 1.0F);
         }
 
-        ItemStack stageStack = minecraft.player.getItemInHand(compileHand).copy();
-        // 让模型谓词明确回退到已经在正常持剑状态验证过的完整 3D 剑模型。
-        CompoundTag modelTag = customData(stageStack);
-        modelTag.putBoolean("KunJinKaoCompileHudModel", true);
-        stageStack.set(DataComponents.CUSTOM_DATA, CustomData.of(modelTag));
-        if (!compileModelLogged) {
-            BakedModel model = minecraft.getItemRenderer().getModel(
-                    stageStack, minecraft.level, minecraft.player, 0);
-            boolean missing = model == minecraft.getModelManager().getMissingModel();
-            RandomSource random = RandomSource.create(0L);
-            int quadCount = model.getQuads(null, null, random).size();
-            for (Direction direction : Direction.values()) {
-                random.setSeed(0L);
-                quadCount += model.getQuads(null, direction, random).size();
-            }
-            LOGGER.info("剑编译 HUD 完整模型已取得：阶段={}，物品={}，缺失模型={}，几何面={}",
-                    getDrawCompileStage(), stageStack.getItem(), missing, quadCount);
-            compileModelLogged = true;
-        }
+        int size = Math.max(48, Math.round(Math.min(screenWidth, screenHeight) * 0.42F));
+        int x = screenWidth / 2 - size / 2;
+        int y = screenHeight / 2 - size / 2 + 6;
 
-        boolean firstPerson = minecraft.options.getCameraType() == CameraType.FIRST_PERSON;
-        int centerX = screenWidth / 2;
-        int centerY = screenHeight / 2 + 6;
-        int elapsedTicks = DRAW_COMPtLE_TtCKS - drawCompileTicks + 1;
-        float progress = Math.min(1.0F, elapsedTicks / (float) DRAW_COMPtLE_TtCKS);
-        int modelTop = centerY - 72;
-        int modelBottom = centerY + 72;
-        int visibleTop = modelBottom - Math.round((modelBottom - modelTop) * progress);
+        // 用【整张剑图 + 逐帧连续的裁剪线】揭示，而不是在 8 张阶段图之间切换：
+        // 8 级切换每级占整高 12.5%，即使做交叉淡入也仍读得出台阶感；
+        // 而裁剪线的位置是逐帧连续的，无论 alpha 混合是否生效，推进本身就是平滑的。
+        // 贴图内容在整张 1254x1254 里的纵向范围是 y 37..1196（约 2.95% ~ 95.45%）。
+        float contentTop = y + size * 0.0295F;
+        float contentBottom = y + size * 0.9545F;
+        int cut = Math.round(contentBottom - (contentBottom - contentTop) * reveal);
 
-        // 使用屏幕裁剪线逐像素揭示同一把完整 3D 模型，视觉上就是剑身逐行编译成形。
-        graphics.enableScissor(centerX - 72, visibleTop, centerX + 72, modelBottom);
-        var pose = graphics.pose();
-        pose.pushPose();
-        pose.translate(centerX, centerY, 500.0F);
-        // 抵消完整剑 GUt 模型的投影倾角，让编译中的剑刃竖直向上。
-        pose.mulPose(Axis.ZP.rotationDegrees(22.5F));
-        // 第三人称能看见玩家模型，编译剑缩小以免遮住脸；第一人称保持原尺寸。
-        float displayScale = firstPerson ? 5.2F : 2.75F;
-        pose.scale(displayScale, displayScale, displayScale);
-        pose.translate(-8.0F, -8.0F, 0.0F);
-        graphics.renderItem(stageStack, 0, 0);
-        graphics.flush();
-        pose.popPose();
+        graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
+        graphics.enableScissor(x, cut, x + size, Math.round(contentBottom) + 1);
+        graphics.blit(ResourceLocation.fromNamespaceAndPath(
+                        KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao.png"),
+                x, y, 0, 0, size, size, size, size);
         graphics.disableScissor();
+        // 切口处的扫描亮线：让推进方向一眼可读，也让整条边不像"被切掉"
+        int scanAlpha = (int) (alpha * 190.0F);
+        if (scanAlpha > 4) {
+            graphics.fill(x, cut - 1, x + size, cut + 1, (scanAlpha << 24) | 0xBFF6FF);
+        }
+        // 复位着色器颜色，避免影响同一图层里后续的绘制
+        graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
+    /** 当前编译动画绑定的手；{@code RenderHandEvent} 用它保证一帧只画一次中央展示。 */
+    public static InteractionHand getCompileHand() {
+        return compileHand;
     }
 
     /**
@@ -238,14 +290,26 @@ public final class KunJinKaoClientSwordVisuals {
                 || !ItemStack.isSameItemSameComponents(stack, player.getItemInHand(compileHand))) {
             return -1.0F;
         }
+        if (!SWITCH_LOCAL_HAND_MODEL || !compileStageModelsUsable) {
+            // 手持物品保持完整剑：编译阶段的 3D 方块与剑的平面贴图形态差异过大，
+            // 切换只会让玩家以为剑消失了。
+            return -1.0F;
+        }
         int elapsed = DRAW_COMPtLE_TtCKS - drawCompileTicks;
         int stage = Math.min(7, elapsed / 6);
         return stage / 8.0F;
     }
 
-    /** 当前手是否正在显示位于屏幕中央的逐段编译模型。 */
+    /**
+     * 当前手是否正在显示位于屏幕中央的逐段编译模型。
+     * <p>
+     * 手持物品在编译期间【保持显示】（见 {@code KunJinKaoIdleDataRefreshHandler}），
+     * 本方法只用于决定是否额外绘制"伸手抓剑"的手臂。
+     * 带上 {@code compileStageModelsUsable} 是必要的：阶段模型不可用时中央什么都画不出来，
+     * 那就没有剑可抓，手臂也不该出现。
+     */
     public static boolean isDrawingInCenter(InteractionHand hand) {
-        return drawCompileTicks > 0 && compileHand == hand;
+        return drawCompileTicks > 0 && compileHand == hand && compileStageModelsUsable;
     }
 
     /** 当前应直接绘制的 3D 编译模型阶段。 */
@@ -260,6 +324,44 @@ public final class KunJinKaoClientSwordVisuals {
             compileRenderObserved = true;
             LOGGER.info("剑编译 3D 渲染入口已进入");
         }
+    }
+
+    /**
+     * 逐个探测 8 个编译阶段模型是否真的有面。
+     * <p>
+     * 用 {@code KunJinKaoCompileStage} 标记的副本来求值，因此不依赖当前动画状态。
+     * 历史上这些模型曾因父模型挂在 builtin/generated 下且缺少 layer0 而被
+     * ItemModelGenerator 生成为空模型 —— 那时本方法返回 false，谓词退回完整剑，
+     * 至少不会出现"选中剑后手里空空如也"。
+     */
+    private static boolean areCompileStageModelsUsable(Player player) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) {
+            return false;
+        }
+        ItemStack probe = player.getMainHandItem().copy();
+        for (int stage = 0; stage < 8; stage++) {
+            CompoundTag tag = customData(probe);
+            tag.putInt("KunJinKaoCompileStage", stage);
+            probe.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+            BakedModel model = minecraft.getItemRenderer().getModel(probe, minecraft.level, player, 0);
+            if (model == minecraft.getModelManager().getMissingModel() || countQuads(model) <= 0) {
+                LOGGER.warn("剑编译阶段 {} 的模型没有几何体，本次动画退回完整剑模型", stage);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 统计烘焙模型的面数，用于诊断（完整剑约 3145 面，compile_0 只有个位数）。 */
+    private static int countQuads(BakedModel model) {
+        RandomSource random = RandomSource.create(0L);
+        int quads = model.getQuads(null, null, random).size();
+        for (Direction direction : Direction.values()) {
+            random.setSeed(0L);
+            quads += model.getQuads(null, direction, random).size();
+        }
+        return quads;
     }
 
     /** 编译完成后取剑动作的剩余进度，供第一人称手部渲染使用。 */
@@ -406,6 +508,8 @@ public final class KunJinKaoClientSwordVisuals {
         grabSwordTicks = 0;
         compileRenderObserved = false;
         compileModelLogged = false;
+        centerDrawLogged = false;
+        compileStageModelsUsable = true;
         rightClickCompileTicks = 0;
         attackHudTicks = 0;
     }

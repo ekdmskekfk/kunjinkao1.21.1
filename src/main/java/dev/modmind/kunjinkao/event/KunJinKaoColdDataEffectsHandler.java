@@ -1,6 +1,7 @@
 package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
+import dev.modmind.kunjinkao.world.PlacementUndoHistory;
 import dev.modmind.kunjinkao.config.AdminToolConfig;
 import dev.modmind.kunjinkao.config.UltimateDeathSavedData;
 import dev.modmind.kunjinkao.network.ExcludedPlayerData;
@@ -244,6 +245,70 @@ public final class KunJinKaoColdDataEffectsHandler {
 
     public static void handleToggleQuitStrike(Player player, InteractionHand hand, boolean enabled) {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setQuitStrikeEnabled(stack, enabled));
+    }
+
+    /** 建筑手杖：沿所视方块面延伸放置一排方块。 */
+    public static void handleToggleConstructionWand(Player player, InteractionHand hand, boolean enabled) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setConstructionWandEnabled(stack, enabled));
+    }
+
+    /** 天使核心：把方块放到所视方块的背面，或对空在半空放置。 */
+    public static void handleToggleAngelCore(Player player, InteractionHand hand, boolean enabled) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setAngelCoreEnabled(stack, enabled));
+    }
+
+    /** 破坏核心：挖掉一格时连带清除面向那一侧的整排方块。 */
+    public static void handleToggleDestructionCore(Player player, InteractionHand hand, boolean enabled) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setDestructionCoreEnabled(stack, enabled));
+    }
+
+    /** 撤销开关：开启后按 K 键可撤销最近 10 步内的放置/破坏。 */
+    public static void handleTogglePlacementUndo(Player player, InteractionHand hand, boolean enabled) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setPlacementUndoEnabled(stack, enabled));
+    }
+
+    /** 刷子：长按右键可刷的方块即可刷取。 */
+    public static void handleToggleBrush(Player player, InteractionHand hand, boolean enabled) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setBrushEnabled(stack, enabled));
+    }
+
+    /** 工具模式：0 关 / 1 锄头 / 2 铲子。 */
+    public static void handleSetToolMode(Player player, InteractionHand hand, int mode) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setToolMode(stack, mode));
+    }
+
+    /** 避雷针：右键避雷针召唤闪电。 */
+    public static void handleToggleLightningRod(Player player, InteractionHand hand, boolean enabled) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setLightningRodEnabled(stack, enabled));
+    }
+
+    /** 时间加速模式：0 关 / 1 限时（30 秒）/ 2 无限。 */
+    public static void handleSetTimeAccelMode(Player player, InteractionHand hand, int mode) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setTimeAccelMode(stack, mode));
+    }
+
+    /** 时间加速倍率：shift+滚轮 调节，服务端同样夹到合法档位。 */
+    public static void handleSetTimeAccelMultiplier(Player player, InteractionHand hand, int multiplier) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setTimeAccelMultiplier(stack, multiplier));
+    }
+
+    /**
+     * 撤销最近一步放置/破坏。
+     * <p>
+     * 只有剑上开着"撤销"才执行：这个键是全局按键，不加这道闸门的话，
+     * 玩家在别的场景误按 K 也会去翻撤销栈。
+     */
+    public static void handleUndoPlacement(Player player) {
+        if (!(player instanceof ServerPlayer serverPlayer)) {
+            return;
+        }
+        if (!KunJinKaoSwordItem.isPlacementUndoEnabledInEitherHand(serverPlayer)) {
+            return;
+        }
+        int restored = PlacementUndoHistory.undoLast(serverPlayer);
+        serverPlayer.displayClientMessage(restored > 0
+                ? Component.translatable("message.kunjinkao.undo_restored", restored)
+                : Component.translatable("message.kunjinkao.undo_empty"), true);
     }
 
     /** HUD 排除列表查询：只有管理员能拿到名单。 */

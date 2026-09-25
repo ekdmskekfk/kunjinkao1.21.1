@@ -42,6 +42,13 @@ public class ClientModEvents {
 
     @SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent event) {
+        // 谓词返回值语义（配合 models/item/kun_jin_kao.json 的 overrides）：
+        //   -1.0 → 完整剑模型；0.0 / 0.125 / … / 0.875 → 八个逐行编译阶段。
+        //
+        // 注意：ItemOverrides.resolve() 是"第一个满足 value >= threshold 的条目直接返回"，
+        // 所以 kun_jin_kao.json 里的阈值必须按【降序】排列（0.875 → 0.0）。
+        // 若改回升序，则除 0.0 之外的所有阈值都会被 0.0 那条抢先命中，
+        // 表现为动画期间模型恒为 compile_0（一个小方块），也就是"选中剑时贴图消失"。
         event.enqueueWork(() -> ItemProperties.register(
                 SwordRegistry.KUN_JIN_KAO_SWORD.get(),
                 ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "draw_compile"),
@@ -56,6 +63,13 @@ public class ClientModEvents {
 
     @SubscribeEvent
     public static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
+        // 编译阶段模型（kun_jin_kao_compile_0..7）注册成 standalone 模型。
+        //
+        // ⚠ kun_jin_kao_compile_base.json 的 parent 必须是 minecraft:block/block，
+        //   【不能】改回 minecraft:item/handheld：后者的父链根是 builtin/generated，
+        //   MC 会对这类模型运行 ItemModelGenerator —— 改用 layer0 贴图逐像素生成四边形，
+        //   并把模型自带的 elements 整个丢弃。编译阶段模型没有 layer0，于是烘培结果是
+        //   0 个面的空模型，表现为「选中剑时手里的剑直接消失」。
         for (int stage = 0; stage < 8; stage++) {
             event.register(ModelResourceLocation.standalone(compileModelLocation(stage)));
         }
@@ -69,6 +83,7 @@ public class ClientModEvents {
         event.register(KunJinKaoKeyBindings.TOGGLE_TACTICAL_HUD);
         event.register(KunJinKaoKeyBindings.OPEN_SWORD_OPTIONS);
         event.register(KunJinKaoKeyBindings.OPEN_ADMIN_PASSWORD);
+        event.register(KunJinKaoKeyBindings.UNDO_PLACEMENT);
     }
 
     @SubscribeEvent
@@ -79,7 +94,7 @@ public class ClientModEvents {
                     int screenWidth = guiGraphics.guiWidth();
                     int screenHeight = guiGraphics.guiHeight();
                     KunJinKaoOverwriteHudOverlay.render(guiGraphics, partialTick, screenWidth, screenHeight);
-                    KunJinKaoClientSwordVisuals.renderCompileModel(guiGraphics, screenWidth, screenHeight);
+                    KunJinKaoClientSwordVisuals.renderCompileModel(guiGraphics, screenWidth, screenHeight, partialTick);
                     KunJinKaoClientSwordVisuals.renderAttackData(guiGraphics, screenWidth, screenHeight);
                 });
         event.registerAboveAll(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "tactical_eye_hud"),

@@ -12,6 +12,7 @@ import dev.modmind.kunjinkao.network.HudStatePayload;
 import dev.modmind.kunjinkao.network.HudTrueInvisibilityVisualPayload;
 import dev.modmind.kunjinkao.network.OverwriteEffectPayload;
 import dev.modmind.kunjinkao.network.SwordDrawAnimationPayload;
+import dev.modmind.kunjinkao.network.TimeAccelStatusPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -64,6 +65,9 @@ public final class ClientPayloadHandlers {
                 TacticalHudClientPacketHandler.applyExcludedList(list.players(), list.authorized());
             } else if (payload instanceof AdminPasswordResultPayload result) {
                 handleAdminPasswordResult(result.authorized());
+            } else if (payload instanceof TimeAccelStatusPayload status) {
+                // 服务端心跳式推来的加速场快照：存下来，由 TimeAccelOverlayRenderer 画悬浮提示。
+                TimeAccelClientState.accept(status.entries());
             }
         });
     }

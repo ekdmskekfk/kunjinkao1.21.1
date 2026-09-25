@@ -22,6 +22,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.state.BlockState;
 
+import javax.annotation.Nullable;
+
 /**
  * 时间加速器方块实体。
  * <p>
@@ -85,8 +87,21 @@ public class AcceleratorBlockEntity extends BlockEntity {
     }
 
     private void accelerateSurroundings(ServerLevel serverLevel, BlockPos pos) {
-        int half = this.radius;
-        int extra = this.multiplier - 1;
+        accelerateArea(serverLevel, pos, this.radius, this.multiplier, this);
+    }
+
+    /**
+     * 对一个立方区域做时间加速：区域内每个方块被额外 tick（倍率 - 1）次。
+     * <p>
+     * 独立成公开静态方法，是为了让剑的"时间加速"复用<b>同一套</b>逻辑 ——
+     * 否则两份实现早晚会在每刻预算与过滤器判定上跑偏。
+     *
+     * @param filterOwner 持过滤器的一方；传 {@code null} 表示不过滤（剑的加速没有过滤列表）
+     */
+    public static void accelerateArea(ServerLevel serverLevel, BlockPos pos, int radius, int multiplier,
+                                      @Nullable AcceleratorBlockEntity filterOwner) {
+        int half = radius;
+        int extra = multiplier - 1;
         if (extra <= 0) {
             return;
         }
@@ -109,7 +124,7 @@ public class AcceleratorBlockEntity extends BlockEntity {
                     }
                     BlockEntity targetEntity = serverLevel.getBlockEntity(target);
                     // 过滤：列表为空直接放行；否则按黑白名单决定是否加速
-                    if (!matchesFilter(serverLevel, targetState, targetEntity)) {
+                    if (filterOwner != null && !filterOwner.matchesFilter(serverLevel, targetState, targetEntity)) {
                         continue;
                     }
                     if (targetEntity != null) {
@@ -124,6 +139,30 @@ public class AcceleratorBlockEntity extends BlockEntity {
                 }
             }
         }
+    }
+
+    /**
+     * 这个位置"能不能被加速"：有会 tick 的方块实体，或者方块本身会随机 tick。
+     * <p>
+     * 判定标准与 {@link #accelerateArea} 实际会处理的对象完全一致 ——
+     * 所以"可以加速的东西"在剑和加速器两边含义相同，不会出现
+     * "右键说命中了、实际却什么都没加速"的情况。
+     */
+    public static boolean isAcceleratable(Level level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        if (state.isAir()) {
+            return false;
+        }
+        BlockEntity entity = level.getBlockEntity(pos);
+        if (entity == null) {
+            return state.isRandomlyTicking();
+        }
+        // 加速器自己不再被加速：tickBlockEntityExtra 里同样把它排除掉了。
+        if (entity instanceof AcceleratorBlockEntity) {
+            return false;
+        }
+        return state.getBlock() instanceof EntityBlock entityBlock
+                && entityBlock.getTicker(level, state, entity.getType()) != null;
     }
 
     /**

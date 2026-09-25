@@ -15,6 +15,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.neoforge.client.event.RenderHandEvent;
+import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 
@@ -54,11 +55,10 @@ public final class KunJinKaoIdleDataRefreshHandler {
         }
 
         if (KunJinKaoClientSwordVisuals.isDrawingInCenter(event.getHand())) {
-            // 编译阶段隐藏原物品，但在后半段绘制玩家真实皮肤的手臂去抓中央剑柄。
+            // 中央正在逐块拼剑。手持物品【不隐藏】——本次手部渲染照常进行；
+            // 这里只额外画出玩家真实皮肤的手臂，在后半段伸向中央剑柄。
             KunJinKaoClientSwordVisuals.noteCompileRenderObserved();
             renderReachingArm(event, player);
-            event.setCanceled(true);
-            return;
         }
 
         float grabProgress = KunJinKaoClientSwordVisuals.getGrabSwordProgress();
@@ -91,6 +91,11 @@ public final class KunJinKaoIdleDataRefreshHandler {
         }
     }
 
+    /**
+     * 编译后半段：画出玩家真实皮肤的手臂，从同侧屏幕下缘伸向准星下方的剑柄。
+     * 与 {@link KunJinKaoClientSwordVisuals#getCompileReachProgress()} 配合，
+     * 抓到手之后由 {@code getGrabSwordProgress()} 把「手+剑」整体拉回正常持剑位置。
+     */
     private static void renderReachingArm(RenderHandEvent event, Player player) {
         float progress = KunJinKaoClientSwordVisuals.getCompileReachProgress();
         if (progress <= 0.0F || !(player instanceof AbstractClientPlayer clientPlayer)) {

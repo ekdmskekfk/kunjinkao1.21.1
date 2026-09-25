@@ -14,7 +14,17 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.item.UseAnim;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.block.state.BlockState;
+import dev.modmind.kunjinkao.world.PlacementCoreHandler;
+import dev.modmind.kunjinkao.world.PlacementUndoHistory;
+import dev.modmind.kunjinkao.world.SwordTimeAcceleration;
+import dev.modmind.kunjinkao.world.SwordToolHandler;
+import dev.modmind.kunjinkao.block.entity.AcceleratorBlockEntity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Enemy;
@@ -43,6 +53,26 @@ public class KunJinKaoSwordItem extends SwordItem {
     private static final String ATTACK_DAMAGE_LIMIT_KEY = "AttackDamageLimit";
     private static final String ULTIMATE_DEATH_KEY = "UltimateDeathEnabled";
     private static final String QUIT_STRIKE_KEY = "QuitStrikeEnabled";
+    // ===== 放置类核心（对应 Construction Wand 的三种核心）=====
+    /** 建筑手杖：朝面向的那一侧延伸建造，一次放一排。 */
+    private static final String CONSTRUCTION_WAND_KEY = "ConstructionWandEnabled";
+    /** 天使核心：放在所视方块的背面；对空右键可在半空放置（需副手有方块）。 */
+    private static final String ANGEL_CORE_KEY = "AngelCoreEnabled";
+    /** 破坏核心：破坏所视那一侧的方块，直接消失不留掉落。 */
+    private static final String DESTRUCTION_CORE_KEY = "DestructionCoreEnabled";
+    /** 撤销：开启后按 K 键可撤销最近 10 步内的放置/破坏。 */
+    private static final String PLACEMENT_UNDO_KEY = "PlacementUndoEnabled";
+    // ===== 工具类行为（刷子 / 锄头铲子 / 避雷针）=====
+    /** 刷子：长按右键可疑的沙 / 可疑的砾石，可像原版刷子一样刷取。 */
+    private static final String BRUSH_KEY = "BrushEnabled";
+    /** 工具模式：0 关 / 1 锄头（→耕地）/ 2 铲子（→草径）。 */
+    private static final String TOOL_MODE_KEY = "SwordToolMode";
+    /** 避雷针：右键避雷针召唤闪电。 */
+    private static final String LIGHTNING_ROD_KEY = "LightningRodEnabled";
+    /** 时间加速模式：0 关 / 1 限时（30 秒）/ 2 无限。 */
+    private static final String TIME_ACCEL_MODE_KEY = "TimeAccelMode";
+    /** 时间加速倍率，取值必须在 AcceleratorBlockEntity.MULTIPLIERS 里。 */
+    private static final String TIME_ACCEL_MULTIPLIER_KEY = "TimeAccelMultiplier";
 
     /**
      * 击杀时写在受害者身上的标记，供 UltimateDeathHandler 判断这一刀用的是哪个开关。
@@ -214,6 +244,114 @@ public class KunJinKaoSwordItem extends SwordItem {
         writeDataTag(stack, tag);
     }
 
+    /** 建筑手杖：右键对着方块面时，沿该面延伸放置一排方块。 */
+    public static boolean isConstructionWandEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(CONSTRUCTION_WAND_KEY);
+    }
+
+    public static void setConstructionWandEnabled(ItemStack stack, boolean enabled) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(CONSTRUCTION_WAND_KEY, enabled);
+        writeDataTag(stack, tag);
+    }
+
+    /** 天使核心：把方块放在所视方块的背面，或对着空气在半空放置。 */
+    public static boolean isAngelCoreEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(ANGEL_CORE_KEY);
+    }
+
+    public static void setAngelCoreEnabled(ItemStack stack, boolean enabled) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(ANGEL_CORE_KEY, enabled);
+        writeDataTag(stack, tag);
+    }
+
+    /** 破坏核心：挖掉一个方块时连带清除面向那一侧的整排方块，且不留掉落。 */
+    public static boolean isDestructionCoreEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(DESTRUCTION_CORE_KEY);
+    }
+
+    public static void setDestructionCoreEnabled(ItemStack stack, boolean enabled) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(DESTRUCTION_CORE_KEY, enabled);
+        writeDataTag(stack, tag);
+    }
+
+    /** 撤销：开启后按 K 键可撤销最近 10 步内的放置/破坏操作。 */
+    public static boolean isPlacementUndoEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(PLACEMENT_UNDO_KEY);
+    }
+
+    public static void setPlacementUndoEnabled(ItemStack stack, boolean enabled) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(PLACEMENT_UNDO_KEY, enabled);
+        writeDataTag(stack, tag);
+    }
+
+    /** 两只手中任意一只的剑开了撤销即可 —— 玩家可能把剑放在副手。 */
+    public static boolean isPlacementUndoEnabledInEitherHand(Player player) {
+        return isPlacementUndoEnabled(player.getMainHandItem())
+                || isPlacementUndoEnabled(player.getOffhandItem());
+    }
+
+    /** 刷子：长按右键可疑的沙 / 可疑的砾石即可刷取。 */
+    public static boolean isBrushEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(BRUSH_KEY);
+    }
+
+    public static void setBrushEnabled(ItemStack stack, boolean enabled) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(BRUSH_KEY, enabled);
+        writeDataTag(stack, tag);
+    }
+
+    /** 工具模式：0 关 / 1 锄头 / 2 铲子。越界值一律回落成 0，避免旧存档写出奇怪数值。 */
+    public static int getToolMode(ItemStack stack) {
+        return SwordToolHandler.clampToolMode(dataTag(stack).getInt(TOOL_MODE_KEY));
+    }
+
+    public static void setToolMode(ItemStack stack, int mode) {
+        CompoundTag tag = dataTag(stack);
+        tag.putInt(TOOL_MODE_KEY, SwordToolHandler.clampToolMode(mode));
+        writeDataTag(stack, tag);
+    }
+
+    /** 避雷针：右键避雷针召唤闪电。 */
+    public static boolean isLightningRodEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(LIGHTNING_ROD_KEY);
+    }
+
+    public static void setLightningRodEnabled(ItemStack stack, boolean enabled) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(LIGHTNING_ROD_KEY, enabled);
+        writeDataTag(stack, tag);
+    }
+
+    /** 时间加速模式：0 关 / 1 限时（30 秒）/ 2 无限。 */
+    public static int getTimeAccelMode(ItemStack stack) {
+        return SwordTimeAcceleration.clampMode(dataTag(stack).getInt(TIME_ACCEL_MODE_KEY));
+    }
+
+    public static void setTimeAccelMode(ItemStack stack, int mode) {
+        CompoundTag tag = dataTag(stack);
+        tag.putInt(TIME_ACCEL_MODE_KEY, SwordTimeAcceleration.clampMode(mode));
+        writeDataTag(stack, tag);
+    }
+
+    /** 时间加速倍率：取值必须是 AcceleratorBlockEntity.MULTIPLIERS 里的档位。 */
+    public static int getTimeAccelMultiplier(ItemStack stack) {
+        CompoundTag tag = dataTag(stack);
+        return tag.contains(TIME_ACCEL_MULTIPLIER_KEY)
+                ? AcceleratorBlockEntity.clampMultiplier(tag.getInt(TIME_ACCEL_MULTIPLIER_KEY))
+                : AcceleratorBlockEntity.MULTIPLIERS[0];
+    }
+
+    public static void setTimeAccelMultiplier(ItemStack stack, int multiplier) {
+        CompoundTag tag = dataTag(stack);
+        tag.putInt(TIME_ACCEL_MULTIPLIER_KEY, AcceleratorBlockEntity.clampMultiplier(multiplier));
+        writeDataTag(stack, tag);
+    }
+
     public static void setLootingMode(ItemStack stack, int mode) {
         CompoundTag tag = dataTag(stack);
         tag.putInt(LOOTING_MODE_KEY, Math.max(0, Math.min(2, mode)));
@@ -305,13 +443,135 @@ public class KunJinKaoSwordItem extends SwordItem {
             return super.use(level, player, hand);
         }
         if (player.isShiftKeyDown()) {
+            // 对着天空 shift+右键：加速时间（整体拉高服务器每秒 tick 数）。
+            // 这是唯一能让 AE2 这类"按 gameTime 算进度"的机器真正提速的办法 ——
+            // 它们在同一游戏刻里被多调几次 ticker 并不会前进。
+            // 开了加速就把 shift+右键天空 让给它；没开时保持原来的循环切换行为。
+            if (SwordTimeAcceleration.clampMode(getTimeAccelMode(stack)) != SwordTimeAcceleration.MODE_OFF) {
+                if (level.getServer() != null) {
+                    SwordTimeAcceleration.tryToggleTime(player, level.getServer(), stack);
+                }
+                return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
+            }
             return cycleMode(level, player, hand);
+        }
+        // 天使核心：对着空气右键可以在半空放置方块（方块取自副手）。
+        // 官方限制一并保留：副手要有方块，且下落不超过 10 格。
+        if (isAngelCoreEnabled(stack) && PlacementCoreHandler.hasOffhandBlock(player)) {
+            if (!level.isClientSide()) {
+                PlacementUndoHistory.push(player, PlacementCoreHandler.placeInAir(player, level));
+            }
+            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
         }
         if (!level.isClientSide() && level instanceof ServerLevel serverLevel) {
             int removed = clearAreaTargets(serverLevel, player, stack, getAreaClearTargetMode(stack));
             player.displayClientMessage(Component.translatable("message.kunjinkao.area_clear_result", removed), true);
         }
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
+    }
+
+    /**
+     * 放置类核心走这里：右键<b>方块</b>时优先按核心放置。
+     * 没有开启核心（或副手没有方块）时交回原版 —— 原版剑返回 PASS，
+     * 于是继续走 {@link #use} 的范围清除，改动前的行为完全不变。
+     */
+    @Override
+    public InteractionResult useOn(UseOnContext context) {
+        Player player = context.getPlayer();
+        ItemStack stack = context.getItemInHand();
+        // 潜行时一律交回原版，只有一个例外：时间加速把 shift 当作触发键。
+        if (player == null || isInert(stack)) {
+            return super.useOn(context);
+        }
+        Level level = context.getLevel();
+        BlockPos clickedPos = context.getClickedPos();
+
+        // ---- 0) shift + 右键：时间加速 ----
+        // 必须排在所有行为之前：其余行为都把 shift 当作"这次别触发"的修饰键，
+        // 只有它把 shift 当触发键，所以要在下面的分支之前先问它。
+        if (player.isShiftKeyDown()) {
+            if (SwordTimeAcceleration.tryToggleBlock(player, level, clickedPos, stack)) {
+                return InteractionResult.sidedSuccess(level.isClientSide());
+            }
+            return super.useOn(context);
+        }
+
+        // ---- 1) 放置类核心（建筑手杖 / 天使核心）----
+        // 优先级最高：它们需要副手有方块，条件最明确。
+        boolean angel = isAngelCoreEnabled(stack);
+        boolean wand = isConstructionWandEnabled(stack);
+        if ((angel || wand) && PlacementCoreHandler.hasOffhandBlock(player)) {
+            if (!level.isClientSide()) {
+                // 这一步的所有改动入撤销栈；放置会退物品，空结果不入栈。
+                PlacementUndoHistory.push(player, angel
+                        ? PlacementCoreHandler.placeAngel(player, level, clickedPos, context.getClickedFace())
+                        : PlacementCoreHandler.placeConstructionRow(player, level, clickedPos,
+                                context.getClickedFace()));
+            }
+            return InteractionResult.sidedSuccess(level.isClientSide());
+        }
+
+        // ---- 2) 刷子：长按可刷的方块 ----
+        // 只负责进入"使用中"状态，真正的推进在 onUseTick 里，和原版刷子一样。
+        if (isBrushEnabled(stack) && SwordToolHandler.isBrushable(level, clickedPos)) {
+            player.startUsingItem(context.getHand());
+            return InteractionResult.CONSUME;
+        }
+
+        // ---- 3) 锄头 / 铲子：草方块 → 耕地 / 草径 ----
+        InteractionResult toolResult = SwordToolHandler.applyTillOrFlatten(context, getToolMode(stack));
+        if (toolResult != InteractionResult.PASS) {
+            return toolResult;
+        }
+
+        // ---- 4) 避雷针：召唤闪电 ----
+        if (isLightningRodEnabled(stack) && SwordToolHandler.strikeLightningRod(context)) {
+            return InteractionResult.sidedSuccess(level.isClientSide());
+        }
+
+        return super.useOn(context);
+    }
+
+    // ===== 刷子的长按机制（对齐原版 BrushItem）=====
+
+    /**
+     * 剑的"使用中"动画固定为刷子动作。
+     * <p>
+     * 这不影响平时：只有 {@link #useOn} 命中可刷方块并调用 {@code startUsingItem} 之后，
+     * 玩家才会进入"使用中"状态，这个动画也才会被用到。
+     */
+    @Override
+    public UseAnim getUseAnimation(ItemStack stack) {
+        return UseAnim.BRUSH;
+    }
+
+    @Override
+    public int getUseDuration(ItemStack stack, LivingEntity entity) {
+        return SwordToolHandler.BRUSH_USE_DURATION;
+    }
+
+    /** 长按期间每 tick 推进一次刷取；视线移开或松手立刻中断（与原版一致）。 */
+    @Override
+    public void onUseTick(Level level, LivingEntity entity, ItemStack stack, int remainingUseDuration) {
+        if (!(entity instanceof Player player)) {
+            return;
+        }
+        if (isInert(stack) || !isBrushEnabled(stack)) {
+            player.releaseUsingItem();
+            return;
+        }
+        SwordToolHandler.tickBrush(level, player, stack, remainingUseDuration);
+    }
+
+    /** 破坏核心：挖掉一格时连带清除面向那一侧的整排方块，且不留掉落。 */
+    @Override
+    public boolean mineBlock(ItemStack stack, Level level, BlockState state, BlockPos pos, LivingEntity miningEntity) {
+        boolean result = super.mineBlock(stack, level, state, pos, miningEntity);
+        if (!level.isClientSide() && !isInert(stack) && isDestructionCoreEnabled(stack)
+                && miningEntity instanceof Player player) {
+            PlacementUndoHistory.push(player, PlacementCoreHandler.destroyRow(player, level, pos));
+        }
+        return result;
     }
 
     private static int clearAreaTargets(ServerLevel level, Player player, ItemStack stack, AreaClearTargetMode mode) {

@@ -4,6 +4,12 @@ import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import dev.modmind.kunjinkao.KunJinKaoTheme;
 import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.network.NetworkHandler;
+import dev.modmind.kunjinkao.network.SimpleActionPayload;
+import dev.modmind.kunjinkao.network.SwordSettingPayload;
+import dev.modmind.kunjinkao.world.SwordTimeAcceleration;
+import net.neoforged.neoforge.client.event.InputEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 import dev.modmind.kunjinkao.network.ToggleDisguisePayload;
 import dev.modmind.kunjinkao.network.ToggleOverwritePayload;
 import dev.modmind.kunjinkao.network.ToggleThemePayload;
@@ -44,6 +50,7 @@ public class KunJinKaoClientEvents {
         handleToggleTacticalHud();
         handleOpenSwordOptions();
         handleOpenAdminPassword();
+        handleUndoPlacement();
     }
 
     @SubscribeEvent
@@ -57,7 +64,9 @@ public class KunJinKaoClientEvents {
     }
 
     /**
-     * 伪装切换：K 键（可在按键设置中自定义）。
+     * 伪装切换：J 键（可在按键设置中自定义）。
+     * <p>
+     * 原本绑在 K 上，K 已经让给"撤销放置"，伪装挪到相邻的 J。
      */
     private static void handleToggleDisguise() {
         if (!KunJinKaoKeyBindings.TOGGLE_DISGUISE.consumeClick()) {
@@ -167,6 +176,37 @@ public class KunJinKaoClientEvents {
     }
 
     /** 】键打开管理员密码窗口；所有密码校验均由服务端完成。 */
+    /**
+     * 按住 shift 滚动滚轮：快速调节时间加速倍率。
+     * <p>
+     * 接管条件刻意收得很紧 —— 必须同时满足"没开任何界面 + 按着 shift + 手里是管理员剑 +
+     * 时间加速不是关闭"。只要有一条不满足就完全放行，不抢正常的快捷栏切换。
+     */
+    @SubscribeEvent
+    public static void onMouseScroll(InputEvent.MouseScrollingEvent event) {
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        if (player == null || minecraft.screen != null || !player.isShiftKeyDown()) {
+            return;
+        }
+        InteractionHand hand = findSwordHand(player);
+        if (hand == null) {
+            return;
+        }
+        ItemStack stack = player.getItemInHand(hand);
+        if (KunJinKaoSwordItem.getTimeAccelMode(stack) == SwordTimeAcceleration.MODE_OFF) {
+            return;
+        }
+        int next = SwordTimeAcceleration.stepMultiplier(KunJinKaoSwordItem.getTimeAccelMultiplier(stack),
+                event.getScrollDeltaY() > 0.0D ? 1 : -1);
+        // 本地先改，滚轮手感才跟得上；服务端那份由下面的包同步。
+        KunJinKaoSwordItem.setTimeAccelMultiplier(stack, next);
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand,
+                SwordSettingPayload.TIME_ACCEL_MULTIPLIER, next));
+        player.displayClientMessage(Component.translatable("message.kunjinkao.time_accel_multiplier", next), true);
+        event.setCanceled(true);
+    }
+
     private static void handleOpenAdminPassword() {
         Minecraft minecraft = Minecraft.getInstance();
         if (KunJinKaoKeyBindings.OPEN_ADMIN_PASSWORD.consumeClick() && minecraft.player != null
@@ -188,6 +228,20 @@ public class KunJinKaoClientEvents {
         InteractionHand hand = findSwordHand(minecraft.player);
         if (hand != null) {
             minecraft.setScreen(new SwordOptionsScreen(hand));
+        }
+    }
+
+    /**
+     * 撤销最近一步放置/破坏：K 键。
+     * <p>
+     * 是否真的执行由服务端判定 —— 只有手里的剑开着"撤销"才生效，
+     * 这里只负责把按键转成一条动作包，避免在客户端改动世界。
+     */
+    private static void handleUndoPlacement() {
+        if (KunJinKaoKeyBindings.UNDO_PLACEMENT.consumeClick()
+                && Minecraft.getInstance().player != null
+                && Minecraft.getInstance().screen == null) {
+            NetworkHandler.sendToServer(new SimpleActionPayload(SimpleActionPayload.UNDO_PLACEMENT));
         }
     }
 

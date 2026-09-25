@@ -31,6 +31,8 @@ public record SimpleActionPayload(int actionId) implements CustomPacketPayload {
     public static final int TOGGLE_HUD_NIGHT_VISION = 2;
     public static final int TOGGLE_HUD_TRUE_INVISIBILITY = 3;
     public static final int TOGGLE_HUD_MAGNET = 4;
+    /** 撤销最近一步放置/破坏。 */
+    public static final int UNDO_PLACEMENT = 5;
 
     public static final Type<SimpleActionPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "simple_action"));
@@ -51,6 +53,7 @@ public record SimpleActionPayload(int actionId) implements CustomPacketPayload {
                 case TOGGLE_HUD_NIGHT_VISION -> KunJinKaoColdDataEffectsHandler.handleToggleHudNightVision(server, context.player());
                 case TOGGLE_HUD_TRUE_INVISIBILITY -> KunJinKaoColdDataEffectsHandler.handleToggleHudTrueInvisibility(server, context.player());
                 case TOGGLE_HUD_MAGNET -> KunJinKaoColdDataEffectsHandler.handleToggleHudMagnet(server, context.player());
+                case UNDO_PLACEMENT -> KunJinKaoColdDataEffectsHandler.handleUndoPlacement(context.player());
                 default -> {
                     // 未知 actionId：忽略，等价于原来收到一个不认识的空载荷包。
                 }

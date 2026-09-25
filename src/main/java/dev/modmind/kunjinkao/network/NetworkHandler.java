@@ -55,6 +55,7 @@ public final class NetworkHandler {
         reg.playToClient(AdminPasswordResultPayload.TYPE, AdminPasswordResultPayload.STREAM_CODEC, AdminPasswordResultPayload::handle);
         reg.playToClient(ExcludedPlayersPayload.TYPE, ExcludedPlayersPayload.STREAM_CODEC, ExcludedPlayersPayload::handle);
         reg.playToServer(ManageExcludedPlayerPayload.TYPE, ManageExcludedPlayerPayload.STREAM_CODEC, ManageExcludedPlayerPayload::handle);
+        reg.playToClient(TimeAccelStatusPayload.TYPE, TimeAccelStatusPayload.STREAM_CODEC, TimeAccelStatusPayload::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {
@@ -71,6 +72,11 @@ public final class NetworkHandler {
 
     public static void sendToAllTracking(ServerPlayer entity, CustomPacketPayload payload) {
         PacketDistributor.sendToPlayersTrackingEntity(entity, payload);
+    }
+
+    /** 按维度广播：加速场提示只需要发给同维度的客户端。 */
+    public static void sendToPlayersInDimension(net.minecraft.server.level.ServerLevel level, CustomPacketPayload payload) {
+        PacketDistributor.sendToPlayersInDimension(level, payload);
     }
 
     /**

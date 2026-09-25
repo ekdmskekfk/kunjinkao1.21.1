@@ -36,6 +36,19 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
     public static final int UNBREAKABLE_BLOCK_BREAKING = 6;
     public static final int ULTIMATE_DEATH = 7;
     public static final int QUIT_STRIKE = 8;
+    // 放置类核心（对应 Construction Wand 的三种核心）
+    public static final int CONSTRUCTION_WAND = 9;
+    public static final int ANGEL_CORE = 10;
+    public static final int DESTRUCTION_CORE = 11;
+    /** 撤销开关：开启后按 K 键可撤销最近 10 步内的放置/破坏。 */
+    public static final int PLACEMENT_UNDO = 12;
+    // 工具类行为（刷子 / 锄头铲子 / 避雷针）
+    public static final int BRUSH = 13;
+    public static final int TOOL_MODE = 14;
+    public static final int LIGHTNING_ROD = 15;
+    // 时间加速（shift+右键 立加速场）
+    public static final int TIME_ACCEL_MODE = 16;
+    public static final int TIME_ACCEL_MULTIPLIER = 17;
 
     public static final Type<SwordSettingPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "sword_setting"));
@@ -64,6 +77,15 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
                 case UNBREAKABLE_BLOCK_BREAKING -> KunJinKaoColdDataEffectsHandler.handleToggleUnbreakableBlockBreaking(context.player(), hand, value != 0);
                 case ULTIMATE_DEATH -> KunJinKaoColdDataEffectsHandler.handleToggleUltimateDeath(context.player(), hand, value != 0);
                 case QUIT_STRIKE -> KunJinKaoColdDataEffectsHandler.handleToggleQuitStrike(context.player(), hand, value != 0);
+                case CONSTRUCTION_WAND -> KunJinKaoColdDataEffectsHandler.handleToggleConstructionWand(context.player(), hand, value != 0);
+                case ANGEL_CORE -> KunJinKaoColdDataEffectsHandler.handleToggleAngelCore(context.player(), hand, value != 0);
+                case DESTRUCTION_CORE -> KunJinKaoColdDataEffectsHandler.handleToggleDestructionCore(context.player(), hand, value != 0);
+                case PLACEMENT_UNDO -> KunJinKaoColdDataEffectsHandler.handleTogglePlacementUndo(context.player(), hand, value != 0);
+                case BRUSH -> KunJinKaoColdDataEffectsHandler.handleToggleBrush(context.player(), hand, value != 0);
+                case TOOL_MODE -> KunJinKaoColdDataEffectsHandler.handleSetToolMode(context.player(), hand, value);
+                case LIGHTNING_ROD -> KunJinKaoColdDataEffectsHandler.handleToggleLightningRod(context.player(), hand, value != 0);
+                case TIME_ACCEL_MODE -> KunJinKaoColdDataEffectsHandler.handleSetTimeAccelMode(context.player(), hand, value);
+                case TIME_ACCEL_MULTIPLIER -> KunJinKaoColdDataEffectsHandler.handleSetTimeAccelMultiplier(context.player(), hand, value);
                 default -> {
                     // 未知 settingId：与原来"收到自己认不出的包"一样，什么都不做。
                 }
