@@ -570,6 +570,10 @@ public class KunJinKaoOverwriteHandler {
         }
         LOGGER.debug("[ATTACK-EVENT] target={} overwriteEnabled={}",
                 target.getType(), KunJinKaoSwordItem.isOverwriteEnabled(sword));
+        // 无论接下来走覆写还是秒杀，先把击杀者记在受害者身上 ——
+        // 那两条路都是"取消攻击 + 直接 kill()"，走的是无来源伤害，
+        // 事后再也查不出是谁动的手（斩首与刷怪蛋掉落就卡在这里）。
+        KunJinKaoSwordItem.recordKiller(target, player);
         if (handleSwordAttack(player, target, sword, player.level())) {
             event.setCanceled(true);
         }

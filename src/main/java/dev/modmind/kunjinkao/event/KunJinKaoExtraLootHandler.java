@@ -118,10 +118,18 @@ public final class KunJinKaoExtraLootHandler {
         if (source.getDirectEntity() instanceof Player player) {
             return player;
         }
-        // 秒杀路径：剑用的是 target.kill()，那是 genericKill —— 伤害来源里没有实体，
-        // 前两条都拿不到人。退回"击杀归属"：玩家挥剑时 hurt() 已经把他记在受害者身上，
-        // 之后的 genericKill 既不会覆盖也不会清空这个记录，所以这里拿到的正是玩家本人。
-        // getKillCredit() 优先返回 lastHurtByPlayer，没有再退回 lastHurtByMob。
+        // 秒杀路径：剑是在 AttackEntityEvent 里取消攻击后直接 kill() 的，
+        // 走 genericKill、且受害者从未真正受过伤 —— 所以 killCredit 与 lastHurtByMob
+        // 都是 null，只能读剑在动手那一刻写下的击杀者 UUID。
+        net.minecraft.nbt.CompoundTag data = victim.getPersistentData();
+        if (data.hasUUID(KunJinKaoDeathEventHandler.KILLER_UUID_KEY)) {
+            Player recorded = victim.level()
+                    .getPlayerByUUID(data.getUUID(KunJinKaoDeathEventHandler.KILLER_UUID_KEY));
+            if (recorded != null) {
+                return recorded;
+            }
+        }
+        // 兜底：非秒杀路径（普通伤害、箭矢等）这里仍然拿得到人。
         if (victim.getKillCredit() instanceof Player player) {
             return player;
         }

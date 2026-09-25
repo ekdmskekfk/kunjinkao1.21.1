@@ -39,6 +39,7 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import javax.annotation.Nullable;
 
 public class KunJinKaoSwordItem extends SwordItem {
 
@@ -658,6 +659,7 @@ public class KunJinKaoSwordItem extends SwordItem {
                     // 范围清除没有伤害来源，处决开关只能通过击杀标记传递。
                     // 玩家用只含处决信息的标记，避免把对方背包按抢夺等级复制。
                     applyExecutionMark(target, stack);
+                    recordKiller(target, player);
                     target.kill();
                     removed++;
                 }
@@ -772,6 +774,22 @@ public class KunJinKaoSwordItem extends SwordItem {
         };
         player.displayClientMessage(Component.translatable("message.kunjinkao.looting_mode_current", modeText), true);
         return InteractionResultHolder.consume(stack);
+    }
+
+    /**
+     * 在受害者身上记下击杀者。
+     * <p>
+     * 必须在这里记：剑的秒杀为了绕开"先造伤害再判定"的一整套保护流程，
+     * 是在 AttackEntityEvent 里直接取消攻击并调用 target.kill() 的 ——
+     * 那一步走的是 genericKill，既没有来源实体，也从未让受害者受过伤，
+     * 所以 victim 上的 lastHurtByPlayer / lastHurtByMob 永远是 null，
+     * 死亡时再怎么查都查不出是谁动的手（斩首与刷怪蛋掉落就卡在这里）。
+     * KunJinKaoDeathEventHandler.KILLER_UUID_KEY 这个键原本就为此声明，只是从来没被写过。
+     */
+    public static void recordKiller(LivingEntity target, @Nullable Player attacker) {
+        if (attacker != null) {
+            target.getPersistentData().putUUID(KunJinKaoDeathEventHandler.KILLER_UUID_KEY, attacker.getUUID());
+        }
     }
 
     public static void applyKunJinKaoMark(LivingEntity target, ItemStack stack) {
