@@ -787,9 +787,18 @@ public class KunJinKaoSwordItem extends SwordItem {
      * KunJinKaoDeathEventHandler.KILLER_UUID_KEY 这个键原本就为此声明，只是从来没被写过。
      */
     public static void recordKiller(LivingEntity target, @Nullable Player attacker) {
-        if (attacker != null) {
-            target.getPersistentData().putUUID(KunJinKaoDeathEventHandler.KILLER_UUID_KEY, attacker.getUUID());
+        if (attacker == null) {
+            return;
         }
+        target.getPersistentData().putUUID(KunJinKaoDeathEventHandler.KILLER_UUID_KEY, attacker.getUUID());
+        // 补上"最后伤害来源玩家"——这一步比上面那行 UUID 更关键。
+        // 原版 dropFromLootTable 只在这个字段非空时，才会把 LAST_DAMAGE_PLAYER 放进战利品上下文：
+        //     if (hitByPlayer && this.lastHurtByPlayer != null) { builder.withParameter(LAST_DAMAGE_PLAYER, ...) }
+        // 于是战利品表里 killed_by_player 这类条件才会成立。
+        // 烈焰人掉烈焰棒、凋灵骷髅掉头颅、僵尸掉铁锭全靠它。
+        // 剑的秒杀从不造成真实伤害，这个字段一直是空的，所以这些条件从来没满足过 ——
+        // 表现就是"打死了却几乎不掉东西"（只剩那些无条件掷骰的，比如萤石粉 0-2）。
+        target.setLastHurtByPlayer(attacker);
     }
 
     public static void applyKunJinKaoMark(LivingEntity target, ItemStack stack) {
