@@ -70,6 +70,8 @@ public class KunJinKaoSwordItem extends SwordItem {
     /** 避雷针：右键避雷针召唤闪电。 */
     private static final String LIGHTNING_ROD_KEY = "LightningRodEnabled";
     /** 时间加速模式：0 关 / 1 限时（30 秒）/ 2 无限。 */
+    /** 扳手：给剑带上扳手标记。同时剑在 c:tools/wrench 标签里，模组会直接把它当扳手。 */
+    private static final String WRENCH_KEY = "Wrench";
     private static final String TIME_ACCEL_MODE_KEY = "TimeAccelMode";
     /** 时间加速倍率，取值必须在 AcceleratorBlockEntity.MULTIPLIERS 里。 */
     private static final String TIME_ACCEL_MULTIPLIER_KEY = "TimeAccelMultiplier";
@@ -324,6 +326,17 @@ public class KunJinKaoSwordItem extends SwordItem {
     public static void setLightningRodEnabled(ItemStack stack, boolean enabled) {
         CompoundTag tag = dataTag(stack);
         tag.putBoolean(LIGHTNING_ROD_KEY, enabled);
+        writeDataTag(stack, tag);
+    }
+
+    /** 扳手标记。 */
+    public static boolean isWrenchEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(WRENCH_KEY);
+    }
+
+    public static void setWrenchEnabled(ItemStack stack, boolean enabled) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(WRENCH_KEY, enabled);
         writeDataTag(stack, tag);
     }
 

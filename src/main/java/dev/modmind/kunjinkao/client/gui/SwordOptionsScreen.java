@@ -70,6 +70,7 @@ public final class SwordOptionsScreen extends Screen {
     private Button brushToggle;
     private Button toolModeButton;
     private Button lightningRodToggle;
+    private Button wrenchToggle;
     private Button timedAccelToggle;
     private Button infiniteAccelToggle;
 
@@ -88,7 +89,7 @@ public final class SwordOptionsScreen extends Screen {
     // 被跳过的数值记在 pending 里，render 每帧检查（窗口一过就补发）并在关屏时强制补发一次，
     // 保证玩家最终选定的值一定到达服务端，不会因为节流丢设置。
     // 开关/循环按钮不走节流：它们是离散操作，连点两下必须发两次。
-    private static final int SETTING_COUNT = 18;
+    private static final int SETTING_COUNT = 19;
     private static final long SEND_INTERVAL_MS = 100L;
     private static final int TIER_COUNT = 20;
     private final long[] lastSendMillis = new long[SETTING_COUNT];
@@ -179,8 +180,8 @@ public final class SwordOptionsScreen extends Screen {
         contentTop = addSection(leftX, toolsTitleY, sectionW, "screen.kunjinkao.section_tools", 2);
         brushToggle = addButton(leftX + BOX_PAD, contentTop, btnW, this::toggleBrush);
         toolModeButton = addButton(leftX + BOX_PAD + btnW + BTN_GAP, contentTop, btnW, this::cycleToolMode);
-        lightningRodToggle = addButton(leftX + BOX_PAD, contentTop + ROW_H, sectionW - BOX_PAD * 2,
-                this::toggleLightningRod);
+        lightningRodToggle = addButton(leftX + BOX_PAD, contentTop + ROW_H, btnW, this::toggleLightningRod);
+        wrenchToggle = addButton(leftX + BOX_PAD + btnW + BTN_GAP, contentTop + ROW_H, btnW, this::toggleWrench);
 
         // ---------- 右列 · 处决 ----------
         contentTop = addSection(rightX, panelY + TITLE_H, sectionW, "screen.kunjinkao.section_execution", 1);
@@ -393,6 +394,13 @@ public final class SwordOptionsScreen extends Screen {
                     Component.translatable(rod
                             ? "screen.kunjinkao.switch_on" : "screen.kunjinkao.switch_off")));
         }
+        if (wrenchToggle != null) {
+            boolean wrench = player != null
+                    && KunJinKaoSwordItem.isWrenchEnabled(player.getItemInHand(hand));
+            wrenchToggle.setMessage(label("screen.kunjinkao.wrench",
+                    Component.translatable(wrench
+                            ? "screen.kunjinkao.switch_on" : "screen.kunjinkao.switch_off")));
+        }
         if (timedAccelToggle != null) {
             int accelMode = player == null ? SwordTimeAcceleration.MODE_OFF
                     : KunJinKaoSwordItem.getTimeAccelMode(player.getItemInHand(hand));
@@ -585,6 +593,28 @@ public final class SwordOptionsScreen extends Screen {
         boolean enabled = !KunJinKaoSwordItem.isLightningRodEnabled(stack);
         KunJinKaoSwordItem.setLightningRodEnabled(stack, enabled);
         NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.LIGHTNING_ROD,
+                enabled ? 1 : 0));
+        refreshLabels();
+    }
+
+    /**
+     * 扳手标记。
+     * <p>
+     * 这个开关只改剑上的 NBT；真正让模组把剑当扳手的是数据包里的物品标签
+     * {@code c:tools/wrench}（以及 {@code ae2:quartz_wrench}）—— 那是标签，不是 NBT，
+     * 无法按物品逐个开关。所以这里管的是"这把剑自己认不认自己是扳手"，
+     * 供脚本或后续逻辑读取。
+     */
+    private void toggleWrench() {
+        Player player = Minecraft.getInstance().player;
+        ItemStack stack = player == null ? ItemStack.EMPTY : player.getItemInHand(hand);
+        if (!(stack.getItem() instanceof KunJinKaoSwordItem)) {
+            onClose();
+            return;
+        }
+        boolean enabled = !KunJinKaoSwordItem.isWrenchEnabled(stack);
+        KunJinKaoSwordItem.setWrenchEnabled(stack, enabled);
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.WRENCH,
                 enabled ? 1 : 0));
         refreshLabels();
     }

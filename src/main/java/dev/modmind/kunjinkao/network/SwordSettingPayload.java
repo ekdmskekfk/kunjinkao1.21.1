@@ -49,6 +49,8 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
     // 时间加速（shift+右键 立加速场）
     public static final int TIME_ACCEL_MODE = 16;
     public static final int TIME_ACCEL_MULTIPLIER = 17;
+    /** 扳手标记。 */
+    public static final int WRENCH = 18;
 
     public static final Type<SwordSettingPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "sword_setting"));
@@ -86,6 +88,7 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
                 case LIGHTNING_ROD -> KunJinKaoColdDataEffectsHandler.handleToggleLightningRod(context.player(), hand, value != 0);
                 case TIME_ACCEL_MODE -> KunJinKaoColdDataEffectsHandler.handleSetTimeAccelMode(context.player(), hand, value);
                 case TIME_ACCEL_MULTIPLIER -> KunJinKaoColdDataEffectsHandler.handleSetTimeAccelMultiplier(context.player(), hand, value);
+                case WRENCH -> KunJinKaoColdDataEffectsHandler.handleToggleWrench(context.player(), hand, value != 0);
                 default -> {
                     // 未知 settingId：与原来"收到自己认不出的包"一样，什么都不做。
                 }
