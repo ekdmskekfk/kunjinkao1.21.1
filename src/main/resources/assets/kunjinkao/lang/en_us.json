@@ -67,7 +67,7 @@
   "screen.kunjinkao.timed_acceleration": "Timed Accel",
   "screen.kunjinkao.infinite_acceleration": "Infinite Accel",
   "message.kunjinkao.time_accel_multiplier": "Acceleration multiplier: %s",
-  "message.kunjinkao.time_accel_started_timed": "Machine acceleration on: 30 seconds",
+  "message.kunjinkao.time_accel_started_timed": "Machine acceleration on: 256 seconds",
   "message.kunjinkao.time_accel_started_infinite": "Machine acceleration on: infinite (shift+right-click the same spot to stop)",
   "message.kunjinkao.time_accel_stopped": "Machine acceleration stopped here",
   "message.kunjinkao.time_accel_time_started": "Time acceleration on: server tick rate %s/s",

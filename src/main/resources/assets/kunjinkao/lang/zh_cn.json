@@ -67,7 +67,7 @@
   "screen.kunjinkao.timed_acceleration": "限时加速",
   "screen.kunjinkao.infinite_acceleration": "无限加速",
   "message.kunjinkao.time_accel_multiplier": "加速倍率：%s",
-  "message.kunjinkao.time_accel_started_timed": "机器加速已开启：限时 30 秒",
+  "message.kunjinkao.time_accel_started_timed": "机器加速已开启：限时 256 秒",
   "message.kunjinkao.time_accel_started_infinite": "机器加速已开启：无限（再 shift+右键 同一格停止）",
   "message.kunjinkao.time_accel_stopped": "已停止这一格的机器加速",
   "message.kunjinkao.time_accel_time_started": "时间加速已开启：服务器 tick 率 %s/秒",

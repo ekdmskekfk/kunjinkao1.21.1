@@ -482,11 +482,12 @@ public class KunJinKaoSwordItem extends SwordItem {
             return super.use(level, player, hand);
         }
         if (player.isShiftKeyDown()) {
-            // 对着天空 shift+右键：加速时间（整体拉高服务器每秒 tick 数）。
-            // 这是唯一能让 AE2 这类"按 gameTime 算进度"的机器真正提速的办法 ——
-            // 它们在同一游戏刻里被多调几次 ticker 并不会前进。
-            // 开了加速就把 shift+右键天空 让给它；没开时保持原来的循环切换行为。
-            if (SwordTimeAcceleration.clampMode(getTimeAccelMode(stack)) != SwordTimeAcceleration.MODE_OFF) {
+            // 对着【上方】shift+右键：加速时间（整体拉高服务器每秒 tick 数）。
+            // 刻意要求真的抬头（至少 45 度），而不是"点到空气就算" ——
+            // 整体加速影响全服，不该在平视或低头点到空气时被误触。
+            // 这条也是唯一能带动 AE2 那类"按 gameTime 算进度"的机器的办法。
+            if (SwordTimeAcceleration.clampMode(getTimeAccelMode(stack)) != SwordTimeAcceleration.MODE_OFF
+                    && SwordTimeAcceleration.isFacingSky(player)) {
                 if (level.getServer() != null) {
                     SwordTimeAcceleration.tryToggleTime(player, level.getServer(), stack);
                 }

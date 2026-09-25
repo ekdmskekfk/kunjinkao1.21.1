@@ -52,8 +52,8 @@ import java.util.Map;
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
 public final class SwordTimeAcceleration {
 
-    /** 限时加速的持续时间：30 秒（墙上时钟）。 */
-    public static final long TIMED_DURATION_MILLIS = 30_000L;
+    /** 限时加速的持续时间：256 秒（墙上时钟）。 */
+    public static final long TIMED_DURATION_MILLIS = 256_000L;
     /**
      * 机器加速只作用于<b>点中的那一格</b>，不扩散到周围 —— 一个加速场就是一台机器。
      */
@@ -65,6 +65,13 @@ public final class SwordTimeAcceleration {
      * 所以按点到的那一格为中心取一个小范围，站在那儿的生物才会被加速。
      */
     public static final int ENTITY_RADIUS = 2;
+    /**
+     * 判定"对着上方"的俯仰角阈值（度）。
+     * <p>
+     * MC 里俯仰角负值是抬头，-90 是正对天顶。取 45 度是为了跟"随便往上看一眼"区分开 ——
+     * 整体时间加速影响全服，不该在余光扫到天空时被误触。
+     */
+    public static final float SKY_PITCH_THRESHOLD = -45.0F;
     /** 时间加速把 tick 率压到的上限，避免把服务器直接跑爆（400 tps = 20 倍速）。 */
     public static final float MAX_TICKRATE = 400.0F;
     /** 加速场状态广播间隔（tick）。10 tick = 0.5 秒，客户端的倒计时读起来是连续的。 */
@@ -118,6 +125,11 @@ public final class SwordTimeAcceleration {
     private static final Map<java.util.UUID, Long> LAST_TOGGLE = new HashMap<>();
 
     private SwordTimeAcceleration() {
+    }
+
+    /** 玩家此刻是否真的对着上方（抬头上看至少 45 度）。 */
+    public static boolean isFacingSky(Player player) {
+        return player.getXRot() <= SKY_PITCH_THRESHOLD;
     }
 
     public static int clampMode(int mode) {
