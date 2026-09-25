@@ -54,8 +54,17 @@ public final class SwordTimeAcceleration {
 
     /** 限时加速的持续时间：30 秒（墙上时钟）。 */
     public static final long TIMED_DURATION_MILLIS = 30_000L;
-    /** 局部加速场半径。 */
-    public static final int RADIUS = 2;
+    /**
+     * 机器加速只作用于<b>点中的那一格</b>，不扩散到周围 —— 一个加速场就是一台机器。
+     */
+    public static final int BLOCK_RADIUS = 0;
+    /**
+     * 生物加速的作用半径。
+     * <p>
+     * 与机器不同，这里保留一点范围：{@code useOn} 只能点方块，玩家没法"点中一只鸡"，
+     * 所以按点到的那一格为中心取一个小范围，站在那儿的生物才会被加速。
+     */
+    public static final int ENTITY_RADIUS = 2;
     /** 时间加速把 tick 率压到的上限，避免把服务器直接跑爆（400 tps = 20 倍速）。 */
     public static final float MAX_TICKRATE = 400.0F;
     /** 加速场状态广播间隔（tick）。10 tick = 0.5 秒，客户端的倒计时读起来是连续的。 */
@@ -204,10 +213,9 @@ public final class SwordTimeAcceleration {
     /**
      * 按当前所有加速场重算目标 tick 率。
      * <p>
-     * <b>局部加速同样会抬高 tick 率</b>，这不是偷懒：AE2 那类机器按 gameTime 算进度，
-     * 在同一个游戏刻里被多调几次 ticker 完全不会前进，只有让时间真正走快才动得起来。
-     * 所以局部加速 = 范围内额外 tick（方块实体 + 生物）+ 全局时间提速，
-     * 两者叠加才能同时覆盖"局部多跑几轮"和"按时间算进度"这两类目标。
+     * 只有 {@code TIME_SESSIONS}（对着天空的那种）参与计算。局部加速是"某一台机器多跑几轮"，
+     * 与全局时间无关 —— AE2 的机器本身注册了原版 ticker，多调几次就会真的前进，
+     * 不需要靠拔快整个世界的时间来带。
      * 一个加速场都不剩时复原成介入之前的 tick 率。
      */
     private static void refreshTickrate(MinecraftServer server) {
@@ -215,10 +223,9 @@ public final class SwordTimeAcceleration {
             applyTickrate(server, previousTickrate);
             return;
         }
+        // 只有"时间加速"才动 tick 率。局部加速是单台机器的额外 tick，
+        // 不该把整个世界的时间一起拔快 —— 那是另一件事，由对着天空的加速负责。
         float desired = BASE_TICKRATE;
-        for (Session session : BLOCK_SESSIONS.values()) {
-            desired = Math.max(desired, targetTickrate(session.multiplier()));
-        }
         for (Session session : TIME_SESSIONS) {
             desired = Math.max(desired, targetTickrate(session.multiplier()));
         }
@@ -303,7 +310,8 @@ public final class SwordTimeAcceleration {
                 continue;
             }
             // 方块部分：与加速方块共用同一套逻辑和每刻预算。
-            AcceleratorBlockEntity.accelerateArea(level, session.pos(), RADIUS, session.multiplier(), null);
+            // 单台：半径 0，只动点中的那一格。
+            AcceleratorBlockEntity.accelerateArea(level, session.pos(), BLOCK_RADIUS, session.multiplier(), null);
             // 生物部分：范围内的生物额外 tick，让它们真的"快起来"。
             accelerateEntities(level, session.pos(), session.multiplier());
         }
@@ -324,7 +332,7 @@ public final class SwordTimeAcceleration {
         if (extra <= 0) {
             return;
         }
-        AABB box = new AABB(center).inflate(RADIUS);
+        AABB box = new AABB(center).inflate(ENTITY_RADIUS);
         int budget = AcceleratorBlockEntity.MAX_EXTRA_TICKS_PER_TICK;
         for (Entity entity : level.getEntities((Entity) null, box,
                 candidate -> !(candidate instanceof Player) && candidate.isAlive())) {

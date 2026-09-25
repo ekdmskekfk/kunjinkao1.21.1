@@ -115,9 +115,9 @@ public class AcceleratorBlockEntity extends BlockEntity {
                         return;
                     }
                     BlockPos target = pos.offset(dx, dy, dz);
-                    if (target.equals(pos)) {
-                        continue;
-                    }
+                    // 刻意不跳过中心格：加速方块自己由 tickBlockEntityExtra 里的
+                    // AcceleratorBlockEntity 判断排除即可，而剑的"单台加速"中心格
+                    // 正是要加速的那台机器 —— 在这里一刀切跳过会把它漏掉。
                     BlockState targetState = serverLevel.getBlockState(target);
                     if (targetState.isAir()) {
                         continue;
