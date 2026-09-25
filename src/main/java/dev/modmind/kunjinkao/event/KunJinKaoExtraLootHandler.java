@@ -49,7 +49,7 @@ public final class KunJinKaoExtraLootHandler {
         if (!(event.getEntity() instanceof LivingEntity victim) || victim.level().isClientSide()) {
             return;
         }
-        Player killer = resolveKiller(event.getSource());
+        Player killer = resolveKiller(victim, event.getSource());
         if (killer == null) {
             return;
         }
@@ -78,11 +78,22 @@ public final class KunJinKaoExtraLootHandler {
      * 先看 {@code getEntity()}（伤害的归属者），再看 {@code getDirectEntity()}
      * —— 箭矢、三叉戟这类投掷物的直接命中者是弹射物本身，归属者才是玩家。
      */
-    private static Player resolveKiller(DamageSource source) {
+    private static Player resolveKiller(LivingEntity victim, DamageSource source) {
+        // 常规路径：伤害来源本身就带着玩家（近战、箭矢、三叉戟都走这里）。
         if (source.getEntity() instanceof Player player) {
             return player;
         }
-        return source.getDirectEntity() instanceof Player player ? player : null;
+        if (source.getDirectEntity() instanceof Player player) {
+            return player;
+        }
+        // 秒杀路径：剑用的是 target.kill()，那是 genericKill —— 伤害来源里没有实体，
+        // 前两条都拿不到人。退回"击杀归属"：玩家挥剑时 hurt() 已经把他记在受害者身上，
+        // 之后的 genericKill 既不会覆盖也不会清空这个记录，所以这里拿到的正是玩家本人。
+        // getKillCredit() 优先返回 lastHurtByPlayer，没有再退回 lastHurtByMob。
+        if (victim.getKillCredit() instanceof Player player) {
+            return player;
+        }
+        return victim.getLastHurtByMob() instanceof Player player ? player : null;
     }
 
     private static void addDrop(LivingEntity victim, LivingDropsEvent event, ItemStack stack) {
