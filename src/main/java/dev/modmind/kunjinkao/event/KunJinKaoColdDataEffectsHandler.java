@@ -287,6 +287,16 @@ public final class KunJinKaoColdDataEffectsHandler {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setTimeAccelMode(stack, mode));
     }
 
+    /** 斩首：击杀生物额外掉落对应头颅。 */
+    public static void handleToggleBeheading(Player player, InteractionHand hand, boolean enabled) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setBeheadingEnabled(stack, enabled));
+    }
+
+    /** 刷怪蛋掉落：击杀生物额外掉落它的刷怪蛋。 */
+    public static void handleToggleSpawnEggDrop(Player player, InteractionHand hand, boolean enabled) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setSpawnEggDropEnabled(stack, enabled));
+    }
+
     /** 扳手标记：给剑带上/取下扳手 NBT。 */
     public static void handleToggleWrench(Player player, InteractionHand hand, boolean enabled) {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setWrenchEnabled(stack, enabled));

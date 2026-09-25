@@ -11,6 +11,7 @@ import dev.modmind.kunjinkao.event.KunJinKaoDeathEventHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoOreDropHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoProtectionHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoTooltipHandler;
+import dev.modmind.kunjinkao.event.KunJinKaoExtraLootHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoUnbreakableBlockHandler;
 import dev.modmind.kunjinkao.event.SwordDrawAnimationSyncHandler;
 import dev.modmind.kunjinkao.event.TacticalHudMagnetHandler;
@@ -53,6 +54,7 @@ public final class KunJinKaoEntry {
         NeoForge.EVENT_BUS.register(new UltimateDeathHandler());
         NeoForge.EVENT_BUS.register(new AdminAdventureSwordGrantHandler());
         NeoForge.EVENT_BUS.register(new KunJinKaoUnbreakableBlockHandler());
+        NeoForge.EVENT_BUS.register(new KunJinKaoExtraLootHandler());
         NeoForge.EVENT_BUS.register(new KunJinKaoOreDropHandler());
         NeoForge.EVENT_BUS.register(new KunJinKaoColdDataEffectsHandler());
         NeoForge.EVENT_BUS.register(AdminSwordCraftingHandler.class);

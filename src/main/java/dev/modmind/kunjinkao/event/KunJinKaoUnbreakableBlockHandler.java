@@ -9,6 +9,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.common.CommonHooks;
@@ -16,6 +17,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -61,8 +63,10 @@ public final class KunJinKaoUnbreakableBlockHandler {
         }
 
         event.setCanceled(true);
+
+        // 掉落必须在破坏之前算：方块一没，方块实体与战利品表的判定上下文就跟着没了。
         BlockEntity blockEntity = level.getBlockEntity(pos);
-        List<ItemStack> drops = Block.getDrops(state, level, pos, blockEntity, player, stack);
+        List<ItemStack> drops = new ArrayList<>(Block.getDrops(state, level, pos, blockEntity, player, stack));
 
         // 基岩、屏障、命令方块等不可破坏方块的原版战利品表为空；此时回退为方块自身。
         // 若存在方块实体，则在移除前把其数据写进物品 NBT。
@@ -71,13 +75,19 @@ public final class KunJinKaoUnbreakableBlockHandler {
             if (blockEntity != null) {
                 blockEntity.saveToItem(fallback, level.registryAccess());
             }
-            drops = List.of(fallback);
+            drops.add(fallback);
         }
 
         state.getBlock().playerWillDestroy(level, pos, state, player);
-        if (!level.destroyBlock(pos, false, player)) {
-            return;
-        }
+
+        // 刻意不用 Level.destroyBlock：它的返回值就是 setBlock 的结果，
+        // 而 setBlock 在"新旧状态相同"等情况下返回 false —— 那样下面这个 return
+        // 会把上面辛苦收集的掉落整个丢掉，表现正是"方块破坏了但什么都不掉"。
+        // 这里按 destroyBlock 的等价步骤自己置空，结果不再受 setBlock 返回值影响。
+        level.levelEvent(2001, pos, Block.getId(state));
+        level.setBlock(pos, level.getFluidState(pos).createLegacyBlock(), 3);
+        level.gameEvent(GameEvent.BLOCK_DESTROY, pos, GameEvent.Context.of(player, state));
+
         for (ItemStack drop : drops) {
             if (!drop.isEmpty()) {
                 Block.popResource(level, pos, drop.copy());

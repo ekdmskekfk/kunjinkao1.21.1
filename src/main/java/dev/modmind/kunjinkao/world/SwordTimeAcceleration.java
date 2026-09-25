@@ -128,6 +128,19 @@ public final class SwordTimeAcceleration {
         return table[index];
     }
 
+    /** 菜单里的"循环切倍率"：到最大档之后回到最小档。滚轮用的是 {@link #stepMultiplier}，到顶即停。 */
+    public static int nextMultiplier(int current) {
+        int[] table = AcceleratorBlockEntity.MULTIPLIERS;
+        int index = 0;
+        for (int i = 0; i < table.length; i++) {
+            if (table[i] == current) {
+                index = i;
+                break;
+            }
+        }
+        return table[(index + 1) % table.length];
+    }
+
     private static long blockKey(net.minecraft.resources.ResourceKey<Level> dimension, BlockPos pos) {
         return ((long) dimension.location().hashCode() << 32) ^ (pos.asLong() & 0xFFFFFFFFL);
     }

@@ -6,6 +6,7 @@ import dev.modmind.kunjinkao.network.NetworkHandler;
 // 9 个剑设置包已合并为 SwordSettingPayload，导入与发包点一起收敛。
 import dev.modmind.kunjinkao.network.SwordSettingPayload;
 import dev.modmind.kunjinkao.world.SwordToolHandler;
+import dev.modmind.kunjinkao.block.entity.AcceleratorBlockEntity;
 import dev.modmind.kunjinkao.world.SwordTimeAcceleration;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -71,8 +72,10 @@ public final class SwordOptionsScreen extends Screen {
     private Button toolModeButton;
     private Button lightningRodToggle;
     private Button wrenchToggle;
-    private Button timedAccelToggle;
-    private Button infiniteAccelToggle;
+    private Button accelModeButton;
+    private Button accelMultiplierButton;
+    private Button beheadingToggle;
+    private Button spawnEggDropToggle;
 
     // ===== init() 算出的面板与分区几何，renderBackground 复用 =====
     private int panelX;
@@ -89,7 +92,7 @@ public final class SwordOptionsScreen extends Screen {
     // 被跳过的数值记在 pending 里，render 每帧检查（窗口一过就补发）并在关屏时强制补发一次，
     // 保证玩家最终选定的值一定到达服务端，不会因为节流丢设置。
     // 开关/循环按钮不走节流：它们是离散操作，连点两下必须发两次。
-    private static final int SETTING_COUNT = 19;
+    private static final int SETTING_COUNT = 21;
     private static final long SEND_INTERVAL_MS = 100L;
     private static final int TIER_COUNT = 20;
     private final long[] lastSendMillis = new long[SETTING_COUNT];
@@ -118,16 +121,16 @@ public final class SwordOptionsScreen extends Screen {
         int sectionW = Math.min(SECTION_MAX_W, (avail - SIDE_PAD * 3 - SECTION_GAP) / 2);
         int btnW = Math.max(56, (sectionW - BOX_PAD * 2 - BTN_GAP) / 2);
 
-        // 左列：战斗（2 行）/ 挖掘与战利品（2 行）/ 工具（2 行）
-        // 右列：处决（1 行）/ 放置（2 行）/ 加速（1 行）
-        // 左右各三块；为容纳新增的「加速」分区，把原「挖掘」与「战利品」合并成一块 ——
-        // 两者都是资源类设置，合并后行数不变，正好腾出一个分区的位置。
+        // 左列：战斗(2 行) / 挖掘与战利品(3 行) / 加速(1 行)
+        // 右列：工具(2 行) / 处决(1 行) / 放置(2 行)
+        // 「加速」放在左列是为了配平两列：挖掘与战利品加了斩首与刷怪蛋之后多出一行，
+        // 加速若继续留在右列，左列会比右列高出整整一行而放不进 240 的界面。
         int leftBoxH = boxHeight(2);
-        int leftBoxH2 = boxHeight(2);
-        int leftBoxH3 = boxHeight(2);
-        int rightBoxH = boxHeight(1);
-        int rightBoxH2 = boxHeight(2);
-        int rightBoxH3 = boxHeight(1);
+        int leftBoxH2 = boxHeight(3);
+        int leftBoxH3 = boxHeight(1);
+        int rightBoxH = boxHeight(2);
+        int rightBoxH2 = boxHeight(1);
+        int rightBoxH3 = boxHeight(2);
 
         panelW = SIDE_PAD * 3 + sectionW * 2;
         int leftColH = HEADER_H + leftBoxH + SECTION_GAP + HEADER_H + leftBoxH2
@@ -141,24 +144,22 @@ public final class SwordOptionsScreen extends Screen {
 
         int leftX = panelX + SIDE_PAD;
         int rightX = leftX + sectionW + SECTION_GAP;
+        Player player = Minecraft.getInstance().player;
 
         // ---------- 左列 · 战斗 ----------
         int contentTop = addSection(leftX, panelY + TITLE_H, sectionW, "screen.kunjinkao.section_combat", 2);
         blueScreenToggle = addButton(leftX + BOX_PAD, contentTop, btnW, this::toggleBlueScreenAttack);
         areaClearModeButton = addButton(leftX + BOX_PAD + btnW + BTN_GAP, contentTop, btnW,
                 this::cycleAreaClearTargetMode);
-        Player player = Minecraft.getInstance().player;
         int attackDamage = player == null ? KunJinKaoSwordItem.DEFAULT_ATTACK_DAMAGE_LIMIT
                 : KunJinKaoSwordItem.getAttackDamageLimit(player.getItemInHand(hand));
         attackDamageSlider = addRenderableWidget(new AttackDamageSlider(
                 leftX + BOX_PAD, contentTop + ROW_H, sectionW - BOX_PAD * 2, BTN_H,
                 attackDamage, this::setAttackDamageLimit));
 
-        // ---------- 左列 · 挖掘与战利品（合并）----------
-        // 第 0 行：可破坏不可破坏方块 | 抢夺模式；第 1 行：挖掘速度 | 矿石掉落倍数。
-        // 两个滑条各占一格，文字依然是「名称：值」，收窄后仍放得下。
+        // ---------- 左列 · 挖掘与战利品 ----------
         int miningTop = contentTop + ROW_H + BTN_H + BOX_PAD + SECTION_GAP + HEADER_H;
-        contentTop = addSection(leftX, miningTop - HEADER_H, sectionW, "screen.kunjinkao.section_mining_loot", 2);
+        contentTop = addSection(leftX, miningTop - HEADER_H, sectionW, "screen.kunjinkao.section_mining_loot", 3);
         unbreakableBlockToggle = addButton(leftX + BOX_PAD, contentTop, btnW,
                 this::toggleUnbreakableBlockBreaking);
         lootingModeButton = addButton(leftX + BOX_PAD + btnW + BTN_GAP, contentTop, btnW,
@@ -166,31 +167,40 @@ public final class SwordOptionsScreen extends Screen {
         int miningSpeed = player == null ? KunJinKaoSwordItem.DEFAULT_MINING_SPEED
                 : KunJinKaoSwordItem.getMiningSpeed(player.getItemInHand(hand));
         miningSpeedSlider = addRenderableWidget(new MiningSpeedSlider(
-                leftX + BOX_PAD, contentTop + ROW_H, btnW, BTN_H,
-                miningSpeed, this::setMiningSpeed));
+                leftX + BOX_PAD, contentTop + ROW_H, btnW, BTN_H, miningSpeed, this::setMiningSpeed));
         int oreDropMultiplier = player == null ? KunJinKaoSwordItem.DEFAULT_ORE_DROP_MULTIPLIER
                 : KunJinKaoSwordItem.getOreDropMultiplier(player.getItemInHand(hand));
         oreDropMultiplierSlider = addRenderableWidget(new OreDropMultiplierSlider(
                 leftX + BOX_PAD + btnW + BTN_GAP, contentTop + ROW_H, btnW, BTN_H,
                 oreDropMultiplier, this::setOreDropMultiplier));
+        beheadingToggle = addButton(leftX + BOX_PAD, contentTop + ROW_H * 2, btnW, this::toggleBeheading);
+        spawnEggDropToggle = addButton(leftX + BOX_PAD + btnW + BTN_GAP, contentTop + ROW_H * 2, btnW,
+                this::toggleSpawnEggDrop);
 
-        // ---------- 左列 · 工具 ----------
-        // 刷子 / 锄头铲子 / 避雷针，行为见 SwordToolHandler。
-        int toolsTitleY = contentTop + ROW_H + BTN_H + BOX_PAD + SECTION_GAP;
-        contentTop = addSection(leftX, toolsTitleY, sectionW, "screen.kunjinkao.section_tools", 2);
-        brushToggle = addButton(leftX + BOX_PAD, contentTop, btnW, this::toggleBrush);
-        toolModeButton = addButton(leftX + BOX_PAD + btnW + BTN_GAP, contentTop, btnW, this::cycleToolMode);
-        lightningRodToggle = addButton(leftX + BOX_PAD, contentTop + ROW_H, btnW, this::toggleLightningRod);
-        wrenchToggle = addButton(leftX + BOX_PAD + btnW + BTN_GAP, contentTop + ROW_H, btnW, this::toggleWrench);
+        // ---------- 左列 · 加速 ----------
+        // 模式与倍率都做成循环切换，各自占一格，不再是两个开关按钮。
+        int accelTitleY = contentTop + ROW_H * 2 + BTN_H + BOX_PAD + SECTION_GAP;
+        contentTop = addSection(leftX, accelTitleY, sectionW, "screen.kunjinkao.section_acceleration", 1);
+        accelModeButton = addButton(leftX + BOX_PAD, contentTop, btnW, this::cycleTimeAccelMode);
+        accelMultiplierButton = addButton(leftX + BOX_PAD + btnW + BTN_GAP, contentTop, btnW,
+                this::cycleTimeAccelMultiplier);
+
+        // ---------- 右列 · 工具 ----------
+        contentTop = addSection(rightX, panelY + TITLE_H, sectionW, "screen.kunjinkao.section_tools", 2);
+        brushToggle = addButton(rightX + BOX_PAD, contentTop, btnW, this::toggleBrush);
+        toolModeButton = addButton(rightX + BOX_PAD + btnW + BTN_GAP, contentTop, btnW, this::cycleToolMode);
+        lightningRodToggle = addButton(rightX + BOX_PAD, contentTop + ROW_H, btnW, this::toggleLightningRod);
+        wrenchToggle = addButton(rightX + BOX_PAD + btnW + BTN_GAP, contentTop + ROW_H, btnW,
+                this::toggleWrench);
 
         // ---------- 右列 · 处决 ----------
-        contentTop = addSection(rightX, panelY + TITLE_H, sectionW, "screen.kunjinkao.section_execution", 1);
+        int execTitleY = contentTop + ROW_H + BTN_H + BOX_PAD + SECTION_GAP;
+        contentTop = addSection(rightX, execTitleY, sectionW, "screen.kunjinkao.section_execution", 1);
         ultimateDeathToggle = addButton(rightX + BOX_PAD, contentTop, btnW, this::toggleUltimateDeath);
         quitStrikeToggle = addButton(rightX + BOX_PAD + btnW + BTN_GAP, contentTop, btnW,
                 this::toggleQuitStrike);
 
         // ---------- 右列 · 放置 ----------
-        // 三种核心对应 Construction Wand（建筑手杖）的三个核心，行为见 PlacementCoreHandler。
         int placeTitleY = contentTop + BTN_H + BOX_PAD + SECTION_GAP;
         contentTop = addSection(rightX, placeTitleY, sectionW, "screen.kunjinkao.section_placement", 2);
         constructionWandToggle = addButton(rightX + BOX_PAD, contentTop, btnW, this::toggleConstructionWand);
@@ -199,14 +209,6 @@ public final class SwordOptionsScreen extends Screen {
                 this::toggleDestructionCore);
         placementUndoToggle = addButton(rightX + BOX_PAD + btnW + BTN_GAP, contentTop + ROW_H, btnW,
                 this::togglePlacementUndo);
-
-        // ---------- 右列 · 加速 ----------
-        // shift+右键 立加速场：限时（30 秒）或无限，行为见 SwordTimeAcceleration。
-        int accelTitleY = contentTop + ROW_H + BTN_H + BOX_PAD + SECTION_GAP;
-        contentTop = addSection(rightX, accelTitleY, sectionW, "screen.kunjinkao.section_acceleration", 1);
-        timedAccelToggle = addButton(rightX + BOX_PAD, contentTop, btnW, this::toggleTimedAcceleration);
-        infiniteAccelToggle = addButton(rightX + BOX_PAD + btnW + BTN_GAP, contentTop, btnW,
-                this::toggleInfiniteAcceleration);
 
         refreshLabels();
     }
@@ -401,21 +403,38 @@ public final class SwordOptionsScreen extends Screen {
                     Component.translatable(wrench
                             ? "screen.kunjinkao.switch_on" : "screen.kunjinkao.switch_off")));
         }
-        if (timedAccelToggle != null) {
+        if (accelModeButton != null) {
             int accelMode = player == null ? SwordTimeAcceleration.MODE_OFF
                     : KunJinKaoSwordItem.getTimeAccelMode(player.getItemInHand(hand));
-            timedAccelToggle.setMessage(label("screen.kunjinkao.timed_acceleration",
-                    Component.translatable(accelMode == SwordTimeAcceleration.MODE_TIMED
+            String modeKey = switch (accelMode) {
+                case SwordTimeAcceleration.MODE_TIMED -> "screen.kunjinkao.timed_acceleration";
+                case SwordTimeAcceleration.MODE_INFINITE -> "screen.kunjinkao.infinite_acceleration";
+                default -> "screen.kunjinkao.accel_off";
+            };
+            accelModeButton.setMessage(label("screen.kunjinkao.accel_mode", Component.translatable(modeKey)));
+        }
+        if (accelMultiplierButton != null) {
+            int multiplier = player == null ? AcceleratorBlockEntity.MULTIPLIERS[0]
+                    : KunJinKaoSwordItem.getTimeAccelMultiplier(player.getItemInHand(hand));
+            accelMultiplierButton.setMessage(label("screen.kunjinkao.accel_multiplier",
+                    Component.literal("x" + multiplier)));
+        }
+        if (beheadingToggle != null) {
+            boolean beheading = player != null
+                    && KunJinKaoSwordItem.isBeheadingEnabled(player.getItemInHand(hand));
+            beheadingToggle.setMessage(label("screen.kunjinkao.beheading",
+                    Component.translatable(beheading
                             ? "screen.kunjinkao.switch_on" : "screen.kunjinkao.switch_off")));
         }
-        if (infiniteAccelToggle != null) {
-            int accelMode = player == null ? SwordTimeAcceleration.MODE_OFF
-                    : KunJinKaoSwordItem.getTimeAccelMode(player.getItemInHand(hand));
-            infiniteAccelToggle.setMessage(label("screen.kunjinkao.infinite_acceleration",
-                    Component.translatable(accelMode == SwordTimeAcceleration.MODE_INFINITE
+        if (spawnEggDropToggle != null) {
+            boolean eggDrop = player != null
+                    && KunJinKaoSwordItem.isSpawnEggDropEnabled(player.getItemInHand(hand));
+            spawnEggDropToggle.setMessage(label("screen.kunjinkao.spawn_egg_drop",
+                    Component.translatable(eggDrop
                             ? "screen.kunjinkao.switch_on" : "screen.kunjinkao.switch_off")));
         }
-        if (areaClearModeButton != null) {            KunJinKaoSwordItem.AreaClearTargetMode mode = player == null
+        if (areaClearModeButton != null) {
+            KunJinKaoSwordItem.AreaClearTargetMode mode = player == null
                     ? KunJinKaoSwordItem.AreaClearTargetMode.HOSTILE
                     : KunJinKaoSwordItem.getAreaClearTargetMode(player.getItemInHand(hand));
             areaClearModeButton.setMessage(label("screen.kunjinkao.area_clear_targets",
@@ -639,22 +658,62 @@ public final class SwordOptionsScreen extends Screen {
         refreshLabels();
     }
 
-    /** 限时加速：shift+右键 立起一个持续 30 秒的加速场。 */
-    private void toggleTimedAcceleration() {
+    /** 加速模式循环：关闭 -> 限时加速（30 秒）-> 无限加速 -> 关闭。 */
+    private void cycleTimeAccelMode() {
         Player player = Minecraft.getInstance().player;
         int current = player == null ? SwordTimeAcceleration.MODE_OFF
                 : KunJinKaoSwordItem.getTimeAccelMode(player.getItemInHand(hand));
-        applyTimeAccelMode(current == SwordTimeAcceleration.MODE_TIMED
-                ? SwordTimeAcceleration.MODE_OFF : SwordTimeAcceleration.MODE_TIMED);
+        applyTimeAccelMode((current + 1) % SwordTimeAcceleration.MODE_COUNT);
     }
 
-    /** 无限加速：shift+右键 立起的加速场一直持续，直到再 shift+右键 同一位置停掉。 */
-    private void toggleInfiniteAcceleration() {
+    /**
+     * 加速倍率循环。
+     * <p>
+     * 倍率是固定档位表（4/8/.../1024），到最大档之后回到最小档 —— 菜单里要的是循环，
+     * 而 shift+滚轮 用的是 stepMultiplier（到顶即停），两者用途不同。
+     */
+    private void cycleTimeAccelMultiplier() {
         Player player = Minecraft.getInstance().player;
-        int current = player == null ? SwordTimeAcceleration.MODE_OFF
-                : KunJinKaoSwordItem.getTimeAccelMode(player.getItemInHand(hand));
-        applyTimeAccelMode(current == SwordTimeAcceleration.MODE_INFINITE
-                ? SwordTimeAcceleration.MODE_OFF : SwordTimeAcceleration.MODE_INFINITE);
+        ItemStack stack = player == null ? ItemStack.EMPTY : player.getItemInHand(hand);
+        if (!(stack.getItem() instanceof KunJinKaoSwordItem)) {
+            onClose();
+            return;
+        }
+        int next = SwordTimeAcceleration.nextMultiplier(KunJinKaoSwordItem.getTimeAccelMultiplier(stack));
+        KunJinKaoSwordItem.setTimeAccelMultiplier(stack, next);
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand,
+                SwordSettingPayload.TIME_ACCEL_MULTIPLIER, next));
+        refreshLabels();
+    }
+
+    /** 斩首：击杀生物时额外掉落对应头颅。 */
+    private void toggleBeheading() {
+        Player player = Minecraft.getInstance().player;
+        ItemStack stack = player == null ? ItemStack.EMPTY : player.getItemInHand(hand);
+        if (!(stack.getItem() instanceof KunJinKaoSwordItem)) {
+            onClose();
+            return;
+        }
+        boolean enabled = !KunJinKaoSwordItem.isBeheadingEnabled(stack);
+        KunJinKaoSwordItem.setBeheadingEnabled(stack, enabled);
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.BEHEADING,
+                enabled ? 1 : 0));
+        refreshLabels();
+    }
+
+    /** 刷怪蛋掉落：击杀生物时额外掉落它的刷怪蛋。 */
+    private void toggleSpawnEggDrop() {
+        Player player = Minecraft.getInstance().player;
+        ItemStack stack = player == null ? ItemStack.EMPTY : player.getItemInHand(hand);
+        if (!(stack.getItem() instanceof KunJinKaoSwordItem)) {
+            onClose();
+            return;
+        }
+        boolean enabled = !KunJinKaoSwordItem.isSpawnEggDropEnabled(stack);
+        KunJinKaoSwordItem.setSpawnEggDropEnabled(stack, enabled);
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.SPAWN_EGG_DROP,
+                enabled ? 1 : 0));
+        refreshLabels();
     }
 
     private void setMiningSpeed(int speed) {

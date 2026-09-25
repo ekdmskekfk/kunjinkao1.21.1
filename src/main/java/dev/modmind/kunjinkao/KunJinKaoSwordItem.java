@@ -70,6 +70,10 @@ public class KunJinKaoSwordItem extends SwordItem {
     /** 避雷针：右键避雷针召唤闪电。 */
     private static final String LIGHTNING_ROD_KEY = "LightningRodEnabled";
     /** 时间加速模式：0 关 / 1 限时（30 秒）/ 2 无限。 */
+    /** 斩首：击杀生物时额外掉落对应头颅。 */
+    private static final String BEHEADING_KEY = "BeheadingEnabled";
+    /** 刷怪蛋掉落：击杀生物时额外掉落它的刷怪蛋。 */
+    private static final String SPAWN_EGG_DROP_KEY = "SpawnEggDropEnabled";
     /** 扳手：给剑带上扳手标记。同时剑在 c:tools/wrench 标签里，模组会直接把它当扳手。 */
     private static final String WRENCH_KEY = "Wrench";
     private static final String TIME_ACCEL_MODE_KEY = "TimeAccelMode";
@@ -326,6 +330,28 @@ public class KunJinKaoSwordItem extends SwordItem {
     public static void setLightningRodEnabled(ItemStack stack, boolean enabled) {
         CompoundTag tag = dataTag(stack);
         tag.putBoolean(LIGHTNING_ROD_KEY, enabled);
+        writeDataTag(stack, tag);
+    }
+
+    /** 斩首：击杀生物时额外掉落对应头颅。 */
+    public static boolean isBeheadingEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(BEHEADING_KEY);
+    }
+
+    public static void setBeheadingEnabled(ItemStack stack, boolean enabled) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(BEHEADING_KEY, enabled);
+        writeDataTag(stack, tag);
+    }
+
+    /** 刷怪蛋掉落：击杀生物时额外掉落它的刷怪蛋。 */
+    public static boolean isSpawnEggDropEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(SPAWN_EGG_DROP_KEY);
+    }
+
+    public static void setSpawnEggDropEnabled(ItemStack stack, boolean enabled) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(SPAWN_EGG_DROP_KEY, enabled);
         writeDataTag(stack, tag);
     }
 
