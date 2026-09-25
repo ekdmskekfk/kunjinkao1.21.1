@@ -84,6 +84,7 @@ public class ClientModEvents {
         event.register(KunJinKaoKeyBindings.OPEN_SWORD_OPTIONS);
         event.register(KunJinKaoKeyBindings.OPEN_ADMIN_PASSWORD);
         event.register(KunJinKaoKeyBindings.UNDO_PLACEMENT);
+        event.register(KunJinKaoKeyBindings.TOGGLE_WRENCH);
     }
 
     @SubscribeEvent

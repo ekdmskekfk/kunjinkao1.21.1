@@ -50,6 +50,17 @@ public class KunJinKaoKeyBindings {
             CATEGORY
     );
 
+    /**
+     * 快速开关"扳手模式"：打开后 shift+右键 整个让给扳手，本模组不消费，
+     * AE2 那类绑在 shift+右键 上的模组扳手逻辑才能被触发。
+     */
+    public static final KeyMapping TOGGLE_WRENCH = new KeyMapping(
+            "key.kunjinkao.toggle_wrench",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_L,
+            CATEGORY
+    );
+
     /** 撤销最近一步放置/破坏（需在 . 菜单的「放置」分区里先开启撤销）。 */
     public static final KeyMapping UNDO_PLACEMENT = new KeyMapping(
             "key.kunjinkao.undo_placement",

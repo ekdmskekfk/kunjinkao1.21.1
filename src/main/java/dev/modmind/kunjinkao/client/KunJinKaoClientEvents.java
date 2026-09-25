@@ -51,6 +51,7 @@ public class KunJinKaoClientEvents {
         handleOpenSwordOptions();
         handleOpenAdminPassword();
         handleUndoPlacement();
+        handleToggleWrench();
     }
 
     @SubscribeEvent
@@ -229,6 +230,35 @@ public class KunJinKaoClientEvents {
         if (hand != null) {
             minecraft.setScreen(new SwordOptionsScreen(hand));
         }
+    }
+
+    /**
+     * 快速开关扳手模式：L 键。
+     * <p>
+     * 扳手状态平时在游戏里没有任何显示，所以切换后必须给一句提示，
+     * 否则玩家不知道 shift+右键 现在是用于加速还是让给扳手。
+     */
+    private static void handleToggleWrench() {
+        if (!KunJinKaoKeyBindings.TOGGLE_WRENCH.consumeClick()) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        if (player == null || minecraft.screen != null) {
+            return;
+        }
+        InteractionHand hand = findSwordHand(player);
+        if (hand == null) {
+            return;
+        }
+        ItemStack stack = player.getItemInHand(hand);
+        boolean enabled = !KunJinKaoSwordItem.isWrenchEnabled(stack);
+        // 本地先改，按键反馈才跟得上；服务端那份由下面的包同步。
+        KunJinKaoSwordItem.setWrenchEnabled(stack, enabled);
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.WRENCH,
+                enabled ? 1 : 0));
+        player.displayClientMessage(Component.translatable(enabled
+                ? "message.kunjinkao.wrench_enabled" : "message.kunjinkao.wrench_disabled"), true);
     }
 
     /**

@@ -355,7 +355,16 @@ public class KunJinKaoSwordItem extends SwordItem {
         writeDataTag(stack, tag);
     }
 
-    /** 扳手标记。 */
+    /**
+     * 扳手开关。
+     * <p>
+     * 打开后：shift+右键 整个让给扳手 —— 本模组不消费这次右键，
+     * AE2 那类绑在 shift+右键 上的模组扳手逻辑才能被触发。
+     * 代价是同时无法用 shift+右键 加速机器，两种用途靠这个开关互斥切换。
+     * <p>
+     * 另外剑本身也在 c:tools/wrench 与 ae2:quartz_wrench 物品标签里，
+     * 所以模组从"手里拿的是不是扳手"这一层就已经认它了。
+     */
     public static boolean isWrenchEnabled(ItemStack stack) {
         return dataTag(stack).getBoolean(WRENCH_KEY);
     }
@@ -486,7 +495,8 @@ public class KunJinKaoSwordItem extends SwordItem {
             // 刻意要求真的抬头（至少 45 度），而不是"点到空气就算" ——
             // 整体加速影响全服，不该在平视或低头点到空气时被误触。
             // 这条也是唯一能带动 AE2 那类"按 gameTime 算进度"的机器的办法。
-            if (SwordTimeAcceleration.clampMode(getTimeAccelMode(stack)) != SwordTimeAcceleration.MODE_OFF
+            if (!isWrenchEnabled(stack)
+                    && SwordTimeAcceleration.clampMode(getTimeAccelMode(stack)) != SwordTimeAcceleration.MODE_OFF
                     && SwordTimeAcceleration.isFacingSky(player)) {
                 if (level.getServer() != null) {
                     SwordTimeAcceleration.tryToggleTime(player, level.getServer(), stack);
@@ -532,6 +542,13 @@ public class KunJinKaoSwordItem extends SwordItem {
         // 于是"点了一个不可加速的方块"会莫名其妙触发整体时间加速，
         // 而真正想立的机器加速场根本没建起来（悬浮提示因此也一直是空的）。
         if (player.isShiftKeyDown()) {
+            // 扳手开关打开时，shift+右键 整个让给扳手：本模组一点都不碰。
+            // 必须这么做，因为 AE2 那类模组的扳手逻辑绑死在 shift+右键 上 ——
+            // 只要本模组消费了这次右键，它们就永远不会被触发；换个组合键也没用（模组认不出）。
+            // 代价是开着扳手时无法加速机器，两种用途靠这个开关互斥切换。
+            if (isWrenchEnabled(stack)) {
+                return super.useOn(context);
+            }
             int accelMode = SwordTimeAcceleration.clampMode(getTimeAccelMode(stack));
             if (accelMode == SwordTimeAcceleration.MODE_OFF) {
                 return super.useOn(context);
