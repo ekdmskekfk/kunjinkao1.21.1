@@ -32,10 +32,10 @@ import java.util.List;
  * <p>
  * 姿态换算（这里踩过三次坑，结论都是实机验证出来的，别照直觉改）：
  * <ul>
- *   <li>广告牌文字<b>不能</b>再加 {@code mulPose(cameraOrientation())}：加了整条直接看不见，
- *       说明这个姿态本身就已经朝向观察者。</li>
+ *   <li>这个姿态是<b>世界朝向</b>，不含相机旋转：依据是实机现象 —— 一旦按“把它共轭回世界”去写，
+ *       文字就会歪、并且跟着视角转，可见它本来就在世界里。</li>
  *   <li>缩放取 {@code (+, -, +)}：Y 取负把字翻正，X 保持正数，两个轴都取负会让整行字水平镜像。</li>
- *   <li>要画"贴在某个面上"的文字，就得先把相机旋转<b>共轭掉</b>回到世界朝向，再按面旋转。</li>
+ *   <li>贴面文字直接按面旋转即可；只有广告牌需要 {@code mulPose(camera.rotation())} 主动转向相机。</li>
  * </ul>
  */
 @OnlyIn(Dist.CLIENT)
@@ -87,8 +87,6 @@ public final class TimeAccelOverlayRenderer {
         MultiBufferSource.BufferSource buffer = minecraft.renderBuffers().bufferSource();
         Font font = minecraft.font;
         int background = ((int) (minecraft.options.getBackgroundOpacity(0.25F) * 255.0F)) << 24;
-        // 当前姿态含相机旋转；要写"平贴在世界上某个面"的文字，得先把它共轭掉。
-        Quaternionf toWorld = new Quaternionf(event.getCamera().rotation()).conjugate();
 
         boolean drewAnything = false;
         for (TimeAccelStatusPayload.Entry entry : entries) {
@@ -112,12 +110,17 @@ public final class TimeAccelOverlayRenderer {
                         placement.at().z - camera.z);
                 float scale = TAG_SCALE;
                 if (placement.face() != null) {
-                    pose.mulPose(toWorld);
+                    // 这个姿态本身就是世界朝向（实机现象已证伪它含相机旋转：之前多此一举地
+                    // 共轭掉相机旋转，文字就会歪、并且跟着视角转，可见它本来就在世界里）。
+                    // 所以贴面只需从世界朝向按面旋转。
                     pose.mulPose(faceOrientation(placement.face()));
                     // 长文本要比一个方块面还宽，必须缩到装得下，
                     // 否则会溢出到相邻面上、看起来像被切开的两段。
                     float textWidth = Math.max(1.0F, font.width(text));
                     scale = Math.min(TAG_SCALE, FACE_MAX_WIDTH / textWidth);
+                } else {
+                    // 广告牌要自己转向相机；贴面文字则是固定在世界里的。
+                    pose.mulPose(event.getCamera().rotation());
                 }
                 // Y 取负把字翻正；X 保持正数，两个轴都取负会让整行字镜像。
                 pose.scale(scale, -scale, scale);
