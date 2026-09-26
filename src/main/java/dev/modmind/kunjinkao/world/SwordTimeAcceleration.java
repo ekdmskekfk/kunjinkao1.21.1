@@ -7,7 +7,13 @@ import dev.modmind.kunjinkao.network.NetworkHandler;
 import dev.modmind.kunjinkao.network.TimeAccelStatusPayload;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.BlockHitResult;
+import net.neoforged.bus.api.EventPriority;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
@@ -291,6 +297,43 @@ public final class SwordTimeAcceleration {
     }
 
     // ===================== 每刻推进 =====================
+
+    /**
+     * 抢先处理 shift+右键：关掉"扳手模式"时，把这次右键从模组的扳手逻辑手里截下来。
+     * <p>
+     * 为什么必须在这里截：剑已经写进 {@code c:tools/wrench} 与 {@code ae2:quartz_wrench} 物品标签，
+     * 而<b>标签是数据包级别、按物品整体生效的，无法按 NBT 逐个物品开关</b> ——
+     * AE2 这类模组在"手里拿的是不是扳手"这一层就认它了，光改剑上的 NBT 拦不住。
+     * 好在 AE2 的 WrenchHook 挂在 {@link PlayerInteractEvent.RightClickBlock} 上，
+     * 这个事件可取消，且早于 useOn 触发 —— 只要在这里抢先吃掉，扳手就轮不到执行。
+     * <p>
+     * 优先级取 HIGHEST，确保排在模组的处理器之前。
+     */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (event.isCanceled() || !(event.getEntity() instanceof Player player)) {
+            return;
+        }
+        // 只接管"潜行 + 手里是剑"。不潜行时本模组本来就不碰这条路径。
+        if (!player.isShiftKeyDown()) {
+            return;
+        }
+        ItemStack stack = player.getItemInHand(event.getHand());
+        if (!(stack.getItem() instanceof KunJinKaoSwordItem)) {
+            return;
+        }
+        // 扳手模式开着：让给模组，这里什么都不做。
+        if (KunJinKaoSwordItem.isWrenchEnabled(stack)) {
+            return;
+        }
+        // 扳手模式关着：这次右键不该再被当成扳手。
+        // 先把方块交互拦掉（AE2 之类挂在同一事件上的扳手因此不会执行），
+        // 再自己处理 —— 目标是可加速方块就开/关加速场，否则单纯什么都不做。
+        event.setCanceled(true);
+        if (event.getLevel() instanceof ServerLevel serverLevel) {
+            tryToggleBlock(player, serverLevel, event.getPos(), stack);
+        }
+    }
 
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
