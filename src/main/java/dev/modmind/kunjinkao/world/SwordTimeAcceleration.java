@@ -115,6 +115,9 @@ public final class SwordTimeAcceleration {
         }
     }
 
+    private static final org.apache.logging.log4j.Logger LOGGER =
+            org.apache.logging.log4j.LogManager.getLogger("KunJinKao");
+
     private static final Map<Long, Session> BLOCK_SESSIONS = new HashMap<>();
     private static final List<Session> TIME_SESSIONS = new ArrayList<>();
     /** 开启时间加速之前的 tick 率，停掉时恢复。 */
@@ -184,7 +187,15 @@ public final class SwordTimeAcceleration {
      */
     public static boolean tryToggleBlock(Player player, Level level, BlockPos pos, ItemStack stack) {
         int mode = clampMode(KunJinKaoSwordItem.getTimeAccelMode(stack));
-        if (mode == MODE_OFF || !AcceleratorBlockEntity.isAcceleratable(level, pos)) {
+        boolean acceleratable = AcceleratorBlockEntity.isAcceleratable(level, pos);
+        // 临时诊断：这一层是唯一判定点，把失败原因一次打全，定位完即删。
+        if (!level.isClientSide()) {
+            LOGGER.info("[ACCEL-TOGGLE] pos={} block={} accelMode={} acceleratable={} wrench={} result={}",
+                    pos, level.getBlockState(pos).getBlock(), mode, acceleratable,
+                    KunJinKaoSwordItem.isWrenchEnabled(stack),
+                    mode != MODE_OFF && acceleratable ? "START" : "REJECT");
+        }
+        if (mode == MODE_OFF || !acceleratable) {
             return false;
         }
         if (level instanceof ServerLevel serverLevel) {
