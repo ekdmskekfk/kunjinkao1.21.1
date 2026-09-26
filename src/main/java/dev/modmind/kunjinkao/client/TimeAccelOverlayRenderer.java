@@ -28,9 +28,9 @@ import java.util.List;
  *   <li><b>生物</b>：头顶一条。</li>
  *   <li><b>时间加速</b>：太阳方向一条（没有具体位置）。</li>
  * </ul>
- * 朝向用原版铭牌那套：{@code mulPose(cameraOrientation())} + {@code scale(0.025, -0.025, 0.025)}。
- * 已核实 {@code EntityRenderDispatcher.render} 只做 translate、没有任何旋转，所以这一步不能省 ——
- * 少了自己转向相机这一步，文字会朝背面，看起来就是镜像或干脆看不见。
+ * 朝向刻意不加 {@code mulPose(cameraOrientation())}：实测加了之后整条提示直接看不见，
+ * 说明这个姿态本来就已经朝向观察者。缩放取 (+, -, +)：Y 取负把字翻正，
+ * X 保持正数避免镜像 —— 两个轴都取负会让整行字水平镜像（都经实机验证）。
  */
 @OnlyIn(Dist.CLIENT)
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
@@ -93,7 +93,6 @@ public final class TimeAccelOverlayRenderer {
                 pose.pushPose();
                 pose.translate(at.x - camera.x, at.y - camera.y, at.z - camera.z);
                 // 转向相机：这一步不能省，理由见类注释。
-                pose.mulPose(event.getCamera().rotation());
                 pose.scale(TAG_SCALE, -TAG_SCALE, TAG_SCALE);
                 font.drawInBatch(text, -font.width(text) / 2.0F, 0.0F, COLOR_TEXT, false,
                         pose.last().pose(), buffer, Font.DisplayMode.NORMAL, background, 0xF000F0);

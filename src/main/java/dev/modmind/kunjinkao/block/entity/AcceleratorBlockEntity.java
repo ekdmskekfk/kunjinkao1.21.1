@@ -135,7 +135,11 @@ public class AcceleratorBlockEntity extends BlockEntity {
                     } else if (targetState.isRandomlyTicking()) {
                         int calls = Math.min(extra, budget);
                         for (int i = 0; i < calls; i++) {
-                            targetState.randomTick(serverLevel, target, random);
+                                // 复刻原版随机刻的概率（每刻 1/1365）。无条件调用 randomTick
+                                // 等于把随机刻频率放大一千多倍 —— 那不是加速，是把世界烧了。
+                                if (random.nextInt(1365) == 0) {
+                                    targetState.randomTick(serverLevel, target, random);
+                                }
                         }
                         budget -= calls;
                     }
@@ -164,8 +168,10 @@ public class AcceleratorBlockEntity extends BlockEntity {
         if (entity instanceof AcceleratorBlockEntity) {
             return false;
         }
-        if (state.getBlock() instanceof EntityBlock entityBlock
-                && entityBlock.getTicker(level, state, entity.getType()) != null) {
+        // 用 BlockState.getTicker 而不是 (EntityBlock) 强转 + getTicker：
+        // 前者是模组界的通行写法（无用之物的 tickTarget 就是这么拿的），
+        // 而且不要求方块实现 EntityBlock 接口，能多覆盖一类机器。
+        if (state.getTicker(level, entity.getType()) != null) {
             return true;
         }
         // AE2 这类模组不走原版 ticker：方块实体自己实现 serverTick()，由模组自己的调度器驱动
@@ -184,11 +190,7 @@ public class AcceleratorBlockEntity extends BlockEntity {
         if (entity instanceof AcceleratorBlockEntity) {
             return 0;
         }
-        Block block = state.getBlock();
-        if (!(block instanceof EntityBlock entityBlock)) {
-            return 0;
-        }
-        BlockEntityTicker ticker = entityBlock.getTicker(level, state, entity.getType());
+        BlockEntityTicker ticker = state.getTicker(level, entity.getType());
         if (ticker == null) {
             return tickServerTickMethod(level, entity, extra, budget);
         }
