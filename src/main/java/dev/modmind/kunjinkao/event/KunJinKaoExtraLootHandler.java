@@ -11,7 +11,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.SpawnEggItem;
 import net.minecraft.world.level.Level;
-import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
 
@@ -31,8 +30,6 @@ import java.util.Map;
 public final class KunJinKaoExtraLootHandler {
 
     /** 有对应头颅的原版生物。变种（尸壳/溺尸/流浪者）沿用同一颗头。 */
-    private static final org.apache.logging.log4j.Logger LOGGER =
-            org.apache.logging.log4j.LogManager.getLogger("KunJinKao");
 
     private static final Map<EntityType<?>, Item> HEADS = Map.ofEntries(
             Map.entry(EntityType.ZOMBIE, Items.ZOMBIE_HEAD),
@@ -74,34 +71,6 @@ public final class KunJinKaoExtraLootHandler {
                 addDrop(victim, event, new ItemStack(egg));
             }
         }
-    }
-
-    /**
-     * 临时诊断：排在最后跑，打印这一只生物死亡时掉落的最终状态。
-     * <p>
-     * "生物死了却连原版掉落都没有"这件事，光看代码已经排不出结论了：
-     * 模组里没有任何一处会取消或清空掉落，而原版 dropAllDeathLoot 只要事件没被取消就一定会生成。
-     * 这一行把"事件是否被取消、来源是谁、击杀归属是谁、当时有多少个掉落、手里拿的是什么"
-     * 一次性打出来，定位完就删。
-     */
-    @SubscribeEvent(priority = EventPriority.LOWEST)
-    public void onLivingDropsDiagnostic(LivingDropsEvent event) {
-        if (!(event.getEntity() instanceof LivingEntity victim) || victim.level().isClientSide()) {
-            return;
-        }
-        Player killer = resolveKiller(victim, event.getSource());
-        ItemStack sword = killer == null ? ItemStack.EMPTY : killer.getMainHandItem();
-        LOGGER.info("[DROPS] victim={} canceled={} sourceEntity={} directEntity={} killCredit={} drops={} killer={} hand={} behead={} egg={}",
-                victim.getType(),
-                event.isCanceled(),
-                event.getSource().getEntity(),
-                event.getSource().getDirectEntity(),
-                victim.getKillCredit(),
-                event.getDrops().size(),
-                killer == null ? "null" : killer.getName().getString(),
-                sword.isEmpty() ? "empty" : sword.getItem().toString(),
-                sword.isEmpty() ? "-" : KunJinKaoSwordItem.isBeheadingEnabled(sword),
-                sword.isEmpty() ? "-" : KunJinKaoSwordItem.isSpawnEggDropEnabled(sword));
     }
 
     /**

@@ -77,6 +77,7 @@
   "message.kunjinkao.time_accel_time_stopped": "时间加速已停止，tick 率已复原",
   "message.kunjinkao.time_accel_not_acceleratable": "这个方块无法被加速",
   "hud.kunjinkao.time_accel_tag": "加速 ×%s  %s",
+  "hud.kunjinkao.time_accel_time_tag": "时间加速 ×%s  %s",
   "key.kunjinkao.undo_placement": "撤销放置/破坏",
   "message.kunjinkao.undo_restored": "已撤销：还原 %s 个方块",
   "message.kunjinkao.undo_empty": "没有可撤销的操作",

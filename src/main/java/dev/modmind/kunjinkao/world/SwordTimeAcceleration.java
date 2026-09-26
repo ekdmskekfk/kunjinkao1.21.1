@@ -10,6 +10,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -316,17 +318,34 @@ public final class SwordTimeAcceleration {
             if (session.pos() == null) {
                 continue;
             }
-            net.minecraft.server.level.ServerLevel level = server.getLevel(session.dimension());
+            ServerLevel level = server.getLevel(session.dimension());
             if (level == null) {
                 continue;
             }
             long remaining = session.expiresAt() < 0L ? -1L : Math.max(0L, session.expiresAt() - now);
-            byLevel.computeIfAbsent(level, key -> new ArrayList<>())
-                    .add(new TimeAccelStatusPayload.Entry(session.pos(), session.multiplier(), remaining));
+            List<TimeAccelStatusPayload.Entry> entries =
+                    byLevel.computeIfAbsent(level, key -> new ArrayList<>());
+            entries.add(TimeAccelStatusPayload.Entry.block(session.pos(), session.multiplier(), remaining));
+            // 同一批生物也要报给客户端，否则"被加速的生物"没有任何提示。
+            // 这里按与加速时相同的范围与条件重新查一遍，不额外维护实体列表。
+            AABB box = new AABB(session.pos()).inflate(ENTITY_RADIUS);
+            for (Entity entity : level.getEntities((Entity) null, box,
+                    candidate -> !(candidate instanceof Player) && candidate.isAlive())) {
+                entries.add(TimeAccelStatusPayload.Entry.entity(
+                        entity.getId(), session.multiplier(), remaining));
+            }
         }
-        for (net.minecraft.server.level.ServerLevel level : server.getAllLevels()) {
-            NetworkHandler.sendToPlayersInDimension(level, new TimeAccelStatusPayload(
-                    byLevel.getOrDefault(level, List.of())));
+        // 时间加速是全局的：没有具体位置，提示由客户端画在太阳方向上。
+        List<TimeAccelStatusPayload.Entry> timeEntries = new ArrayList<>();
+        for (Session session : TIME_SESSIONS) {
+            long remaining = session.expiresAt() < 0L ? -1L : Math.max(0L, session.expiresAt() - now);
+            timeEntries.add(TimeAccelStatusPayload.Entry.time(session.multiplier(), remaining));
+        }
+        for (ServerLevel level : server.getAllLevels()) {
+            List<TimeAccelStatusPayload.Entry> entries =
+                    new ArrayList<>(byLevel.getOrDefault(level, List.of()));
+            entries.addAll(timeEntries);
+            NetworkHandler.sendToPlayersInDimension(level, new TimeAccelStatusPayload(List.copyOf(entries)));
         }
     }
 

@@ -1,58 +1,50 @@
 package dev.modmind.kunjinkao.client;
 
-import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
 import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.network.TimeAccelStatusPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import org.joml.Matrix4f;
-import org.joml.Vector4f;
 
 /**
- * 被加速方块上方的悬浮提示：加速倍率 + 倒计时。
+ * 世界空间里的加速悬浮提示：方块、生物、以及整体时间加速（画在太阳方向）。
  * <p>
- * 分两步，刻意不走"在世界里直接画字"那条路：
+ * 姿态换算按原版铭牌那一套，但有两处必须和原版区分开，写错就会完全看不见：
  * <ol>
- *   <li>在 {@code AFTER_ENTITIES} 抓下当时的模型视图矩阵与投影矩阵 ——
- *       此刻的姿态栈就是渲染世界用的那一个（已含相机旋转），投影也是透视投影；</li>
- *   <li>在 GUI 图层里用这两个矩阵把方块坐标投影成屏幕坐标，再交给
- *       {@link GuiGraphics#drawString} 画出来。</li>
+ *   <li><b>不要再叠相机旋转</b>。{@code AFTER_ENTITIES} 拿到的姿态栈已经是"含相机旋转的视图空间"，
+ *       视图空间里相机看向 -Z，所以字体所在的 +Z 面天然就朝向观察者。
+ *       再 mulPose(camera.rotation()) 会把文字转到侧面甚至背面，结果就是一片空白。</li>
+ *   <li><b>X 不能取负</b>。缩放是 {@code (0.025, -0.025, 0.025)}：Y 取负是为了把字翻正，
+ *       X 取负会让整行字变成镜像。</li>
  * </ol>
- * 这样做是因为 GUI 图层这条渲染路径在本模组里已被实测验证可用（编译动画就是这么画的），
- * 而"世界空间里摆广告牌文字"需要自己复刻原版铭牌那一套姿态换算，容易在旋转上叠错一层，
- * 排查成本远高于收益。
  */
 @OnlyIn(Dist.CLIENT)
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
 public final class TimeAccelOverlayRenderer {
 
-    /** 悬浮高度：方块顶上再抬一点，避免贴脸。 */
-    private static final double HEIGHT_ABOVE_BLOCK = 1.6D;
-    /** 提示文字的颜色（青色，与模组主题一致）。 */
+    /** 原版铭牌的缩放。Y 取负翻正字，X 保持正数否则整行镜像。 */
+    private static final float TAG_SCALE = 0.025F;
+    /** 方块上方的高度。 */
+    private static final double BLOCK_HEIGHT = 1.6D;
+    /** 生物头顶再抬多少。 */
+    private static final double ENTITY_HEIGHT = 0.6D;
+    /** 太阳方向的提示离相机多远（只是方向，取多大都不影响观感）。 */
+    private static final double SUN_DISTANCE = 100.0D;
+    /** 文字颜色（青色，与模组主题一致）。 */
     private static final int COLOR_TEXT = 0xFF9BE9FF;
-    /** 屏幕边框留白：投影结果超出画面就直接跳过，免得画出诡异的横线。 */
-    private static final int SCREEN_MARGIN = 32;
-
-    /** 本帧抓到的矩阵与相机位置，供同帧的 GUI 图层使用。 */
-    private static final Matrix4f FRAME_MODEL_VIEW = new Matrix4f();
-    private static final Matrix4f FRAME_PROJECTION = new Matrix4f();
-    private static double frameCameraX;
-    private static double frameCameraY;
-    private static double frameCameraZ;
-    private static boolean frameCaptured;
 
     private TimeAccelOverlayRenderer() {
     }
 
-    /** 第一步：在世界渲染阶段抓矩阵。 */
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
@@ -60,80 +52,82 @@ public final class TimeAccelOverlayRenderer {
         }
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null || minecraft.player == null) {
-            frameCaptured = false;
-            return;
-        }
-        FRAME_MODEL_VIEW.set(event.getPoseStack().last().pose());
-        FRAME_PROJECTION.set(RenderSystem.getProjectionMatrix());
-        Vec3 camera = event.getCamera().getPosition();
-        frameCameraX = camera.x;
-        frameCameraY = camera.y;
-        frameCameraZ = camera.z;
-        frameCaptured = true;
-    }
-
-    /** 第二步：在 GUI 图层里把世界坐标投影成屏幕坐标并画字。 */
-    public static void renderLabels(GuiGraphics graphics, int screenWidth, int screenHeight) {
-        if (!frameCaptured) {
             return;
         }
         var entries = TimeAccelClientState.entries();
         if (entries.isEmpty()) {
             return;
         }
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level == null) {
-            return;
-        }
+        Vec3 camera = event.getCamera().getPosition();
+        PoseStack pose = event.getPoseStack();
+        MultiBufferSource.BufferSource buffer = minecraft.renderBuffers().bufferSource();
         Font font = minecraft.font;
+        int background = ((int) (minecraft.options.getBackgroundOpacity(0.25F) * 255.0F)) << 24;
 
+        boolean drewAnything = false;
         for (TimeAccelStatusPayload.Entry entry : entries) {
             long remaining = TimeAccelClientState.remainingMillis(entry);
             if (entry.remainingMillis() >= 0L && remaining <= 0L) {
                 continue;
             }
-            float[] screen = projectToScreen(entry.pos().getX() + 0.5D,
-                    entry.pos().getY() + HEIGHT_ABOVE_BLOCK,
-                    entry.pos().getZ() + 0.5D, screenWidth, screenHeight);
-            if (screen == null) {
+            Vec3 at = resolvePosition(minecraft, event, entry, camera);
+            if (at == null) {
                 continue;
             }
-            Component text = Component.translatable("hud.kunjinkao.time_accel_tag",
+            Component text = Component.translatable(entry.kind() == TimeAccelStatusPayload.KIND_TIME
+                            ? "hud.kunjinkao.time_accel_time_tag"
+                            : "hud.kunjinkao.time_accel_tag",
                     entry.multiplier(), formatRemaining(remaining));
-            int width = font.width(text);
-            graphics.drawString(font, text, (int) screen[0] - width / 2, (int) screen[1],
-                    COLOR_TEXT, true);
+
+            pose.pushPose();
+            pose.translate(at.x - camera.x, at.y - camera.y, at.z - camera.z);
+            // 视图空间里字体的 +Z 已朝向观察者，所以这里只缩放、不旋转。
+            pose.scale(TAG_SCALE, -TAG_SCALE, TAG_SCALE);
+            font.drawInBatch(text, -font.width(text) / 2.0F, 0.0F, COLOR_TEXT, false,
+                    pose.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, background, 0xF000F0);
+            pose.popPose();
+            drewAnything = true;
+        }
+        if (drewAnything) {
+            // 世界渲染阶段没有别人替我们 flush。
+            buffer.endBatch();
         }
     }
 
+    /** 三种加速对象各自的提示位置；取不到（生物已消失等）返回 null。 */
+    private static Vec3 resolvePosition(Minecraft minecraft, RenderLevelStageEvent event,
+                                        TimeAccelStatusPayload.Entry entry, Vec3 camera) {
+        if (entry.kind() == TimeAccelStatusPayload.KIND_BLOCK) {
+            return new Vec3(entry.pos().getX() + 0.5D,
+                    entry.pos().getY() + BLOCK_HEIGHT,
+                    entry.pos().getZ() + 0.5D);
+        }
+        if (entry.kind() == TimeAccelStatusPayload.KIND_ENTITY) {
+            Entity entity = minecraft.level.getEntity(entry.entityId());
+            if (entity == null) {
+                return null;
+            }
+            return new Vec3(entity.getX(), entity.getY() + entity.getBbHeight() + ENTITY_HEIGHT, entity.getZ());
+        }
+        return sunPosition(minecraft, event, camera);
+    }
+
     /**
-     * 把世界坐标投影到屏幕坐标。
-     *
-     * @return {x, y}（GUI 像素）；在相机背后或跑出画面外时返回 null
+     * 太阳方向上的一个点。
+     * <p>
+     * 方向取自原版天空的算法：{@code Axis.XP.rotationDegrees(getTimeOfDay * 360)} 再绕 Y 转 -90，
+     * 化简后就是 {@code (-sin(2πt), cos(2πt), 0)} —— 即太阳沿 X 轴东升西落。
+     * 太阳落到地平线以下时改画到正上方，否则夜里提示会跑到地底下去。
      */
-    private static float[] projectToScreen(double worldX, double worldY, double worldZ,
-                                           int screenWidth, int screenHeight) {
-        Vector4f point = new Vector4f(
-                (float) (worldX - frameCameraX),
-                (float) (worldY - frameCameraY),
-                (float) (worldZ - frameCameraZ),
-                1.0F);
-        // 先到视图空间（含相机旋转），再到裁剪空间。
-        point.mul(FRAME_MODEL_VIEW);
-        point.mul(FRAME_PROJECTION);
-        if (point.w() <= 0.001F) {
-            // w <= 0 表示这个点在相机背后，做透视除法会得到镜像的假坐标。
-            return null;
+    private static Vec3 sunPosition(Minecraft minecraft, RenderLevelStageEvent event, Vec3 camera) {
+        double angle = minecraft.level.getTimeOfDay(event.getPartialTick().getGameTimeDeltaPartialTick(false)) * Math.PI * 2.0D;
+        double x = -Math.sin(angle);
+        double y = Math.cos(angle);
+        if (y <= 0.05D) {
+            x = 0.0D;
+            y = 1.0D;
         }
-        float ndcX = point.x() / point.w();
-        float ndcY = point.y() / point.w();
-        float screenX = (ndcX * 0.5F + 0.5F) * screenWidth;
-        float screenY = (1.0F - (ndcY * 0.5F + 0.5F)) * screenHeight;
-        if (screenX < -SCREEN_MARGIN || screenX > screenWidth + SCREEN_MARGIN
-                || screenY < -SCREEN_MARGIN || screenY > screenHeight + SCREEN_MARGIN) {
-            return null;
-        }
-        return new float[]{screenX, screenY};
+        return new Vec3(camera.x + x * SUN_DISTANCE, camera.y + y * SUN_DISTANCE, camera.z);
     }
 
     /** 倒计时文本：无限显示 ∞，否则显示一位小数的秒。 */

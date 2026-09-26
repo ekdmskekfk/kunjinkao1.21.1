@@ -13,16 +13,37 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 加速场状态 S2C 包：把"当前有哪些方块正在被加速、倍率多少、还剩多久"告诉客户端，
- * 由客户端在方块上方画悬浮提示。
+ * 加速场状态 S2C 包：告诉客户端"现在有哪些东西正在被加速、倍率多少、还剩多久"，
+ * 由客户端在它们上方画悬浮提示。
  * <p>
- * 只发本维度内玩家的所在维度（服务端按维度分发），所以线格式里不带维度字段。
+ * 用一个 kinds 字段区分三种加速对象，共用同一条线格式：
+ * <ul>
+ *   <li>{@link #KIND_BLOCK}：某一格机器 —— 用 pos；</li>
+ *   <li>{@link #KIND_ENTITY}：被加速的生物 —— 用 entityId（客户端自己解析成实体）；</li>
+ *   <li>{@link #KIND_TIME}：整体时间加速 —— 没有具体位置，提示画在太阳方向上。</li>
+ * </ul>
  * 剩余时间以毫秒下发，客户端用自己的时钟往前推，避免两边计时器慢慢跑偏。
  */
 public record TimeAccelStatusPayload(List<Entry> entries) implements CustomPacketPayload {
 
-    /** 一个正在被加速的位置。{@code remainingMillis} 为负表示无限。 */
-    public record Entry(BlockPos pos, int multiplier, long remainingMillis) {
+    public static final int KIND_BLOCK = 0;
+    public static final int KIND_ENTITY = 1;
+    public static final int KIND_TIME = 2;
+
+    /** 一条加速记录。未用到的字段填默认值（方块填 BlockPos.ZERO，生物填 0）。 */
+    public record Entry(int kind, BlockPos pos, int entityId, int multiplier, long remainingMillis) {
+
+        public static Entry block(BlockPos pos, int multiplier, long remainingMillis) {
+            return new Entry(KIND_BLOCK, pos, 0, multiplier, remainingMillis);
+        }
+
+        public static Entry entity(int entityId, int multiplier, long remainingMillis) {
+            return new Entry(KIND_ENTITY, BlockPos.ZERO, entityId, multiplier, remainingMillis);
+        }
+
+        public static Entry time(int multiplier, long remainingMillis) {
+            return new Entry(KIND_TIME, BlockPos.ZERO, 0, multiplier, remainingMillis);
+        }
     }
 
     public static final Type<TimeAccelStatusPayload> TYPE =
@@ -32,7 +53,9 @@ public record TimeAccelStatusPayload(List<Entry> entries) implements CustomPacke
             (buf, payload) -> {
                 buf.writeVarInt(payload.entries.size());
                 for (Entry entry : payload.entries) {
+                    buf.writeVarInt(entry.kind());
                     buf.writeBlockPos(entry.pos());
+                    buf.writeVarInt(entry.entityId());
                     buf.writeVarInt(entry.multiplier());
                     buf.writeVarLong(entry.remainingMillis());
                 }
@@ -41,7 +64,8 @@ public record TimeAccelStatusPayload(List<Entry> entries) implements CustomPacke
                 int size = buf.readVarInt();
                 List<Entry> entries = new ArrayList<>(size);
                 for (int i = 0; i < size; i++) {
-                    entries.add(new Entry(buf.readBlockPos(), buf.readVarInt(), buf.readVarLong()));
+                    entries.add(new Entry(buf.readVarInt(), buf.readBlockPos(), buf.readVarInt(),
+                            buf.readVarInt(), buf.readVarLong()));
                 }
                 return new TimeAccelStatusPayload(List.copyOf(entries));
             });

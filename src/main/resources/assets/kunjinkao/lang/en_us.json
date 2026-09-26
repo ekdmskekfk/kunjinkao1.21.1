@@ -77,6 +77,7 @@
   "message.kunjinkao.time_accel_time_stopped": "Time acceleration stopped, tick rate restored",
   "message.kunjinkao.time_accel_not_acceleratable": "This block cannot be accelerated",
   "hud.kunjinkao.time_accel_tag": "Accel x%s  %s",
+  "hud.kunjinkao.time_accel_time_tag": "Time Accel x%s  %s",
   "key.kunjinkao.undo_placement": "Undo Placement/Destruction",
   "message.kunjinkao.undo_restored": "Undone: restored %s block(s)",
   "message.kunjinkao.undo_empty": "Nothing to undo",

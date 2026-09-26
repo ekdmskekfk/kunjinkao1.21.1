@@ -96,7 +96,6 @@ public class ClientModEvents {
                     int screenHeight = guiGraphics.guiHeight();
                     KunJinKaoOverwriteHudOverlay.render(guiGraphics, partialTick, screenWidth, screenHeight);
                     KunJinKaoClientSwordVisuals.renderCompileModel(guiGraphics, screenWidth, screenHeight, partialTick);
-                    TimeAccelOverlayRenderer.renderLabels(guiGraphics, screenWidth, screenHeight);
                     KunJinKaoClientSwordVisuals.renderAttackData(guiGraphics, screenWidth, screenHeight);
                 });
         event.registerAboveAll(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "tactical_eye_hud"),
