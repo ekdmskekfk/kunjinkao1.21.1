@@ -16,6 +16,7 @@ import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import org.joml.Quaternionf;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,14 +24,19 @@ import java.util.List;
 /**
  * 世界空间里的加速悬浮提示。
  * <ul>
- *   <li><b>方块</b>：六个面各贴一条。背面那几条由方块本身遮住（用 NORMAL 而非 SEE_THROUGH），
- *       所以任何角度看过去，朝着你的那几个面都各有一条 —— 正面与顶面可以同时看到。</li>
- *   <li><b>生物</b>：头顶一条。</li>
+ *   <li><b>方块</b>：文字<b>平贴</b>在朝向相机的那些面上（立方体从任意角度看是 1~3 个面），
+ *       所以正面和顶面可以各有一条而互不遮挡 —— 与参考实现（无用之物）的观感一致。</li>
+ *   <li><b>生物</b>：头顶一条广告牌。</li>
  *   <li><b>时间加速</b>：太阳方向一条（没有具体位置）。</li>
  * </ul>
- * 朝向刻意不加 {@code mulPose(cameraOrientation())}：实测加了之后整条提示直接看不见，
- * 说明这个姿态本来就已经朝向观察者。缩放取 (+, -, +)：Y 取负把字翻正，
- * X 保持正数避免镜像 —— 两个轴都取负会让整行字水平镜像（都经实机验证）。
+ * <p>
+ * 姿态换算（这里踩过三次坑，结论都是实机验证出来的，别照直觉改）：
+ * <ul>
+ *   <li>广告牌文字<b>不能</b>再加 {@code mulPose(cameraOrientation())}：加了整条直接看不见，
+ *       说明这个姿态本身就已经朝向观察者。</li>
+ *   <li>缩放取 {@code (+, -, +)}：Y 取负把字翻正，X 保持正数，两个轴都取负会让整行字水平镜像。</li>
+ *   <li>要画"贴在某个面上"的文字，就得先把相机旋转<b>共轭掉</b>回到世界朝向，再按面旋转。</li>
+ * </ul>
  */
 @OnlyIn(Dist.CLIENT)
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
@@ -39,18 +45,19 @@ public final class TimeAccelOverlayRenderer {
     /** 原版铭牌的缩放：Y 取负把字翻正，X 保持正数。 */
     private static final float TAG_SCALE = 0.025F;
     /** 方块六个面。 */
-    private static final Direction[] BLOCK_FACES = {
-            Direction.UP, Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST};
-    /** 提示离方块表面多远。 */
-    private static final double FACE_OFFSET = 0.55D;
+    private static final Direction[] BLOCK_FACES = Direction.values();
+    /** 提示离方块表面多远。贴面文字要略微离开表面，否则会和方块表面打架。 */
+    private static final double FACE_OFFSET = 0.53D;
     /** 生物头顶再抬多少。 */
     private static final double ENTITY_HEIGHT = 0.6D;
     /** 太阳方向的提示离相机多远（只是方向，取多大都不影响观感）。 */
     private static final double SUN_DISTANCE = 100.0D;
     /** 文字颜色。 */
     private static final int COLOR_TEXT = 0xFF9BE9FF;
-    /** 单个物品提示的最大绘制条数，防止异常数据把这一帧撑爆。 */
-    private static final int MAX_LABELS_PER_ENTRY = 6;
+
+    /** 一条提示的落点与朝向：face 非空表示"平贴在该面上"，为空表示广告牌。 */
+    private record Placement(Vec3 at, Direction face) {
+    }
 
     private TimeAccelOverlayRenderer() {
     }
@@ -73,6 +80,8 @@ public final class TimeAccelOverlayRenderer {
         MultiBufferSource.BufferSource buffer = minecraft.renderBuffers().bufferSource();
         Font font = minecraft.font;
         int background = ((int) (minecraft.options.getBackgroundOpacity(0.25F) * 255.0F)) << 24;
+        // 当前姿态含相机旋转；要写"平贴在世界上某个面"的文字，得先把它共轭掉。
+        Quaternionf toWorld = new Quaternionf(event.getCamera().rotation()).conjugate();
 
         boolean drewAnything = false;
         for (TimeAccelStatusPayload.Entry entry : entries) {
@@ -80,8 +89,8 @@ public final class TimeAccelOverlayRenderer {
             if (entry.remainingMillis() >= 0L && remaining <= 0L) {
                 continue;
             }
-            List<Vec3> points = labelPositions(minecraft, event, entry, camera);
-            if (points.isEmpty()) {
+            List<Placement> placements = placements(minecraft, event, entry, camera);
+            if (placements.isEmpty()) {
                 continue;
             }
             Component text = Component.translatable(entry.kind() == TimeAccelStatusPayload.KIND_TIME
@@ -89,13 +98,19 @@ public final class TimeAccelOverlayRenderer {
                             : "hud.kunjinkao.time_accel_tag",
                     entry.multiplier(), formatRemaining(remaining));
 
-            for (Vec3 at : points) {
+            for (Placement placement : placements) {
                 pose.pushPose();
-                pose.translate(at.x - camera.x, at.y - camera.y, at.z - camera.z);
-                // 转向相机：这一步不能省，理由见类注释。
+                pose.translate(placement.at().x - camera.x,
+                        placement.at().y - camera.y,
+                        placement.at().z - camera.z);
+                if (placement.face() != null) {
+                    pose.mulPose(toWorld);
+                    pose.mulPose(faceOrientation(placement.face()));
+                }
+                // Y 取负把字翻正；X 保持正数，两个轴都取负会让整行字镜像。
                 pose.scale(TAG_SCALE, -TAG_SCALE, TAG_SCALE);
-                font.drawInBatch(text, -font.width(text) / 2.0F, 0.0F, COLOR_TEXT, false,
-                        pose.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, background, 0xF000F0);
+                font.drawInBatch(text, -font.width(text) / 2.0F, -font.lineHeight / 2.0F, COLOR_TEXT,
+                        false, pose.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, background, 0xF000F0);
                 pose.popPose();
             }
             drewAnything = true;
@@ -106,51 +121,63 @@ public final class TimeAccelOverlayRenderer {
         }
     }
 
-    /** 该条加速记录要画在哪些位置；空列表表示这一帧画不了（例如生物已消失）。 */
-    private static List<Vec3> labelPositions(Minecraft minecraft, RenderLevelStageEvent event,
-                                             TimeAccelStatusPayload.Entry entry, Vec3 camera) {
+    /** 该条加速记录要画在哪些位置、什么朝向；空列表表示这一帧画不了。 */
+    private static List<Placement> placements(Minecraft minecraft, RenderLevelStageEvent event,
+                                              TimeAccelStatusPayload.Entry entry, Vec3 camera) {
         if (entry.kind() == TimeAccelStatusPayload.KIND_BLOCK) {
-            return blockFacePoints(entry.pos(), camera);
+            return blockFacePlacements(entry.pos(), camera);
         }
         if (entry.kind() == TimeAccelStatusPayload.KIND_ENTITY) {
             Entity entity = minecraft.level.getEntity(entry.entityId());
             if (entity == null) {
                 return List.of();
             }
-            return List.of(new Vec3(entity.getX(),
-                    entity.getY() + entity.getBbHeight() + ENTITY_HEIGHT, entity.getZ()));
+            return List.of(new Placement(new Vec3(entity.getX(),
+                    entity.getY() + entity.getBbHeight() + ENTITY_HEIGHT, entity.getZ()), null));
         }
-        return List.of(sunPosition(minecraft, event, camera));
+        return List.of(new Placement(sunPosition(minecraft, event, camera), null));
     }
 
     /**
-     * 提示该落在方块的哪一面。
+     * 方块：只取法线朝向相机的那些面，每个面一条平贴文字。
      * <p>
-     * 只取最正对镜头的那一个面 —— 六个面同时画是不行的：每个标签都正对镜头，
-     * 多个面的标签会在屏幕上叠成一团（实机截图确认过）。
-     * 参考实现（无用之物）是把文字平贴在各个面上，所以不打架；
-     * 这里既然用广告牌并且 SEE_THROUGH 不做深度遮挡，就只能一次显示一个面：
-     * 你面对哪一面，提示就出现在哪一面。
+     * 背面的面不提交渲染 —— 这里用的是 SEE_THROUGH（不做深度遮挡），
+     * 靠深度测试挡背面是行不通的：改成 NORMAL 会让整条提示都看不见（实机验证过）。
+     * 剔除之后，从任意角度看正好剩下 1~3 个面，正面与顶面可以同时出现且互不遮挡。
      */
-    private static List<Vec3> blockFacePoints(BlockPos pos, Vec3 camera) {
+    private static List<Placement> blockFacePlacements(BlockPos pos, Vec3 camera) {
         double cx = pos.getX() + 0.5D;
         double cy = pos.getY() + 0.5D;
         double cz = pos.getZ() + 0.5D;
         double dx = camera.x - cx;
         double dy = camera.y - cy;
         double dz = camera.z - cz;
-        Direction best = Direction.UP;
-        double bestDot = -Double.MAX_VALUE;
+        List<Placement> placements = new ArrayList<>(3);
         for (Direction face : BLOCK_FACES) {
-            double dot = face.getStepX() * dx + face.getStepY() * dy + face.getStepZ() * dz;
-            if (dot > bestDot) {
-                bestDot = dot;
-                best = face;
+            if (face.getStepX() * dx + face.getStepY() * dy + face.getStepZ() * dz <= 0.0D) {
+                continue;
             }
+            placements.add(new Placement(new Vec3(cx + face.getStepX() * FACE_OFFSET,
+                    cy + face.getStepY() * FACE_OFFSET,
+                    cz + face.getStepZ() * FACE_OFFSET), face));
         }
-        return List.of(new Vec3(cx + best.getStepX() * FACE_OFFSET,
-                cy + best.getStepY() * FACE_OFFSET,
-                cz + best.getStepZ() * FACE_OFFSET));
+        return placements;
+    }
+
+    /**
+     * 让文字平贴在该面上：字面法线指向该面外侧，字的"上"沿着该面自身的方向。
+     * <p>
+     * 字体默认躺在 XY 平面、法线朝 +Z，所以从 +Z（SOUTH）出发按面旋转即可。
+     */
+    private static Quaternionf faceOrientation(Direction face) {
+        return switch (face) {
+            case SOUTH -> new Quaternionf();
+            case NORTH -> new Quaternionf().rotateY((float) Math.PI);
+            case EAST -> new Quaternionf().rotateY((float) (Math.PI / 2.0D));
+            case WEST -> new Quaternionf().rotateY((float) (-Math.PI / 2.0D));
+            case UP -> new Quaternionf().rotateX((float) (-Math.PI / 2.0D));
+            case DOWN -> new Quaternionf().rotateX((float) (Math.PI / 2.0D));
+        };
     }
 
     /**
