@@ -195,8 +195,21 @@ public final class SwordTimeAcceleration {
                     KunJinKaoSwordItem.isWrenchEnabled(stack),
                     mode != MODE_OFF && acceleratable ? "START" : "REJECT");
         }
-        if (mode == MODE_OFF || !acceleratable) {
+        if (mode == MODE_OFF) {
             return false;
+        }
+        if (!acceleratable) {
+            // 这台机器不接受额外 tick（AE2 的网络机器是典型：靠 ME 网络调度，
+            // state.getTicker 返回 null）。局部加速原理上做不到，
+            // 唯一可行的办法是把整体刻率提上去 —— 限时档 256 秒后自动复原。
+            // 参考实现（无用之物）在 ticker 为 null 时同样是直接放弃，
+            // 所以这不是本模组判定过严，而是这一类机器本来就没有可额外调用的入口。
+            if (level instanceof ServerLevel serverLevel) {
+                player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                        "message.kunjinkao.time_accel_local_unsupported"), true);
+                tryToggleTime(player, serverLevel.getServer(), stack);
+            }
+            return true;
         }
         if (level instanceof ServerLevel serverLevel) {
             MinecraftServer server = serverLevel.getServer();

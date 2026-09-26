@@ -76,6 +76,7 @@
   "message.kunjinkao.time_accel_stopped": "已停止这一格的机器加速",
   "message.kunjinkao.time_accel_time_started": "时间加速已开启：服务器 tick 率 %s/秒",
   "message.kunjinkao.time_accel_time_stopped": "时间加速已停止，tick 率已复原",
+  "message.kunjinkao.time_accel_local_unsupported": "这台机器不接受局部加速，已改为整体时间加速（到时自动复原）",
   "message.kunjinkao.time_accel_not_acceleratable": "这个方块无法被加速",
   "hud.kunjinkao.time_accel_tag": "加速 ×%s  %s",
   "hud.kunjinkao.time_accel_time_tag": "时间加速 ×%s  %s",

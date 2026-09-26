@@ -76,6 +76,7 @@
   "message.kunjinkao.time_accel_stopped": "Machine acceleration stopped here",
   "message.kunjinkao.time_accel_time_started": "Time acceleration on: server tick rate %s/s",
   "message.kunjinkao.time_accel_time_stopped": "Time acceleration stopped, tick rate restored",
+  "message.kunjinkao.time_accel_local_unsupported": "This machine can only be sped up globally; time acceleration used instead",
   "message.kunjinkao.time_accel_not_acceleratable": "This block cannot be accelerated",
   "hud.kunjinkao.time_accel_tag": "Accel x%s  %s",
   "hud.kunjinkao.time_accel_time_tag": "Time Accel x%s  %s",

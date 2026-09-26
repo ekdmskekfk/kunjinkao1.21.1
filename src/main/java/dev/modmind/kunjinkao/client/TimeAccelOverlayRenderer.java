@@ -95,7 +95,7 @@ public final class TimeAccelOverlayRenderer {
                 // 转向相机：这一步不能省，理由见类注释。
                 pose.scale(TAG_SCALE, -TAG_SCALE, TAG_SCALE);
                 font.drawInBatch(text, -font.width(text) / 2.0F, 0.0F, COLOR_TEXT, false,
-                        pose.last().pose(), buffer, Font.DisplayMode.NORMAL, background, 0xF000F0);
+                        pose.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, background, 0xF000F0);
                 pose.popPose();
             }
             drewAnything = true;
@@ -110,7 +110,7 @@ public final class TimeAccelOverlayRenderer {
     private static List<Vec3> labelPositions(Minecraft minecraft, RenderLevelStageEvent event,
                                              TimeAccelStatusPayload.Entry entry, Vec3 camera) {
         if (entry.kind() == TimeAccelStatusPayload.KIND_BLOCK) {
-            return blockFacePoints(entry.pos());
+            return blockFacePoints(entry.pos(), camera);
         }
         if (entry.kind() == TimeAccelStatusPayload.KIND_ENTITY) {
             Entity entity = minecraft.level.getEntity(entry.entityId());
@@ -129,12 +129,21 @@ public final class TimeAccelOverlayRenderer {
      * 六条都画，但渲染用 NORMAL（走深度测试），背面那几条会被方块自身遮住 ——
      * 于是任何角度都只看得到朝着你的那几个面，正面与顶面可以同时出现。
      */
-    private static List<Vec3> blockFacePoints(BlockPos pos) {
+    private static List<Vec3> blockFacePoints(BlockPos pos, Vec3 camera) {
         List<Vec3> points = new ArrayList<>(MAX_LABELS_PER_ENTRY);
         double cx = pos.getX() + 0.5D;
         double cy = pos.getY() + 0.5D;
         double cz = pos.getZ() + 0.5D;
+        double dx = camera.x - cx;
+        double dy = camera.y - cy;
+        double dz = camera.z - cz;
         for (Direction face : BLOCK_FACES) {
+            // 只取法线朝向相机的面（立方体从任意角度看正好 1~3 个）。
+            // 不能靠深度测试挡背面：这里用的是 SEE_THROUGH，本来就不做遮挡，
+            // 而改成 NORMAL 会让整条提示都看不见（实机验证过）。
+            if (face.getStepX() * dx + face.getStepY() * dy + face.getStepZ() * dz <= 0.0D) {
+                continue;
+            }
             points.add(new Vec3(cx + face.getStepX() * FACE_OFFSET,
                     cy + face.getStepY() * FACE_OFFSET,
                     cz + face.getStepZ() * FACE_OFFSET));
