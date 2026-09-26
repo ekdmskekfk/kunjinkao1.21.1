@@ -561,6 +561,13 @@ public class KunJinKaoSwordItem extends SwordItem {
             }
             return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
         }
+        // 只有在「没点到方块」时才做范围清除。
+        // use() 会在 useOn 返回 PASS 之后被原版调用 —— 也就是说玩家其实是对着方块按的右键。
+        // 不挡这一下，点个避雷针、点台机器都会顺手把周围生物清一遍。
+        if (player.pick(player.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.BLOCK_INTERACTION_RANGE), 1.0F, false).getType()
+                == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
+        }
         if (!level.isClientSide() && level instanceof ServerLevel serverLevel) {
             int removed = clearAreaTargets(serverLevel, player, stack, getAreaClearTargetMode(stack));
             player.displayClientMessage(Component.translatable("message.kunjinkao.area_clear_result", removed), true);
