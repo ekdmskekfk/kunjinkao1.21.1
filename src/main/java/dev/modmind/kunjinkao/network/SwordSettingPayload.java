@@ -91,7 +91,7 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
                 case PLACEMENT_UNDO -> KunJinKaoColdDataEffectsHandler.handleTogglePlacementUndo(context.player(), hand, value != 0);
                 case BRUSH -> KunJinKaoColdDataEffectsHandler.handleToggleBrush(context.player(), hand, value != 0);
                 case TOOL_MODE -> KunJinKaoColdDataEffectsHandler.handleSetToolMode(context.player(), hand, value);
-                case LIGHTNING_ROD -> KunJinKaoColdDataEffectsHandler.handleToggleLightningRod(context.player(), hand, value != 0);
+                case LIGHTNING_ROD -> KunJinKaoColdDataEffectsHandler.handleSetLightningRodState(context.player(), hand, value);
                 case TIME_ACCEL_MODE -> KunJinKaoColdDataEffectsHandler.handleSetTimeAccelMode(context.player(), hand, value);
                 case TIME_ACCEL_MULTIPLIER -> KunJinKaoColdDataEffectsHandler.handleSetTimeAccelMultiplier(context.player(), hand, value);
                 case WRENCH -> KunJinKaoColdDataEffectsHandler.handleToggleWrench(context.player(), hand, value != 0);

@@ -191,6 +191,16 @@ public final class SwordToolHandler {
         if (context.getPlayer() instanceof ServerPlayer serverPlayer) {
             bolt.setCause(serverPlayer);
         }
+        // 按菜单里选的形态塑造这道雷。
+        int mode = dev.modmind.kunjinkao.KunJinKaoSwordItem.getLightningMode(context.getItemInHand());
+        if (mode == dev.modmind.kunjinkao.KunJinKaoSwordItem.LIGHTNING_VISUAL_ONLY) {
+            bolt.setVisualOnly(true);
+        } else if (mode == dev.modmind.kunjinkao.KunJinKaoSwordItem.LIGHTNING_NATURAL) {
+            // 闪电科技（ae2lt）靠这个 NBT 键判定"自然闪电"，
+            // 取自它自己的 DebugLightningRodItem 与 ServerLevelMixin。
+            // 不打这个键，它只认人工闪电，相关配方与收集器都不会响应。
+            bolt.getPersistentData().putBoolean("ae2lt.natural_weather_lightning", true);
+        }
         serverLevel.addFreshEntity(bolt);
         return true;
     }

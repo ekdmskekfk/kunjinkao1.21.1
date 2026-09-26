@@ -390,11 +390,15 @@ public final class SwordOptionsScreen extends Screen {
             toolModeButton.setMessage(label("screen.kunjinkao.tool_mode", Component.translatable(modeKey)));
         }
         if (lightningRodToggle != null) {
-            boolean rod = player != null
-                    && KunJinKaoSwordItem.isLightningRodEnabled(player.getItemInHand(hand));
-            lightningRodToggle.setMessage(label("screen.kunjinkao.lightning_rod",
-                    Component.translatable(rod
-                            ? "screen.kunjinkao.switch_on" : "screen.kunjinkao.switch_off")));
+            // 显示成四态循环里的当前那一档。
+            Component state = player == null || !KunJinKaoSwordItem.isLightningRodEnabled(player.getItemInHand(hand))
+                    ? Component.translatable("screen.kunjinkao.switch_off")
+                    : Component.translatable(switch (KunJinKaoSwordItem.getLightningMode(player.getItemInHand(hand))) {
+                        case KunJinKaoSwordItem.LIGHTNING_PLAIN -> "screen.kunjinkao.lightning_plain";
+                        case KunJinKaoSwordItem.LIGHTNING_VISUAL_ONLY -> "screen.kunjinkao.lightning_visual";
+                        default -> "screen.kunjinkao.lightning_natural";
+                    });
+            lightningRodToggle.setMessage(label("screen.kunjinkao.lightning_rod", state));
         }
         if (wrenchToggle != null) {
             boolean wrench = player != null
@@ -637,10 +641,22 @@ public final class SwordOptionsScreen extends Screen {
             onClose();
             return;
         }
-        boolean enabled = !KunJinKaoSwordItem.isLightningRodEnabled(stack);
+        // 四态循环：关 -> 自然 -> 普通 -> 仅视觉 -> 关。
+        // 放在同一个按钮上，是因为工具分区四个槽位已经排满，
+        // 再加一格会把面板顶出 240 的高度。
+        int state;
+        if (!KunJinKaoSwordItem.isLightningRodEnabled(stack)) {
+            state = 1;                                    // 关 -> 自然
+        } else {
+            int mode = KunJinKaoSwordItem.getLightningMode(stack);
+            state = mode >= KunJinKaoSwordItem.LIGHTNING_MODE_COUNT ? 0 : mode + 2;
+        }
+        boolean enabled = state > 0;
         KunJinKaoSwordItem.setLightningRodEnabled(stack, enabled);
-        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.LIGHTNING_ROD,
-                enabled ? 1 : 0));
+        if (enabled) {
+            KunJinKaoSwordItem.setLightningMode(stack, state - 1);
+        }
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.LIGHTNING_ROD, state));
         refreshLabels();
     }
 

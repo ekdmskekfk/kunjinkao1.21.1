@@ -72,6 +72,36 @@ public class KunJinKaoSwordItem extends SwordItem {
     private static final String TOOL_MODE_KEY = "SwordToolMode";
     /** 避雷针：右键避雷针召唤闪电。 */
     private static final String LIGHTNING_ROD_KEY = "LightningRodEnabled";
+    /**
+     * 召唤出来的闪电形态。
+     * <ul>
+     *   <li>0 = 自然：额外打上 {@code ae2lt.natural_weather_lightning} 标记，
+     *       让闪电科技（ae2lt）把它当成自然闪电 —— 这是它自己调试物品的做法；</li>
+     *   <li>1 = 普通：什么都不加，就是一道寻常的雷；</li>
+     *   <li>2 = 仅视觉：{@code setVisualOnly(true)}，不点火、不伤人。</li>
+     * </ul>
+     */
+    private static final String LIGHTNING_MODE_KEY = "LightningMode";
+
+    /** 闪电形态：自然（默认，兼容闪电科技）。 */
+    public static final int LIGHTNING_NATURAL = 0;
+    /** 闪电形态：普通。 */
+    public static final int LIGHTNING_PLAIN = 1;
+    /** 闪电形态：仅视觉。 */
+    public static final int LIGHTNING_VISUAL_ONLY = 2;
+    /** 闪电形态的取值个数。 */
+    public static final int LIGHTNING_MODE_COUNT = 3;
+
+    public static int getLightningMode(ItemStack stack) {
+        int mode = dataTag(stack).getInt(LIGHTNING_MODE_KEY);
+        return Math.max(0, Math.min(LIGHTNING_MODE_COUNT - 1, mode));
+    }
+
+    public static void setLightningMode(ItemStack stack, int mode) {
+        CompoundTag tag = dataTag(stack);
+        tag.putInt(LIGHTNING_MODE_KEY, Math.max(0, Math.min(LIGHTNING_MODE_COUNT - 1, mode)));
+        writeDataTag(stack, tag);
+    }
     /** 时间加速模式：0 关 / 1 限时（30 秒）/ 2 无限。 */
     /** 斩首：击杀生物时额外掉落对应头颅。 */
     private static final String BEHEADING_KEY = "BeheadingEnabled";

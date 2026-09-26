@@ -278,6 +278,21 @@ public final class KunJinKaoColdDataEffectsHandler {
     }
 
     /** 避雷针：右键避雷针召唤闪电。 */
+    /**
+     * 避雷针的循环状态：0 = 关闭，1..3 = 开启且闪电形态为 state - 1
+     * （0 自然 / 1 普通 / 2 仅视觉）。四态放在一个按钮上循环，
+     * 这样不必在已经排满的工具分区里再挤一格。
+     */
+    public static void handleSetLightningRodState(Player player, InteractionHand hand, int state) {
+        withSword(player, hand, stack -> {
+            boolean enabled = state > 0;
+            KunJinKaoSwordItem.setLightningRodEnabled(stack, enabled);
+            if (enabled) {
+                KunJinKaoSwordItem.setLightningMode(stack, state - 1);
+            }
+        });
+    }
+
     public static void handleToggleLightningRod(Player player, InteractionHand hand, boolean enabled) {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setLightningRodEnabled(stack, enabled));
     }
