@@ -106,7 +106,10 @@ public final class Ae2GridAcceleration {
                     if (getGrid.invoke(node) == null || !(Boolean) isActive.invoke(node)) {
                         break;
                     }
-                    Object modulation = tickingRequest.invoke(endpoint[1], node, 0);
+                    // 第二个参数是「距上次调用过了多少 tick」，AE2 的机器拿它当本次要推进的量。
+                    // 传 0 等于说「一 tick 都没过去」，机器会直接跳过 ——
+                    // 表现出来就是「加速场建起来了，但机器不变快」。额外调一次就理解为推进 1 tick。
+                    Object modulation = tickingRequest.invoke(endpoint[1], node, 1);
                     done++;
                     // SLEEP 表示这台机器当前没有待办，再调也是空转。
                     if (modulation != null && "SLEEP".equals(String.valueOf(modulation))) {
