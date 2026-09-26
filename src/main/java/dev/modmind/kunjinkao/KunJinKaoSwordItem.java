@@ -536,6 +536,19 @@ public class KunJinKaoSwordItem extends SwordItem {
     @Override
     public InteractionResult onItemUseFirst(ItemStack stack, UseOnContext context) {
         Player player = context.getPlayer();
+        // 临时诊断：潜行右键走的就是这一层，把判定依据一次打全，定位完即删。
+        if (player != null && player.isShiftKeyDown() && !context.getLevel().isClientSide()) {
+            LOGGER.info("[ITEM-USE-FIRST] pos={} block={} shift={} inert={} wrench={} accelMode={} acceleratable={}",
+                    context.getClickedPos(),
+                    context.getLevel().getBlockState(context.getClickedPos()).getBlock(),
+                    player.isShiftKeyDown(),
+                    isInert(stack),
+                    isWrenchEnabled(stack),
+                    getTimeAccelMode(stack),
+                    context.getLevel() instanceof ServerLevel serverLevel
+                            && dev.modmind.kunjinkao.block.entity.AcceleratorBlockEntity
+                                    .isAcceleratable(serverLevel, context.getClickedPos()));
+        }
         if (player == null || isInert(stack) || !player.isShiftKeyDown()) {
             return super.onItemUseFirst(stack, context);
         }
