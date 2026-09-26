@@ -217,7 +217,11 @@ public final class PlacementCoreHandler {
         }
         // 放置前的状态与物品都要在 place() 之前抓下来。
         BlockState previous = level.getBlockState(target);
-        ItemStack refund = new ItemStack(material.getItem());
+        // 必须复制"真正被放下去的那个物品"，而不是 new ItemStack(它的物品类型)：
+        // 后者只保留物品 id，机器里装的东西、设置、附魔等一律丢失，
+        // 于是撤销时归还给你的是一台空机器（实机反馈的问题）。
+        // 注意要在 place() 之前抓，之后原堆叠可能已经被消耗。
+        ItemStack refund = material.copyWithCount(1);
         BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(support), face, support, false);
         BlockPlaceContext context = new BlockPlaceContext(player, InteractionHand.OFF_HAND, material, hit);
         InteractionResult result = ((BlockItem) material.getItem()).place(context);
