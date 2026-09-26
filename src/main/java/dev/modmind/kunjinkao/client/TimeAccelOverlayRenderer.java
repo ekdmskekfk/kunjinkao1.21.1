@@ -124,31 +124,33 @@ public final class TimeAccelOverlayRenderer {
     }
 
     /**
-     * 方块六个面外侧各一个点。
+     * 提示该落在方块的哪一面。
      * <p>
-     * 六条都画，但渲染用 NORMAL（走深度测试），背面那几条会被方块自身遮住 ——
-     * 于是任何角度都只看得到朝着你的那几个面，正面与顶面可以同时出现。
+     * 只取最正对镜头的那一个面 —— 六个面同时画是不行的：每个标签都正对镜头，
+     * 多个面的标签会在屏幕上叠成一团（实机截图确认过）。
+     * 参考实现（无用之物）是把文字平贴在各个面上，所以不打架；
+     * 这里既然用广告牌并且 SEE_THROUGH 不做深度遮挡，就只能一次显示一个面：
+     * 你面对哪一面，提示就出现在哪一面。
      */
     private static List<Vec3> blockFacePoints(BlockPos pos, Vec3 camera) {
-        List<Vec3> points = new ArrayList<>(MAX_LABELS_PER_ENTRY);
         double cx = pos.getX() + 0.5D;
         double cy = pos.getY() + 0.5D;
         double cz = pos.getZ() + 0.5D;
         double dx = camera.x - cx;
         double dy = camera.y - cy;
         double dz = camera.z - cz;
+        Direction best = Direction.UP;
+        double bestDot = -Double.MAX_VALUE;
         for (Direction face : BLOCK_FACES) {
-            // 只取法线朝向相机的面（立方体从任意角度看正好 1~3 个）。
-            // 不能靠深度测试挡背面：这里用的是 SEE_THROUGH，本来就不做遮挡，
-            // 而改成 NORMAL 会让整条提示都看不见（实机验证过）。
-            if (face.getStepX() * dx + face.getStepY() * dy + face.getStepZ() * dz <= 0.0D) {
-                continue;
+            double dot = face.getStepX() * dx + face.getStepY() * dy + face.getStepZ() * dz;
+            if (dot > bestDot) {
+                bestDot = dot;
+                best = face;
             }
-            points.add(new Vec3(cx + face.getStepX() * FACE_OFFSET,
-                    cy + face.getStepY() * FACE_OFFSET,
-                    cz + face.getStepZ() * FACE_OFFSET));
         }
-        return points;
+        return List.of(new Vec3(cx + best.getStepX() * FACE_OFFSET,
+                cy + best.getStepY() * FACE_OFFSET,
+                cz + best.getStepZ() * FACE_OFFSET));
     }
 
     /**
