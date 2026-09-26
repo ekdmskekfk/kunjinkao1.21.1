@@ -48,6 +48,13 @@ public final class TimeAccelOverlayRenderer {
     private static final Direction[] BLOCK_FACES = Direction.values();
     /** 提示离方块表面多远。贴面文字要略微离开表面，否则会和方块表面打架。 */
     private static final double FACE_OFFSET = 0.53D;
+    /**
+     * 贴面文字允许占用的最大宽度（方块面宽 1.0，留点边距）。
+     * <p>
+     * 不设这个上限的话，"加速 ×1024 ∞" 这类长文本会比一个面还宽，
+     * 于是溢出到相邻面上，看起来像是被切开的两段（实机截图确认过）。
+     */
+    private static final float FACE_MAX_WIDTH = 0.92F;
     /** 生物头顶再抬多少。 */
     private static final double ENTITY_HEIGHT = 0.6D;
     /** 太阳方向的提示离相机多远（只是方向，取多大都不影响观感）。 */
@@ -103,12 +110,17 @@ public final class TimeAccelOverlayRenderer {
                 pose.translate(placement.at().x - camera.x,
                         placement.at().y - camera.y,
                         placement.at().z - camera.z);
+                float scale = TAG_SCALE;
                 if (placement.face() != null) {
                     pose.mulPose(toWorld);
                     pose.mulPose(faceOrientation(placement.face()));
+                    // 长文本要比一个方块面还宽，必须缩到装得下，
+                    // 否则会溢出到相邻面上、看起来像被切开的两段。
+                    float textWidth = Math.max(1.0F, font.width(text));
+                    scale = Math.min(TAG_SCALE, FACE_MAX_WIDTH / textWidth);
                 }
                 // Y 取负把字翻正；X 保持正数，两个轴都取负会让整行字镜像。
-                pose.scale(TAG_SCALE, -TAG_SCALE, TAG_SCALE);
+                pose.scale(scale, -scale, scale);
                 font.drawInBatch(text, -font.width(text) / 2.0F, -font.lineHeight / 2.0F, COLOR_TEXT,
                         false, pose.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, background, 0xF000F0);
                 pose.popPose();
