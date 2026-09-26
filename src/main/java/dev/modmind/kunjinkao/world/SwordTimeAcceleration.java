@@ -30,6 +30,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -414,7 +415,11 @@ public final class SwordTimeAcceleration {
             // 这里按与加速时相同的范围与条件重新查一遍，不额外维护实体列表。
             AABB box = new AABB(session.pos()).inflate(ENTITY_RADIUS);
             for (Entity entity : level.getEntities((Entity) null, box,
-                    candidate -> !(candidate instanceof Player) && candidate.isAlive())) {
+                    // 只加速生物。以前用 "非玩家且存活"，会把掉落物（ItemEntity）、
+                  // 经验球、箭矢之类一并算进去 —— 它们被额外 tick 会表现为
+                  // "刚挖下来的方块掉在地上还在被加速"。
+                  candidate -> candidate instanceof net.minecraft.world.entity.LivingEntity
+                          && !(candidate instanceof Player) && candidate.isAlive())) {
                 entries.add(TimeAccelStatusPayload.Entry.entity(
                         entity.getId(), session.multiplier(), remaining));
             }
@@ -448,9 +453,19 @@ public final class SwordTimeAcceleration {
         if (BLOCK_SESSIONS.isEmpty()) {
             return;
         }
-        for (Session session : BLOCK_SESSIONS.values()) {
+        boolean removedAny = false;
+        for (Iterator<Session> iterator = BLOCK_SESSIONS.values().iterator(); iterator.hasNext();) {
+            Session session = iterator.next();
             ServerLevel level = server.getLevel(session.dimension());
             if (level == null || session.pos() == null) {
+                continue;
+            }
+            // 方块被挖掉或换成了别的方块时，这个加速场就该结束。
+            // 不检查的话它会永远留着，继续加速那个位置上的生物 ——
+            // 而方块挖掉后正好有掉落物停在那儿，看起来就像"掉落物继承了加速效果"。
+            if (!AcceleratorBlockEntity.isAcceleratable(level, session.pos())) {
+                iterator.remove();
+                removedAny = true;
                 continue;
             }
             // 方块部分：与加速方块共用同一套逻辑和每刻预算。
@@ -458,6 +473,10 @@ public final class SwordTimeAcceleration {
             AcceleratorBlockEntity.accelerateArea(level, session.pos(), BLOCK_RADIUS, session.multiplier(), null);
             // 生物部分：范围内的生物额外 tick，让它们真的"快起来"。
             accelerateEntities(level, session.pos(), session.multiplier());
+        }
+        if (removedAny) {
+            // 加速场数量变了，刻率基线要跟着重算。
+            refreshTickrate(server);
         }
     }
 
