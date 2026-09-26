@@ -56,6 +56,7 @@ public final class KunJinKaoEntry {
         NeoForge.EVENT_BUS.register(new KunJinKaoUnbreakableBlockHandler());
         NeoForge.EVENT_BUS.register(new KunJinKaoExtraLootHandler());
         NeoForge.EVENT_BUS.register(new KunJinKaoOreDropHandler());
+        NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.SwordAutoPickupHandler());
         NeoForge.EVENT_BUS.register(new KunJinKaoColdDataEffectsHandler());
         NeoForge.EVENT_BUS.register(AdminSwordCraftingHandler.class);
         NeoForge.EVENT_BUS.register(CommandProtectedSwordHandler.class);

@@ -61,6 +61,19 @@ public class KunJinKaoKeyBindings {
             CATEGORY
     );
 
+    /**
+     * R 键：把正看着的方块直接收进物品栏。
+     * <p>
+     * 需要先在 . 菜单的「挖掘与战利品」里开启"可破坏不可破坏方块"；
+     * 收进来的物品保留方块实体数据（机器里装的东西不会丢）。
+     */
+    public static final KeyMapping COLLECT_BLOCK = new KeyMapping(
+            "key.kunjinkao.collect_block",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_R,
+            CATEGORY
+    );
+
     /** 撤销最近一步放置/破坏（需在 . 菜单的「放置」分区里先开启撤销）。 */
     public static final KeyMapping UNDO_PLACEMENT = new KeyMapping(
             "key.kunjinkao.undo_placement",

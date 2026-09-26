@@ -56,6 +56,8 @@
   "screen.kunjinkao.tool_mode_hoe": "锄头",
   "screen.kunjinkao.tool_mode_shovel": "铲子",
   "screen.kunjinkao.lightning_rod": "避雷针",
+  "key.kunjinkao.collect_block": "收集目标方块（需开启可破坏不可破坏）",
+  "message.kunjinkao.collect_requires_unbreakable": "\u9700\u5148\u5728 . \u83dc\u5355\u91cc\u5f00\u542f\u53ef\u7834\u574f\u4e0d\u53ef\u7834\u574f\u7269\u54c1",
   "key.kunjinkao.toggle_wrench": "快速开关扳手",
   "message.kunjinkao.wrench_enabled": "扳手模式已开启：shift+右键 交给扳手",
   "message.kunjinkao.wrench_disabled": "扳手模式已关闭：shift+右键 用于加速机器",

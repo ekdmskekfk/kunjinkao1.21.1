@@ -49,6 +49,7 @@ public final class NetworkHandler {
         reg.playToClient(HudShieldHitPayload.TYPE, HudShieldHitPayload.STREAM_CODEC, HudShieldHitPayload::handle);
         // 原 4 个 (hand, boolean) 开关包 + 5 个 (hand, int) 设置包共九条注册合并为这一条，由 settingId 判别。
         reg.playToServer(SwordSettingPayload.TYPE, SwordSettingPayload.STREAM_CODEC, SwordSettingPayload::handle);
+        reg.playToServer(CollectBlockPayload.TYPE, CollectBlockPayload.STREAM_CODEC, CollectBlockPayload::handle);
         reg.playToClient(AdminEyeStatePayload.TYPE, AdminEyeStatePayload.STREAM_CODEC, AdminEyeStatePayload::handle);
         reg.playToClient(SwordDrawAnimationPayload.TYPE, SwordDrawAnimationPayload.STREAM_CODEC, SwordDrawAnimationPayload::handle);
         reg.playToServer(SubmitAdminPasswordPayload.TYPE, SubmitAdminPasswordPayload.STREAM_CODEC, SubmitAdminPasswordPayload::handle);

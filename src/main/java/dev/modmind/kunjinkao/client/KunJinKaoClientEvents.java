@@ -52,6 +52,7 @@ public class KunJinKaoClientEvents {
         handleOpenAdminPassword();
         handleUndoPlacement();
         handleToggleWrench();
+        handleCollectBlock();
     }
 
     @SubscribeEvent
@@ -238,6 +239,26 @@ public class KunJinKaoClientEvents {
      * 扳手状态平时在游戏里没有任何显示，所以切换后必须给一句提示，
      * 否则玩家不知道 shift+右键 现在是用于加速还是让给扳手。
      */
+    /**
+     * R 键：把正看着的方块直接收进物品栏。
+     * <p>
+     * 这里刻意不做客户端射线检测、也不带坐标 —— 只发一个"我按了 R"的空包，
+     * 由服务端用自己的射线重新确定目标，客户端无法指定任意坐标。
+     */
+    private static void handleCollectBlock() {
+        if (!KunJinKaoKeyBindings.COLLECT_BLOCK.consumeClick()) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        if (player == null || minecraft.screen != null) {
+            return;
+        }
+        if (findSwordHand(player) == null) {
+            return;
+        }
+        NetworkHandler.sendToServer(new dev.modmind.kunjinkao.network.CollectBlockPayload());
+    }
     private static void handleToggleWrench() {
         if (!KunJinKaoKeyBindings.TOGGLE_WRENCH.consumeClick()) {
             return;

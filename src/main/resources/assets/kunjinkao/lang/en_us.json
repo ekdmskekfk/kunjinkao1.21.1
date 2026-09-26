@@ -56,6 +56,8 @@
   "screen.kunjinkao.tool_mode_hoe": "Hoe",
   "screen.kunjinkao.tool_mode_shovel": "Shovel",
   "screen.kunjinkao.lightning_rod": "Lightning Rod",
+  "key.kunjinkao.collect_block": "Collect targeted block",
+  "message.kunjinkao.collect_requires_unbreakable": "Enable breaking unbreakable blocks in the . menu first",
   "key.kunjinkao.toggle_wrench": "Toggle Wrench",
   "message.kunjinkao.wrench_enabled": "Wrench mode ON: shift+right-click goes to the wrench",
   "message.kunjinkao.wrench_disabled": "Wrench mode OFF: shift+right-click accelerates machines",

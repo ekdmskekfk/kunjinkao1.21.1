@@ -614,6 +614,7 @@ public class KunJinKaoSwordItem extends SwordItem {
      * c:tools/wrench 标签）：只满足标签的外来扳手可能与自家扳手走不同分支，
      * 实测表现就是拆卸后的机器丢失 NBT。这里把能力补齐，让两者走完全相同的那条路。
      */
+    /**
     @Override
     public boolean canPerformAction(ItemStack stack, ItemAbility ability) {
         if (super.canPerformAction(stack, ability)) {
@@ -857,6 +858,11 @@ public class KunJinKaoSwordItem extends SwordItem {
     @Override
     public void inventoryTick(ItemStack stack, Level level, net.minecraft.world.entity.Entity entity, int slotId, boolean isSelected) {
         super.inventoryTick(stack, level, entity, slotId, isSelected);
+        // 补上 UNBREAKABLE 组件：提示里会显示'无法破坏'，也能修好此前掉过耐久的旧剑。
+        if (!stack.has(net.minecraft.core.component.DataComponents.UNBREAKABLE)) {
+            stack.set(net.minecraft.core.component.DataComponents.UNBREAKABLE,
+                    new net.minecraft.world.item.component.Unbreakable(true));
+        }
         if (level.isClientSide()) {
             return;
         }
