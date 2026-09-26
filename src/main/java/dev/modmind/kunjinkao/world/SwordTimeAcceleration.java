@@ -338,16 +338,33 @@ public final class SwordTimeAcceleration {
         if (event.isCanceled() || !(event.getEntity() instanceof Player player)) {
             return;
         }
-        // 只接管"潜行 + 手里是剑"。不潜行时本模组本来就不碰这条路径。
-        if (!player.isShiftKeyDown()) {
-            return;
-        }
         ItemStack stack = player.getItemInHand(event.getHand());
         if (!(stack.getItem() instanceof KunJinKaoSwordItem)) {
             return;
         }
-        // 扳手模式开着：让给模组，这里什么都不做。
+        // 扳手模式开着：整个让给模组，这里什么都不做。
         if (KunJinKaoSwordItem.isWrenchEnabled(stack)) {
+            return;
+        }
+
+        // 避雷针：不管有没有潜行，都归本模组处理。
+        // 这一条同时压掉 XyCraft 那类把避雷针当成 Xynergy 节点的模组 ——
+        // 它们的处理器第一句就是 if (event.isCanceled()) return;，
+        // 这里先取消，它们就完全不插话；否则右键避雷针会弹它们的
+        // You can not bind this to itself，而本模组的召唤闪电根本轮不到。
+        if (KunJinKaoSwordItem.isLightningRodEnabled(stack)
+                && event.getLevel().getBlockState(event.getPos()).getBlock()
+                        instanceof net.minecraft.world.level.block.LightningRodBlock) {
+            event.setCanceled(true);
+            SwordToolHandler.strikeLightningRod(new net.minecraft.world.item.context.UseOnContext(
+                    player, event.getHand(), event.getHitVec()));
+            return;
+        }
+
+        // 下面这些只在潜行时接管：不潜行时本模组不碰其它方块。
+        // 注意这个提前返回必须放在避雷针之后 —— 放在最上面会让不潜行的右键
+        // 根本进不来，避雷针接管也就永远不会执行。
+        if (!player.isShiftKeyDown()) {
             return;
         }
         // 扳手模式关着：这次右键不该再被当成扳手。
