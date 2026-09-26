@@ -60,6 +60,7 @@
   "message.kunjinkao.wrench_enabled": "扳手模式已开启：shift+右键 交给扳手",
   "message.kunjinkao.wrench_disabled": "扳手模式已关闭：shift+右键 用于加速机器",
   "screen.kunjinkao.wrench": "扳手",
+  "screen.kunjinkao.silk_touch": "精准采集",
   "screen.kunjinkao.accel_mode": "加速模式",
   "screen.kunjinkao.accel_multiplier": "倍率",
   "screen.kunjinkao.accel_off": "关闭",

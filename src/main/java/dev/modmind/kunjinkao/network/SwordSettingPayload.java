@@ -51,6 +51,8 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
     public static final int TIME_ACCEL_MULTIPLIER = 17;
     /** 扳手标记。 */
     public static final int WRENCH = 18;
+    /** 精准采集。 */
+    public static final int SILK_TOUCH = 21;
     /** 斩首：击杀生物额外掉头颅。 */
     public static final int BEHEADING = 19;
     /** 刷怪蛋掉落：击杀生物额外掉刷怪蛋。 */
@@ -93,6 +95,7 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
                 case TIME_ACCEL_MODE -> KunJinKaoColdDataEffectsHandler.handleSetTimeAccelMode(context.player(), hand, value);
                 case TIME_ACCEL_MULTIPLIER -> KunJinKaoColdDataEffectsHandler.handleSetTimeAccelMultiplier(context.player(), hand, value);
                 case WRENCH -> KunJinKaoColdDataEffectsHandler.handleToggleWrench(context.player(), hand, value != 0);
+                case SILK_TOUCH -> KunJinKaoColdDataEffectsHandler.handleToggleSilkTouch(context.player(), hand, value != 0);
                 case BEHEADING -> KunJinKaoColdDataEffectsHandler.handleToggleBeheading(context.player(), hand, value != 0);
                 case SPAWN_EGG_DROP -> KunJinKaoColdDataEffectsHandler.handleToggleSpawnEggDrop(context.player(), hand, value != 0);
                 default -> {

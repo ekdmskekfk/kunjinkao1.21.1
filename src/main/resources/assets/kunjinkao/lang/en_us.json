@@ -60,6 +60,7 @@
   "message.kunjinkao.wrench_enabled": "Wrench mode ON: shift+right-click goes to the wrench",
   "message.kunjinkao.wrench_disabled": "Wrench mode OFF: shift+right-click accelerates machines",
   "screen.kunjinkao.wrench": "Wrench",
+  "screen.kunjinkao.silk_touch": "Silk Touch",
   "screen.kunjinkao.accel_mode": "Accel Mode",
   "screen.kunjinkao.accel_multiplier": "Multiplier",
   "screen.kunjinkao.accel_off": "Off",

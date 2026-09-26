@@ -73,6 +73,8 @@ public class KunJinKaoSwordItem extends SwordItem {
     /** 时间加速模式：0 关 / 1 限时（30 秒）/ 2 无限。 */
     /** 斩首：击杀生物时额外掉落对应头颅。 */
     private static final String BEHEADING_KEY = "BeheadingEnabled";
+    /** 精准采集：开启后剑上会真的挂上原版精准采集附魔。 */
+    private static final String SILK_TOUCH_KEY = "SilkTouchEnabled";
     /** 刷怪蛋掉落：击杀生物时额外掉落它的刷怪蛋。 */
     private static final String SPAWN_EGG_DROP_KEY = "SpawnEggDropEnabled";
     /** 扳手：给剑带上扳手标记。同时剑在 c:tools/wrench 标签里，模组会直接把它当扳手。 */
@@ -343,6 +345,46 @@ public class KunJinKaoSwordItem extends SwordItem {
         CompoundTag tag = dataTag(stack);
         tag.putBoolean(BEHEADING_KEY, enabled);
         writeDataTag(stack, tag);
+    }
+
+    /**
+     * 精准采集。
+     * <p>
+     * 实现方式是把原版精准采集附魔真的挂到剑上（以及摘掉），而不是自己去替换方块掉落 ——
+     * 这样所有原版与模组的战利品表都会按它们原本的逻辑正确处理，
+     * 不需要本模组为每种方块写特例。
+     *
+     * @param level 用来取附魔注册表；拿不到就只记标记、不动附魔
+     */
+    public static boolean isSilkTouchEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(SILK_TOUCH_KEY);
+    }
+
+    public static void setSilkTouchEnabled(ItemStack stack, boolean enabled, @Nullable Level level) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(SILK_TOUCH_KEY, enabled);
+        writeDataTag(stack, tag);
+        applySilkTouch(stack, enabled, level);
+    }
+
+    private static void applySilkTouch(ItemStack stack, boolean enabled, @Nullable Level level) {
+        if (level == null) {
+            return;
+        }
+        var silkTouch = level.registryAccess()
+                .holder(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH).orElse(null);
+        if (silkTouch == null) {
+            return;
+        }
+        var current = stack.getOrDefault(net.minecraft.core.component.DataComponents.ENCHANTMENTS,
+                net.minecraft.world.item.enchantment.ItemEnchantments.EMPTY);
+        var mutable = new net.minecraft.world.item.enchantment.ItemEnchantments.Mutable(current);
+        if (enabled) {
+            mutable.set(silkTouch, 1);
+        } else {
+            mutable.removeIf(holder -> holder.is(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH));
+        }
+        stack.set(net.minecraft.core.component.DataComponents.ENCHANTMENTS, mutable.toImmutable());
     }
 
     /** 刷怪蛋掉落：击杀生物时额外掉落它的刷怪蛋。 */

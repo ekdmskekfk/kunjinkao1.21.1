@@ -297,6 +297,11 @@ public final class KunJinKaoColdDataEffectsHandler {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setSpawnEggDropEnabled(stack, enabled));
     }
 
+    /** 精准采集：把原版精准采集附魔真的挂到剑上或摘掉。 */
+    public static void handleToggleSilkTouch(Player player, InteractionHand hand, boolean enabled) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setSilkTouchEnabled(stack, enabled, player.level()));
+    }
+
     /** 扳手标记：给剑带上/取下扳手 NBT。 */
     public static void handleToggleWrench(Player player, InteractionHand hand, boolean enabled) {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setWrenchEnabled(stack, enabled));
