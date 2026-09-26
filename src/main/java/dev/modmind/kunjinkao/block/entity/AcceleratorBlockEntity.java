@@ -20,6 +20,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import dev.modmind.kunjinkao.compat.Ae2GridAcceleration;
 import net.minecraft.world.level.block.state.BlockState;
 
 import javax.annotation.Nullable;
@@ -174,6 +175,10 @@ public class AcceleratorBlockEntity extends BlockEntity {
         if (state.getTicker(level, entity.getType()) != null) {
             return true;
         }
+        // AE2 那类 ME 网络机器：tick 由网络调度，走 IGridTickable，上面两条都拿不到。
+        if (Ae2GridAcceleration.hasTickable(level, pos)) {
+            return true;
+        }
         // AE2 这类模组不走原版 ticker：方块实体自己实现 serverTick()，由模组自己的调度器驱动
         // （AE2 是 appeng/hooks/ticking/TickHandler）。这种机器同样能被额外 tick 加速，
         // 只是入口不是 getTicker —— 认它，否则"可加速"会把这些机器整类拒掉。
@@ -192,6 +197,10 @@ public class AcceleratorBlockEntity extends BlockEntity {
         }
         BlockEntityTicker ticker = state.getTicker(level, entity.getType());
         if (ticker == null) {
+            int viaGrid = Ae2GridAcceleration.tick(level, pos, extra, budget);
+            if (viaGrid > 0) {
+                return viaGrid;
+            }
             return tickServerTickMethod(level, entity, extra, budget);
         }
         int calls = Math.min(extra, budget);
