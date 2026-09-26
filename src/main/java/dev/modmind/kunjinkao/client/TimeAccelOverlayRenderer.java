@@ -6,6 +6,8 @@ import dev.modmind.kunjinkao.network.TimeAccelStatusPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
@@ -15,39 +17,40 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * 世界空间里的加速悬浮提示：方块、生物、以及整体时间加速（画在太阳方向）。
- * <p>
- * 姿态换算按原版铭牌那一套，但有两处必须和原版区分开，写错就会完全看不见：
- * <ol>
- *   <li><b>不要再叠相机旋转</b>。{@code AFTER_ENTITIES} 拿到的姿态栈已经是"含相机旋转的视图空间"，
- *       视图空间里相机看向 -Z，所以字体所在的 +Z 面天然就朝向观察者。
- *       再 mulPose(camera.rotation()) 会把文字转到侧面甚至背面，结果就是一片空白。</li>
- *   <li><b>缩放两个轴都要取负</b>：{@code (-0.025, -0.025, 0.025)}。
- *       这和原版铭牌写的 {@code (0.025, -0.025, 0.025)} 不一样，但在这里是对的 ——
- *       本姿态的基准相对原版铭牌在 XY 平面上翻了 180°，只翻 Y 会让整行字水平镜像。
- *       这一点是实测出来的，不要照着原版改回去。</li>
- * </ol>
+ * 世界空间里的加速悬浮提示。
+ * <ul>
+ *   <li><b>方块</b>：六个面各贴一条。背面那几条由方块本身遮住（用 NORMAL 而非 SEE_THROUGH），
+ *       所以任何角度看过去，朝着你的那几个面都各有一条 —— 正面与顶面可以同时看到。</li>
+ *   <li><b>生物</b>：头顶一条。</li>
+ *   <li><b>时间加速</b>：太阳方向一条（没有具体位置）。</li>
+ * </ul>
+ * 朝向用原版铭牌那套：{@code mulPose(cameraOrientation())} + {@code scale(0.025, -0.025, 0.025)}。
+ * 已核实 {@code EntityRenderDispatcher.render} 只做 translate、没有任何旋转，所以这一步不能省 ——
+ * 少了自己转向相机这一步，文字会朝背面，看起来就是镜像或干脆看不见。
  */
 @OnlyIn(Dist.CLIENT)
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
 public final class TimeAccelOverlayRenderer {
 
-    /**
-     * 提示文字的缩放大小（0.025 即原版铭牌大小）。
-     * <p>
-     * 注意实际使用的是 {@code (-TAG_SCALE, -TAG_SCALE, TAG_SCALE)}：两个轴都取负。
-     * 本姿态的基准相对原版铭牌在 XY 平面上翻了 180°，只翻 Y 会让字水平镜像。
-     */
+    /** 原版铭牌的缩放：Y 取负把字翻正，X 保持正数。 */
     private static final float TAG_SCALE = 0.025F;
-    /** 方块上方的高度。 */
-    private static final double BLOCK_HEIGHT = 1.6D;
+    /** 方块六个面。 */
+    private static final Direction[] BLOCK_FACES = {
+            Direction.UP, Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST};
+    /** 提示离方块表面多远。 */
+    private static final double FACE_OFFSET = 0.55D;
     /** 生物头顶再抬多少。 */
     private static final double ENTITY_HEIGHT = 0.6D;
     /** 太阳方向的提示离相机多远（只是方向，取多大都不影响观感）。 */
     private static final double SUN_DISTANCE = 100.0D;
-    /** 文字颜色（青色，与模组主题一致）。 */
+    /** 文字颜色。 */
     private static final int COLOR_TEXT = 0xFF9BE9FF;
+    /** 单个物品提示的最大绘制条数，防止异常数据把这一帧撑爆。 */
+    private static final int MAX_LABELS_PER_ENTRY = 6;
 
     private TimeAccelOverlayRenderer() {
     }
@@ -61,7 +64,7 @@ public final class TimeAccelOverlayRenderer {
         if (minecraft.level == null || minecraft.player == null) {
             return;
         }
-        var entries = TimeAccelClientState.entries();
+        List<TimeAccelStatusPayload.Entry> entries = TimeAccelClientState.entries();
         if (entries.isEmpty()) {
             return;
         }
@@ -77,8 +80,8 @@ public final class TimeAccelOverlayRenderer {
             if (entry.remainingMillis() >= 0L && remaining <= 0L) {
                 continue;
             }
-            Vec3 at = resolvePosition(minecraft, event, entry, camera);
-            if (at == null) {
+            List<Vec3> points = labelPositions(minecraft, event, entry, camera);
+            if (points.isEmpty()) {
                 continue;
             }
             Component text = Component.translatable(entry.kind() == TimeAccelStatusPayload.KIND_TIME
@@ -86,17 +89,16 @@ public final class TimeAccelOverlayRenderer {
                             : "hud.kunjinkao.time_accel_tag",
                     entry.multiplier(), formatRemaining(remaining));
 
-            pose.pushPose();
-            pose.translate(at.x - camera.x, at.y - camera.y, at.z - camera.z);
-            // 必须再转成面向相机。已核实 EntityRenderDispatcher.render 只做 translate、
-            // 没有任何旋转，所以 renderNameTag 拿到的姿态得自己 mulPose(cameraOrientation())
-            // 才朝向观察者 —— 少这一步文字会朝背面（镜像或干脆看不见）。
-            pose.mulPose(event.getCamera().rotation());
-            // 视图空间里字体的 +Z 已朝向观察者，所以这里只缩放、不旋转。
-            pose.scale(TAG_SCALE, -TAG_SCALE, TAG_SCALE);
-            font.drawInBatch(text, -font.width(text) / 2.0F, 0.0F, COLOR_TEXT, false,
-                    pose.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, background, 0xF000F0);
-            pose.popPose();
+            for (Vec3 at : points) {
+                pose.pushPose();
+                pose.translate(at.x - camera.x, at.y - camera.y, at.z - camera.z);
+                // 转向相机：这一步不能省，理由见类注释。
+                pose.mulPose(event.getCamera().rotation());
+                pose.scale(TAG_SCALE, -TAG_SCALE, TAG_SCALE);
+                font.drawInBatch(text, -font.width(text) / 2.0F, 0.0F, COLOR_TEXT, false,
+                        pose.last().pose(), buffer, Font.DisplayMode.NORMAL, background, 0xF000F0);
+                pose.popPose();
+            }
             drewAnything = true;
         }
         if (drewAnything) {
@@ -105,33 +107,52 @@ public final class TimeAccelOverlayRenderer {
         }
     }
 
-    /** 三种加速对象各自的提示位置；取不到（生物已消失等）返回 null。 */
-    private static Vec3 resolvePosition(Minecraft minecraft, RenderLevelStageEvent event,
-                                        TimeAccelStatusPayload.Entry entry, Vec3 camera) {
+    /** 该条加速记录要画在哪些位置；空列表表示这一帧画不了（例如生物已消失）。 */
+    private static List<Vec3> labelPositions(Minecraft minecraft, RenderLevelStageEvent event,
+                                             TimeAccelStatusPayload.Entry entry, Vec3 camera) {
         if (entry.kind() == TimeAccelStatusPayload.KIND_BLOCK) {
-            return new Vec3(entry.pos().getX() + 0.5D,
-                    entry.pos().getY() + BLOCK_HEIGHT,
-                    entry.pos().getZ() + 0.5D);
+            return blockFacePoints(entry.pos());
         }
         if (entry.kind() == TimeAccelStatusPayload.KIND_ENTITY) {
             Entity entity = minecraft.level.getEntity(entry.entityId());
             if (entity == null) {
-                return null;
+                return List.of();
             }
-            return new Vec3(entity.getX(), entity.getY() + entity.getBbHeight() + ENTITY_HEIGHT, entity.getZ());
+            return List.of(new Vec3(entity.getX(),
+                    entity.getY() + entity.getBbHeight() + ENTITY_HEIGHT, entity.getZ()));
         }
-        return sunPosition(minecraft, event, camera);
+        return List.of(sunPosition(minecraft, event, camera));
+    }
+
+    /**
+     * 方块六个面外侧各一个点。
+     * <p>
+     * 六条都画，但渲染用 NORMAL（走深度测试），背面那几条会被方块自身遮住 ——
+     * 于是任何角度都只看得到朝着你的那几个面，正面与顶面可以同时出现。
+     */
+    private static List<Vec3> blockFacePoints(BlockPos pos) {
+        List<Vec3> points = new ArrayList<>(MAX_LABELS_PER_ENTRY);
+        double cx = pos.getX() + 0.5D;
+        double cy = pos.getY() + 0.5D;
+        double cz = pos.getZ() + 0.5D;
+        for (Direction face : BLOCK_FACES) {
+            points.add(new Vec3(cx + face.getStepX() * FACE_OFFSET,
+                    cy + face.getStepY() * FACE_OFFSET,
+                    cz + face.getStepZ() * FACE_OFFSET));
+        }
+        return points;
     }
 
     /**
      * 太阳方向上的一个点。
      * <p>
-     * 方向取自原版天空的算法：{@code Axis.XP.rotationDegrees(getTimeOfDay * 360)} 再绕 Y 转 -90，
-     * 化简后就是 {@code (-sin(2πt), cos(2πt), 0)} —— 即太阳沿 X 轴东升西落。
-     * 太阳落到地平线以下时改画到正上方，否则夜里提示会跑到地底下去。
+     * 方向取自原版天空：{@code Axis.XP.rotationDegrees(getTimeOfDay * 360)} 再绕 Y 转 -90，
+     * 化简后是 {@code (-sin(2πt), cos(2πt), 0)} —— 太阳沿 X 轴东升西落。
+     * 太阳落到地平线以下时改画到正上方，免得夜里提示跑到地底下。
      */
     private static Vec3 sunPosition(Minecraft minecraft, RenderLevelStageEvent event, Vec3 camera) {
-        double angle = minecraft.level.getTimeOfDay(event.getPartialTick().getGameTimeDeltaPartialTick(false)) * Math.PI * 2.0D;
+        double angle = minecraft.level.getTimeOfDay(
+                event.getPartialTick().getGameTimeDeltaPartialTick(false)) * Math.PI * 2.0D;
         double x = -Math.sin(angle);
         double y = Math.cos(angle);
         if (y <= 0.05D) {
