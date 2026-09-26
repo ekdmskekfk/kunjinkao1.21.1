@@ -88,8 +88,12 @@ public final class TimeAccelOverlayRenderer {
 
             pose.pushPose();
             pose.translate(at.x - camera.x, at.y - camera.y, at.z - camera.z);
+            // 必须再转成面向相机。已核实 EntityRenderDispatcher.render 只做 translate、
+            // 没有任何旋转，所以 renderNameTag 拿到的姿态得自己 mulPose(cameraOrientation())
+            // 才朝向观察者 —— 少这一步文字会朝背面（镜像或干脆看不见）。
+            pose.mulPose(event.getCamera().rotation());
             // 视图空间里字体的 +Z 已朝向观察者，所以这里只缩放、不旋转。
-            pose.scale(-TAG_SCALE, -TAG_SCALE, TAG_SCALE);
+            pose.scale(TAG_SCALE, -TAG_SCALE, TAG_SCALE);
             font.drawInBatch(text, -font.width(text) / 2.0F, 0.0F, COLOR_TEXT, false,
                     pose.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, background, 0xF000F0);
             pose.popPose();

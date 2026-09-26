@@ -496,10 +496,13 @@ public class KunJinKaoSwordItem extends SwordItem {
             // 刻意要求真的抬头（至少 45 度），而不是"点到空气就算" ——
             // 整体加速影响全服，不该在平视或低头点到空气时被误触。
             // 这条也是唯一能带动 AE2 那类"按 gameTime 算进度"的机器的办法。
-            if (!isWrenchEnabled(stack)
-                    && SwordTimeAcceleration.clampMode(getTimeAccelMode(stack)) != SwordTimeAcceleration.MODE_OFF
-                    && SwordTimeAcceleration.isFacingSky(player)) {
-                if (level.getServer() != null) {
+            int accelMode = SwordTimeAcceleration.clampMode(getTimeAccelMode(stack));
+            if (accelMode != SwordTimeAcceleration.MODE_OFF) {
+                // 开了加速模式后，shift+右键 只服务于加速，不再顺手切换抢夺模式 ——
+                // 否则右键机器时（事件落回这里）屏幕下方会弹出"抢夺模式"提示，
+                // 看起来像是把机器加速换成了改抢夺模式，实际是两件事同时发生了。
+                if (level.getServer() != null && !isWrenchEnabled(stack)
+                        && SwordTimeAcceleration.isFacingSky(player)) {
                     SwordTimeAcceleration.tryToggleTime(player, level.getServer(), stack);
                 }
                 return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
