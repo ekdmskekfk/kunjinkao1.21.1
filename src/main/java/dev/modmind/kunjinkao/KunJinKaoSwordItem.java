@@ -39,7 +39,9 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import dev.modmind.kunjinkao.compat.WrenchAbilities;
 import javax.annotation.Nullable;
+import net.neoforged.neoforge.common.ItemAbility;
 
 public class KunJinKaoSwordItem extends SwordItem {
 
@@ -564,6 +566,23 @@ public class KunJinKaoSwordItem extends SwordItem {
             player.displayClientMessage(Component.translatable("message.kunjinkao.area_clear_result", removed), true);
         }
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
+    }
+
+    /**
+    /**
+     * 扳手模式开启时，把"扳手类"的 ItemAbility 补上。
+     * <p>
+     * 物品标签只能让模组认得出这是一把扳手；模组内部决定走哪条分支的往往是它自己的
+     * ItemAbility。Mekanism 就是如此（反编译确认它同时看 WRENCH_DISMANTLE 能力与
+     * c:tools/wrench 标签）：只满足标签的外来扳手可能与自家扳手走不同分支，
+     * 实测表现就是拆卸后的机器丢失 NBT。这里把能力补齐，让两者走完全相同的那条路。
+     */
+    @Override
+    public boolean canPerformAction(ItemStack stack, ItemAbility ability) {
+        if (super.canPerformAction(stack, ability)) {
+            return true;
+        }
+        return isWrenchEnabled(stack) && WrenchAbilities.isWrenchAbility(ability);
     }
 
     /**
