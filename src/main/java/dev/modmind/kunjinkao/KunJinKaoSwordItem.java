@@ -522,6 +522,33 @@ public class KunJinKaoSwordItem extends SwordItem {
     }
 
     /**
+     * 潜行右键时原版会先走这里（{@code isSecondaryUseActive()} 分支），而它排在
+     * {@code PlayerInteractEvent.RightClickBlock} <b>之前</b>。
+     * <p>
+     * 这一层必须自己接管，否则"关掉扳手模式"对走这条路的模组无效：
+     * 剑在 {@code c:tools/wrench} 标签里，模组认它，而标签无法按 NBT 开关。
+     * 好在 onItemUseFirst 是对<b>手持物品</b>调用的 —— 物品就是本剑，
+     * 所以这里能完全决定要不要把这次右键交出去。
+     */
+    @Override
+    public InteractionResult onItemUseFirst(ItemStack stack, UseOnContext context) {
+        Player player = context.getPlayer();
+        if (player == null || isInert(stack) || !player.isShiftKeyDown()) {
+            return super.onItemUseFirst(stack, context);
+        }
+        // 扳手模式开着：照旧让给模组。
+        if (isWrenchEnabled(stack)) {
+            return super.onItemUseFirst(stack, context);
+        }
+        // 关着：这次右键不该再被当成扳手。目标是可加速方块就开/关加速场，
+        // 否则单纯什么都不做 —— 两种情况都要吃掉，不能返回 PASS 把右键放回去。
+        if (context.getLevel() instanceof ServerLevel serverLevel) {
+            SwordTimeAcceleration.tryToggleBlock(player, serverLevel, context.getClickedPos(), stack);
+        }
+        return InteractionResult.sidedSuccess(context.getLevel().isClientSide());
+    }
+
+    /**
      * 放置类核心走这里：右键<b>方块</b>时优先按核心放置。
      * 没有开启核心（或副手没有方块）时交回原版 —— 原版剑返回 PASS，
      * 于是继续走 {@link #use} 的范围清除，改动前的行为完全不变。
