@@ -644,13 +644,13 @@ public final class SwordOptionsScreen extends Screen {
         // 四态循环：关 -> 自然 -> 普通 -> 仅视觉 -> 关。
         // 放在同一个按钮上，是因为工具分区四个槽位已经排满，
         // 再加一格会把面板顶出 240 的高度。
-        int state;
-        if (!KunJinKaoSwordItem.isLightningRodEnabled(stack)) {
-            state = 1;                                    // 关 -> 自然
-        } else {
-            int mode = KunJinKaoSwordItem.getLightningMode(stack);
-            state = mode >= KunJinKaoSwordItem.LIGHTNING_MODE_COUNT ? 0 : mode + 2;
-        }
+        // 0 = 关闭，1..3 = 开启且形态为 state - 1。总数是 1 + 形态数 = 4。
+        // 上一版写成 "mode >= COUNT ? 0 : mode + 2"，最后一档时 2 >= 3 为假，
+        // 算出 state = 4，形态被夹回 2 —— 于是永远停在"仅视觉"出不去。
+        int state = KunJinKaoSwordItem.isLightningRodEnabled(stack)
+                ? 1 + KunJinKaoSwordItem.getLightningMode(stack)
+                : 0;
+        state = (state + 1) % (1 + KunJinKaoSwordItem.LIGHTNING_MODE_COUNT);
         boolean enabled = state > 0;
         KunJinKaoSwordItem.setLightningRodEnabled(stack, enabled);
         if (enabled) {
