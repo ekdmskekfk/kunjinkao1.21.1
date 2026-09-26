@@ -36,6 +36,9 @@ import javax.annotation.Nullable;
  */
 public class AcceleratorBlockEntity extends BlockEntity {
 
+    private static final org.apache.logging.log4j.Logger LOGGER =
+            org.apache.logging.log4j.LogManager.getLogger("KunJinKao");
+
     /** 可选加速倍率：4 / 8 / 16 / 32 / 64 / 128 / 256 / 512 / 1024 倍。 */
     public static final int[] MULTIPLIERS = {4, 8, 16, 32, 64, 128, 256, 512, 1024};
 
@@ -161,8 +164,14 @@ public class AcceleratorBlockEntity extends BlockEntity {
         if (entity instanceof AcceleratorBlockEntity) {
             return false;
         }
-        return state.getBlock() instanceof EntityBlock entityBlock
-                && entityBlock.getTicker(level, state, entity.getType()) != null;
+        if (state.getBlock() instanceof EntityBlock entityBlock
+                && entityBlock.getTicker(level, state, entity.getType()) != null) {
+            return true;
+        }
+        // AE2 这类模组不走原版 ticker：方块实体自己实现 serverTick()，由模组自己的调度器驱动
+        // （AE2 是 appeng/hooks/ticking/TickHandler）。这种机器同样能被额外 tick 加速，
+        // 只是入口不是 getTicker —— 认它，否则"可加速"会把这些机器整类拒掉。
+        return findServerTick(entity) != null;
     }
 
     /**
@@ -181,11 +190,59 @@ public class AcceleratorBlockEntity extends BlockEntity {
         }
         BlockEntityTicker ticker = entityBlock.getTicker(level, state, entity.getType());
         if (ticker == null) {
-            return 0;
+            return tickServerTickMethod(level, entity, extra, budget);
         }
         int calls = Math.min(extra, budget);
         for (int i = 0; i < calls; i++) {
             ticker.tick(level, pos, state, entity);
+        }
+        return calls;
+    }
+
+    /** serverTick() 的查找结果缓存：反射只在每个类上做一次。 */
+    private static final java.util.Map<Class<?>, java.util.Optional<java.lang.reflect.Method>>
+            SERVER_TICK_CACHE = new java.util.HashMap<>();
+
+    /**
+     * 找出方块实体自己实现的 {@code serverTick()}（无参）。
+     * <p>
+     * 这类机器（AE2 是典型）把 tick 入口做成了方块实体的方法，由模组自己的调度器驱动，
+     * 因此不注册原版 BlockEntityTicker。它仍然是"这台机器每一刻要做的事"，
+     * 额外调用它就是加速这台机器本身 —— 和其他方块走 getTicker 是同一件事，只是入口不同。
+     *
+     * @return 可调用的无参 serverTick；没有则返回 null
+     */
+    private static java.lang.reflect.Method findServerTick(BlockEntity entity) {
+        if (entity instanceof AcceleratorBlockEntity) {
+            return null;
+        }
+        return SERVER_TICK_CACHE.computeIfAbsent(entity.getClass(), type -> {
+            try {
+                java.lang.reflect.Method method = type.getMethod("serverTick");
+                return method.getParameterCount() == 0
+                        ? java.util.Optional.of(method)
+                        : java.util.Optional.empty();
+            } catch (NoSuchMethodException | SecurityException e) {
+                return java.util.Optional.empty();
+            }
+        }).orElse(null);
+    }
+
+    /** 额外调用机器自己的 serverTick()。 */
+    private static int tickServerTickMethod(Level level, BlockEntity entity, int extra, int budget) {
+        java.lang.reflect.Method method = findServerTick(entity);
+        if (method == null) {
+            return 0;
+        }
+        int calls = Math.min(extra, budget);
+        for (int i = 0; i < calls; i++) {
+            try {
+                method.invoke(entity);
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                // 调用失败就放弃这类方块，避免每刻刷异常、也避免把服务器拖住。
+                LOGGER.debug("[ACCEL] serverTick() 调用失败，跳过 {}: {}", entity.getClass().getName(), e.toString());
+                return i;
+            }
         }
         return calls;
     }
