@@ -23,15 +23,22 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  *   <li><b>不要再叠相机旋转</b>。{@code AFTER_ENTITIES} 拿到的姿态栈已经是"含相机旋转的视图空间"，
  *       视图空间里相机看向 -Z，所以字体所在的 +Z 面天然就朝向观察者。
  *       再 mulPose(camera.rotation()) 会把文字转到侧面甚至背面，结果就是一片空白。</li>
- *   <li><b>X 不能取负</b>。缩放是 {@code (0.025, -0.025, 0.025)}：Y 取负是为了把字翻正，
- *       X 取负会让整行字变成镜像。</li>
+ *   <li><b>缩放两个轴都要取负</b>：{@code (-0.025, -0.025, 0.025)}。
+ *       这和原版铭牌写的 {@code (0.025, -0.025, 0.025)} 不一样，但在这里是对的 ——
+ *       本姿态的基准相对原版铭牌在 XY 平面上翻了 180°，只翻 Y 会让整行字水平镜像。
+ *       这一点是实测出来的，不要照着原版改回去。</li>
  * </ol>
  */
 @OnlyIn(Dist.CLIENT)
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
 public final class TimeAccelOverlayRenderer {
 
-    /** 原版铭牌的缩放。Y 取负翻正字，X 保持正数否则整行镜像。 */
+    /**
+     * 提示文字的缩放大小（0.025 即原版铭牌大小）。
+     * <p>
+     * 注意实际使用的是 {@code (-TAG_SCALE, -TAG_SCALE, TAG_SCALE)}：两个轴都取负。
+     * 本姿态的基准相对原版铭牌在 XY 平面上翻了 180°，只翻 Y 会让字水平镜像。
+     */
     private static final float TAG_SCALE = 0.025F;
     /** 方块上方的高度。 */
     private static final double BLOCK_HEIGHT = 1.6D;
@@ -82,7 +89,7 @@ public final class TimeAccelOverlayRenderer {
             pose.pushPose();
             pose.translate(at.x - camera.x, at.y - camera.y, at.z - camera.z);
             // 视图空间里字体的 +Z 已朝向观察者，所以这里只缩放、不旋转。
-            pose.scale(TAG_SCALE, -TAG_SCALE, TAG_SCALE);
+            pose.scale(-TAG_SCALE, -TAG_SCALE, TAG_SCALE);
             font.drawInBatch(text, -font.width(text) / 2.0F, 0.0F, COLOR_TEXT, false,
                     pose.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, background, 0xF000F0);
             pose.popPose();
