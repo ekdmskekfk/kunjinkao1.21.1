@@ -102,9 +102,19 @@ public final class PlacementPreviewRenderer {
         Direction extend = PlacementCoreHandler.extensionDirection(player, face);
         // 能放几格取决于副手有多少方块，最多画 MAX_PREVIEW 格。
         int limit = Math.min(material.getCount(), MAX_PREVIEW);
+        BlockPos clicked = hit.getBlockPos();
         for (int i = 0; i < limit; i++) {
             BlockPos target = first.relative(extend, i);
+            // 只画"确实放得下"的格子：这里复用服务端 tryPlaceAt 的两个前置判定，
+            // 顺序也保持一致 —— 目标可替换、依托面是实心的。任何一条不成立就到此为止。
+            // 这样预览与实际结果一一对应，而不是画出一批放不下的位置。
             if (!minecraft.level.getBlockState(target).canBeReplaced()) {
+                break;
+            }
+            BlockPos support = i == 0 ? clicked : first.relative(extend, i - 1);
+            Direction supportFace = i == 0 ? face : extend;
+            if (!minecraft.level.getBlockState(support).isFaceSturdy(
+                    minecraft.level, support, supportFace)) {
                 break;
             }
             targets.add(target);

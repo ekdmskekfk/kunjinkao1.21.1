@@ -38,6 +38,9 @@ import java.util.List;
  */
 public final class PlacementCoreHandler {
 
+    private static final org.apache.logging.log4j.Logger LOGGER =
+            org.apache.logging.log4j.LogManager.getLogger("KunJinKao");
+
     /** 单次最多连带处理多少格。1024 对应建筑手杖无限手杖的批量上限。 */
     private static final int MAX_BLOCKS = 1024;
     /** 天使核心最多能穿透几格去找落脚点。 */
@@ -73,6 +76,13 @@ public final class PlacementCoreHandler {
         }
         BlockPos first = clickedPos.relative(face);
         Direction extend = extensionDirection(player, face);
+        // 临时诊断：手杖"一个都不放"时，把每一步的判定依据打出来定位。
+        if (!level.isClientSide()) {
+            LOGGER.info("[WAND] clicked={} face={} first={} extend={} offhand={} firstReplaceable={} firstSupportSturdy={}",
+                    clickedPos, face, first, extend, player.getOffhandItem().getItem(),
+                    level.getBlockState(first).canBeReplaced(),
+                    level.getBlockState(clickedPos).isFaceSturdy(level, clickedPos, face));
+        }
         for (int i = 0; i < MAX_BLOCKS; i++) {
             if (!isPlaceable(player.getOffhandItem())) {
                 break;
@@ -89,6 +99,9 @@ public final class PlacementCoreHandler {
             Direction supportFace = i == 0 ? face : extend;
             Change change = tryPlaceAt(level, player, support, supportFace, target);
             if (change == null) {
+                if (!level.isClientSide()) {
+                    LOGGER.info("[WAND] stop at i={} target={} support={} supportFace={}", i, target, support, supportFace);
+                }
                 break;
             }
             changes.add(change);
