@@ -142,9 +142,13 @@ public final class PlacementCoreHandler {
         if (origin.isAir()) {
             return changes;
         }
-        // 材料必须与点击的方块是同一种方块 —— 不是就不放（说明：如果不是点击的方块就不要放置）。
-        ItemStack material = findMaterial(player, origin.getBlock().asItem());
-        if (!isPlaceable(material)) {
+        // 材料不限材质：副手放泥土、点击石头地面，就是"在石头上铺泥土"。
+        // "如果不是点击的方块就不要放置"约束的是【依托】，不是材料（见下面循环里那一条）。
+        // 副手拿着一种"和点击方块不同"的方块 = 用副手指定材料，并跳过同种约束
+        //（"不匹配的材料放副手可以跳过约束"，也就是能往石头上铺泥土）。
+        ItemStack offhand = player.getOffhandItem();
+        boolean override = isPlaceable(offhand) && offhand.getItem() != origin.getBlock().asItem();
+        if (!isPlaceable(findMaterial(player))) {
             return changes;
         }
         BlockPos first = clickedPos.relative(face);
@@ -166,7 +170,7 @@ public final class PlacementCoreHandler {
                     if (Math.max(Math.abs(i), Math.abs(j)) != r) {
                         continue;
                     }
-                    if (!isPlaceable(findMaterial(player, origin.getBlock().asItem()))) {
+                    if (!isPlaceable(findMaterial(player))) {
                         return changes;
                     }
                     BlockPos target = first.relative(ta, i).relative(tb, j);
@@ -176,7 +180,8 @@ public final class PlacementCoreHandler {
                     // 依托必须是同种方块，跳过而不是中断：墙沿或地板边缘的一个缺口
                     // 不该把整片都截断。
                     BlockPos support = target.relative(face.getOpposite());
-                    if (level.getBlockState(support).getBlock() != origin.getBlock()) {
+                    // 默认只沿"和点击方块同种"的面延伸；副手指定了别的材料时跳过这条。
+                    if (!override && level.getBlockState(support).getBlock() != origin.getBlock()) {
                         continue;
                     }
                     Change change = tryPlaceAt(level, player, support, face, target);

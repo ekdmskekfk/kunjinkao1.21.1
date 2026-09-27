@@ -121,8 +121,12 @@ public final class PlacementPreviewRenderer {
         if (origin.isAir()) {
             return targets;
         }
-        // 与服务端同一条约束：材料必须是"点击的那一种方块"，不是就一格都不画。
-        ItemStack material = PlacementCoreHandler.findMaterial(player, origin.getBlock().asItem());
+        // 材料不限材质（与服务端一致）：副手放泥土、点石头地面，就是石头上铺泥土。
+        // 副手指定了"不匹配的材料"时跳过同种约束（与服务端一致）。
+        ItemStack offhand = player.getOffhandItem();
+        boolean override = offhand.getItem() instanceof BlockItem
+                && offhand.getItem() != origin.getBlock().asItem();
+        ItemStack material = PlacementCoreHandler.findMaterial(player);
         if (!(material.getItem() instanceof BlockItem)) {
             return targets;
         }
@@ -153,7 +157,7 @@ public final class PlacementPreviewRenderer {
                     // 与服务端一致：依托必须是同种方块（而不是仅仅"实心"），
                     // 于是预览只会画在同种材质的面内，不会跨到旁边的泥土或空气上。
                     BlockPos support = target.relative(face.getOpposite());
-                    if (level.getBlockState(support).getBlock() != origin.getBlock()) {
+                    if (!override && level.getBlockState(support).getBlock() != origin.getBlock()) {
                         continue;
                     }
                     targets.add(target);
