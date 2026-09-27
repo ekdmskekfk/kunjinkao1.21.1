@@ -43,7 +43,7 @@ import java.util.List;
 public final class PlacementPreviewRenderer {
 
     /** 与 PlacementCoreHandler 一致的上限。 */
-    private static final int MAX_PREVIEW_SURVIVAL = 32;
+    private static final int MAX_PREVIEW_SURVIVAL = 1024;
     private static final int MAX_PREVIEW_CREATIVE = 1024;
     /** 线框略微外扩，避免与方块表面 z-fighting。 */
     private static final double INFLATE = 0.004D;
