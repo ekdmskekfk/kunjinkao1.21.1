@@ -85,14 +85,25 @@ public final class PlacementCoreHandler {
      * 副手因此是"指定材料"的手段；没指定时退回背包里的方块（快捷栏 0..8 天然优先）。
      */
     public static ItemStack findMaterial(Player player) {
+        return findMaterial(player, null);
+    }
+
+    /**
+     * 找这次要用的方块：<b>副手优先</b>，副手没有就翻背包（快捷栏 0..8 天然优先）。
+     * <p>
+     * 说明：「要是副手有东西，就在点击的方块上放置副手上的方块」「包里要是有也放」。
+     *
+     * @param required 只接受这一种物品；为 null 表示任意可放置的方块
+     */
+    public static ItemStack findMaterial(Player player, net.minecraft.world.item.Item required) {
         ItemStack offhand = player.getOffhandItem();
-        if (isPlaceable(offhand)) {
+        if (isPlaceable(offhand) && (required == null || offhand.getItem() == required)) {
             return offhand;
         }
         net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack stack = inventory.getItem(i);
-            if (isPlaceable(stack)) {
+            if (isPlaceable(stack) && (required == null || stack.getItem() == required)) {
                 return stack;
             }
         }
@@ -108,22 +119,35 @@ public final class PlacementCoreHandler {
     /**
     /**
     /**
-     * 基础建造模式：在被点击的那一面所在的<b>平面</b>上铺开一片方块。
+    /**
+     * 基础建造模式：沿着「和点击的那一格同种方块」铺成的面，往外铺开一片。
      * <p>
-     * 不是铺一排 —— 是以点击位置为中心、沿该面的两个切向轴向外扩成一整片，
-     * 直到副手/背包的方块用完、撞上已有方块、或者到了上限。
-     * 每格的依托是它"身后"那一格（support = target.relative(face.getOpposite())），
-     * 所以墙、地面、天花板都成立；某一格身后不是实心就跳过它，不影响其余各格。
+     * 用户说明：「要按点击的方块在相邻的方块上放置，如果不是点击的方块就不要放置，包里要是有也放」。
+     * 落到实现上就是两条约束：
+     * <ul>
+     *   <li><b>材料必须是同一种方块</b>：手里（副手优先，其次背包）那一叠的物品要和点击方块的物品一致，
+     *       否则一格都不放；</li>
+     *   <li><b>依托也必须是同一种方块</b>：每格身后那一格（target.relative(face.getOpposite())）
+     *       要和点击方块同类，不是就跳过这一格 —— 于是只能在同种材质的面内延伸，
+     *       不会跨到旁边的泥土或空气上去。</li>
+     * </ul>
+     * 面平面上的两个切向轴由 face 的法线轴排除而来，所以墙、地面、天花板都成立。
+     * 上限仍是说明里的生存 32 / 创造 1024。
      *
      * @return 本次放下的所有改动（空列表表示一格都没放）
      */
     public static List<Change> placeConstructionRow(Player player, Level level, BlockPos clickedPos, Direction face) {
         List<Change> changes = new ArrayList<>();
-        if (!isPlaceable(findMaterial(player))) {
+        BlockState origin = level.getBlockState(clickedPos);
+        if (origin.isAir()) {
+            return changes;
+        }
+        // 材料必须与点击的方块是同一种方块 —— 不是就不放（说明：如果不是点击的方块就不要放置）。
+        ItemStack material = findMaterial(player, origin.getBlock().asItem());
+        if (!isPlaceable(material)) {
             return changes;
         }
         BlockPos first = clickedPos.relative(face);
-        // 面平面上的两个切向轴：把 face 的法线轴排除掉，剩下两个就是。
         Direction.Axis normalAxis = face.getAxis();
         List<Direction> tangents = new ArrayList<>(2);
         for (Direction.Axis axis : Direction.Axis.values()) {
@@ -134,25 +158,28 @@ public final class PlacementCoreHandler {
         Direction ta = tangents.get(0);
         Direction tb = tangents.get(1);
         int limit = player.isCreative() ? MAX_PLACE_CREATIVE : MAX_PLACE_SURVIVAL;
-        // 一圈一圈往外扩（切比雪夫距离 r = 0, 1, 2 ...），这样放的顺序是从中心向外，
-        // 中途材料用完或空间被挡住，留下的也是一个居中的完整方形。
         int placed = 0;
         int maxRing = 32;
         for (int r = 0; r <= maxRing && placed < limit; r++) {
             for (int i = -r; i <= r && placed < limit; i++) {
                 for (int j = -r; j <= r && placed < limit; j++) {
-                    // 只处理这一圈的外环，内圈上一轮已经处理过。
                     if (Math.max(Math.abs(i), Math.abs(j)) != r) {
                         continue;
                     }
-                    if (!isPlaceable(findMaterial(player))) {
+                    if (!isPlaceable(findMaterial(player, origin.getBlock().asItem()))) {
                         return changes;
                     }
                     BlockPos target = first.relative(ta, i).relative(tb, j);
                     if (!level.getBlockState(target).canBeReplaced()) {
                         continue;
                     }
-                    Change change = tryPlaceAt(level, player, target.relative(face.getOpposite()), face, target);
+                    // 依托必须是同种方块，跳过而不是中断：墙沿或地板边缘的一个缺口
+                    // 不该把整片都截断。
+                    BlockPos support = target.relative(face.getOpposite());
+                    if (level.getBlockState(support).getBlock() != origin.getBlock()) {
+                        continue;
+                    }
+                    Change change = tryPlaceAt(level, player, support, face, target);
                     if (change != null) {
                         changes.add(change);
                         placed++;

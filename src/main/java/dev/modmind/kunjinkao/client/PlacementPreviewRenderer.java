@@ -115,12 +115,18 @@ public final class PlacementPreviewRenderer {
                 || !KunJinKaoSwordItem.isConstructionWandEnabled(sword)) {
             return targets;
         }
-        ItemStack material = PlacementCoreHandler.findMaterial(player);
+        Direction face = hit.getDirection();
+        BlockPos clicked = hit.getBlockPos();
+        var origin = level.getBlockState(clicked);
+        if (origin.isAir()) {
+            return targets;
+        }
+        // 与服务端同一条约束：材料必须是"点击的那一种方块"，不是就一格都不画。
+        ItemStack material = PlacementCoreHandler.findMaterial(player, origin.getBlock().asItem());
         if (!(material.getItem() instanceof BlockItem)) {
             return targets;
         }
-        Direction face = hit.getDirection();
-        BlockPos first = hit.getBlockPos().relative(face);
+        BlockPos first = clicked.relative(face);
         Direction.Axis normalAxis = face.getAxis();
         List<Direction> tangents = new ArrayList<>(2);
         for (Direction.Axis axis : Direction.Axis.values()) {
@@ -144,8 +150,10 @@ public final class PlacementPreviewRenderer {
                     if (!level.getBlockState(target).canBeReplaced()) {
                         continue;
                     }
-                    if (!level.getBlockState(target.relative(face.getOpposite()))
-                            .isFaceSturdy(level, target.relative(face.getOpposite()), face)) {
+                    // 与服务端一致：依托必须是同种方块（而不是仅仅"实心"），
+                    // 于是预览只会画在同种材质的面内，不会跨到旁边的泥土或空气上。
+                    BlockPos support = target.relative(face.getOpposite());
+                    if (level.getBlockState(support).getBlock() != origin.getBlock()) {
                         continue;
                     }
                     targets.add(target);
