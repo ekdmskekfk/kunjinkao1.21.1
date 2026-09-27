@@ -107,10 +107,13 @@ public final class PlacementCoreHandler {
 
     /**
     /**
-     * 沿所视方块面延伸放置一排方块（基础建造模式）。
+    /**
+     * 基础建造模式：在被点击的那一面所在的<b>平面</b>上铺开一片方块。
      * <p>
-     * 说明：手持手杖时以框提示将要连续放置的位置，右键消耗<b>背包中</b>的方块批量放置；
-     * 生存下单次最多 32 个（{@link #MAX_PLACE_SURVIVAL}），创造模式不受此限。
+     * 不是铺一排 —— 是以点击位置为中心、沿该面的两个切向轴向外扩成一整片，
+     * 直到副手/背包的方块用完、撞上已有方块、或者到了上限。
+     * 每格的依托是它"身后"那一格（support = target.relative(face.getOpposite())），
+     * 所以墙、地面、天花板都成立；某一格身后不是实心就跳过它，不影响其余各格。
      *
      * @return 本次放下的所有改动（空列表表示一格都没放）
      */
@@ -120,24 +123,42 @@ public final class PlacementCoreHandler {
             return changes;
         }
         BlockPos first = clickedPos.relative(face);
-        Direction extend = extensionDirection(player, face);
+        // 面平面上的两个切向轴：把 face 的法线轴排除掉，剩下两个就是。
+        Direction.Axis normalAxis = face.getAxis();
+        List<Direction> tangents = new ArrayList<>(2);
+        for (Direction.Axis axis : Direction.Axis.values()) {
+            if (axis != normalAxis) {
+                tangents.add(Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE));
+            }
+        }
+        Direction ta = tangents.get(0);
+        Direction tb = tangents.get(1);
         int limit = player.isCreative() ? MAX_PLACE_CREATIVE : MAX_PLACE_SURVIVAL;
-        for (int i = 0; i < limit; i++) {
-            if (!isPlaceable(findMaterial(player))) {
-                break;
+        // 一圈一圈往外扩（切比雪夫距离 r = 0, 1, 2 ...），这样放的顺序是从中心向外，
+        // 中途材料用完或空间被挡住，留下的也是一个居中的完整方形。
+        int placed = 0;
+        int maxRing = 32;
+        for (int r = 0; r <= maxRing && placed < limit; r++) {
+            for (int i = -r; i <= r && placed < limit; i++) {
+                for (int j = -r; j <= r && placed < limit; j++) {
+                    // 只处理这一圈的外环，内圈上一轮已经处理过。
+                    if (Math.max(Math.abs(i), Math.abs(j)) != r) {
+                        continue;
+                    }
+                    if (!isPlaceable(findMaterial(player))) {
+                        return changes;
+                    }
+                    BlockPos target = first.relative(ta, i).relative(tb, j);
+                    if (!level.getBlockState(target).canBeReplaced()) {
+                        continue;
+                    }
+                    Change change = tryPlaceAt(level, player, target.relative(face.getOpposite()), face, target);
+                    if (change != null) {
+                        changes.add(change);
+                        placed++;
+                    }
+                }
             }
-            BlockPos target = first.relative(extend, i);
-            // 依托取"前一格"：第一格靠被点击的方块，之后每格靠刚放下的那一格。
-            // 若对每格都取"侧面那一格"当依托，那一格在墙边/地板边缘/半空中往往不是实心，
-            // isFaceSturdy 失败就直接 break —— 表现出来就是"一次只能放一个方块"。
-            BlockPos support = i == 0 ? clickedPos : first.relative(extend, i - 1);
-            // tryPlaceAt 按 support.relative(face) 决定放哪，所以这里必须是"朝前"的 extend。
-            Direction supportFace = i == 0 ? face : extend;
-            Change change = tryPlaceAt(level, player, support, supportFace, target);
-            if (change == null) {
-                break;
-            }
-            changes.add(change);
         }
         return changes;
     }

@@ -12,6 +12,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -26,35 +27,33 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 建筑手杖的放置预览：把这次将要铺到哪几格，用线框画出来。
+ * 建筑手杖的放置预览：在被点击面的平面上，把这次将要铺到哪几格用<b>彩色流动框</b>画出来。
  * <p>
- * 挂在 {@link RenderHighlightEvent.Block} 上 —— 这是原版"你正看着某个方块"时每帧都会触发的事件，
- * 目标方块、朝向、相机、buffer 全都是现成的，不必自己去算射线或挑渲染时机。
- * 这个做法取自无用之物的 StretcherHighlight。
+ * 挂在 {@link RenderHighlightEvent.Block} 上 —— 原版"你正看着某个方块"时每帧都会触发，
+ * 目标、朝向、相机、buffer 全是现成的（做法取自无用之物的 StretcherHighlight）。
  * <p>
- * 位置用的是与服务端铺设相同的那条链：同一起步点、同一个
- * {@link PlacementCoreHandler#extensionDirection} 方向判定、同样"每格靠前一格"的延伸方式，
- * 并且复用服务端 tryPlaceAt 的两个前置判定（目标可替换、依托面实心），
- * 因此预览与实际结果一一对应 —— 放不下的格子不会被画出来。
+ * 位置用的是与服务端铺设完全相同的那条链：同一起步点、同一个面平面的两个切向轴、
+ * 同样一圈圈向外扩的顺序，并且复用服务端 tryPlaceAt 的前置判定
+ * （目标可替换、身后那格是实心），因此预览与实际结果一一对应。
+ * <p>
+ * 颜色按时间旋转色相，并叠加每格的序号，于是整片框看起来是彩色的、而且是"流动"的。
  */
 @OnlyIn(Dist.CLIENT)
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
 public final class PlacementPreviewRenderer {
 
-    /** 生存下单次最多放置 32 个（与 PlacementCoreHandler.MAX_PLACE_SURVIVAL 一致）。 */
+    /** 与 PlacementCoreHandler 一致的上限。 */
     private static final int MAX_PREVIEW_SURVIVAL = 32;
-    /** 创造模式下的安全上限。 */
     private static final int MAX_PREVIEW_CREATIVE = 1024;
     /** 线框略微外扩，避免与方块表面 z-fighting。 */
     private static final double INFLATE = 0.004D;
-    /**
-     * 线框颜色：说明里写的是"会以黑框提示你将要连续放置方块的位置"，所以用近黑色。
-     * 全黑在暗处会看不见，取一点点灰。
-     */
-    private static final float LINE_R = 0.08F;
-    private static final float LINE_G = 0.08F;
-    private static final float LINE_B = 0.08F;
-    private static final float LINE_A = 0.85F;
+    /** 色相每秒转多少圈。 */
+    private static final float HUE_SPEED = 0.35F;
+    /** 相邻两格之间的色相差，用来做出"流动"的感觉。 */
+    private static final float HUE_PER_BLOCK = 0.045F;
+    /** 饱和度与明度：偏亮，保证在暗处也看得见。 */
+    private static final float SATURATION = 0.85F;
+    private static final float VALUE = 1.0F;
 
     private PlacementPreviewRenderer() {
     }
@@ -70,58 +69,88 @@ public final class PlacementPreviewRenderer {
         if (target.getType() != HitResult.Type.BLOCK) {
             return;
         }
-        List<BlockPos> targets = previewTargets(player, target);
+        List<BlockPos> targets = previewTargets(minecraft.level, player, target);
         if (targets.isEmpty()) {
             return;
         }
         Vec3 camera = event.getCamera().getPosition();
         PoseStack pose = event.getPoseStack();
         var buffer = event.getMultiBufferSource().getBuffer(RenderType.lines());
-        for (BlockPos pos : targets) {
+        float baseHue = (float) ((System.currentTimeMillis() % 100000L) / 1000.0D) * HUE_SPEED;
+        for (int index = 0; index < targets.size(); index++) {
+            BlockPos pos = targets.get(index);
+            // 色相 = 时间 + 序号：整片同时旋转，且相邻格子有色差，看上去就是彩色流动。
+            float[] rgb = hsvToRgb((baseHue + index * HUE_PER_BLOCK) % 1.0F, SATURATION, VALUE);
             pose.pushPose();
             pose.translate(pos.getX() - camera.x, pos.getY() - camera.y, pos.getZ() - camera.z);
             LevelRenderer.renderLineBox(pose, buffer, new AABB(BlockPos.ZERO).inflate(INFLATE),
-                    LINE_R, LINE_G, LINE_B, LINE_A);
+                    rgb[0], rgb[1], rgb[2], 1.0F);
             pose.popPose();
         }
     }
 
+    /** HSV -> RGB，色相 0..1。 */
+    private static float[] hsvToRgb(float hue, float saturation, float value) {
+        float h = (hue - (float) Math.floor(hue)) * 6.0F;
+        int sector = (int) h;
+        float f = h - sector;
+        float p = value * (1.0F - saturation);
+        float q = value * (1.0F - saturation * f);
+        float t = value * (1.0F - saturation * (1.0F - f));
+        return switch (sector % 6) {
+            case 0 -> new float[]{value, t, p};
+            case 1 -> new float[]{q, value, p};
+            case 2 -> new float[]{p, value, t};
+            case 3 -> new float[]{p, q, value};
+            case 4 -> new float[]{t, p, value};
+            default -> new float[]{value, p, q};
+        };
+    }
+
     /** 按服务端那条链算出这次会铺到哪几格（只含确实放得下的）。 */
-    private static List<BlockPos> previewTargets(Player player, BlockHitResult hit) {
+    private static List<BlockPos> previewTargets(Level level, Player player, BlockHitResult hit) {
         List<BlockPos> targets = new ArrayList<>();
         ItemStack sword = player.getMainHandItem();
         if (!(sword.getItem() instanceof KunJinKaoSwordItem)
                 || !KunJinKaoSwordItem.isConstructionWandEnabled(sword)) {
             return targets;
         }
-        // 材料同样取自背包（说明：消耗背包中的方块），不是副手 ——
-        // 之前预览为空就是因为这里查的是副手。
         ItemStack material = PlacementCoreHandler.findMaterial(player);
         if (!(material.getItem() instanceof BlockItem)) {
             return targets;
         }
-        var level = Minecraft.getInstance().level;
-        if (level == null) {
-            return targets;
-        }
         Direction face = hit.getDirection();
-        BlockPos clicked = hit.getBlockPos();
-        BlockPos first = clicked.relative(face);
-        Direction extend = PlacementCoreHandler.extensionDirection(player, face);
+        BlockPos first = hit.getBlockPos().relative(face);
+        Direction.Axis normalAxis = face.getAxis();
+        List<Direction> tangents = new ArrayList<>(2);
+        for (Direction.Axis axis : Direction.Axis.values()) {
+            if (axis != normalAxis) {
+                tangents.add(Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE));
+            }
+        }
+        Direction ta = tangents.get(0);
+        Direction tb = tangents.get(1);
         int cap = player.isCreative() ? MAX_PREVIEW_CREATIVE : MAX_PREVIEW_SURVIVAL;
         int limit = Math.min(material.getCount(), cap);
-        for (int i = 0; i < limit; i++) {
-            BlockPos target = first.relative(extend, i);
-            // 与服务端 tryPlaceAt 的前置判定、顺序都保持一致：目标可替换、依托面实心。
-            if (!level.getBlockState(target).canBeReplaced()) {
-                break;
+        // 与服务端同样的"一圈圈往外扩"，判定顺序也一致。
+        int maxRing = 32;
+        for (int r = 0; r <= maxRing && targets.size() < limit; r++) {
+            for (int i = -r; i <= r && targets.size() < limit; i++) {
+                for (int j = -r; j <= r && targets.size() < limit; j++) {
+                    if (Math.max(Math.abs(i), Math.abs(j)) != r) {
+                        continue;
+                    }
+                    BlockPos target = first.relative(ta, i).relative(tb, j);
+                    if (!level.getBlockState(target).canBeReplaced()) {
+                        continue;
+                    }
+                    if (!level.getBlockState(target.relative(face.getOpposite()))
+                            .isFaceSturdy(level, target.relative(face.getOpposite()), face)) {
+                        continue;
+                    }
+                    targets.add(target);
+                }
             }
-            BlockPos support = i == 0 ? clicked : first.relative(extend, i - 1);
-            Direction supportFace = i == 0 ? face : extend;
-            if (!level.getBlockState(support).isFaceSturdy(level, support, supportFace)) {
-                break;
-            }
-            targets.add(target);
         }
         return targets;
     }
