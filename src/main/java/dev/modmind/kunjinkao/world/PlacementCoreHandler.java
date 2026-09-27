@@ -78,8 +78,17 @@ public final class PlacementCoreHandler {
         return isPlaceable(findMaterial(player));
     }
 
-    /** 从背包里找第一叠可放置的方块（快捷栏就是 0..8，天然优先）。 */
+    /**
+     * 找这次要用的方块：<b>副手优先</b>，副手没东西才用背包。
+     * <p>
+     * 说明是"要是副手有东西，就在点击的方块上放置副手上的方块"——
+     * 副手因此是"指定材料"的手段；没指定时退回背包里的方块（快捷栏 0..8 天然优先）。
+     */
     public static ItemStack findMaterial(Player player) {
+        ItemStack offhand = player.getOffhandItem();
+        if (isPlaceable(offhand)) {
+            return offhand;
+        }
         net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack stack = inventory.getItem(i);
