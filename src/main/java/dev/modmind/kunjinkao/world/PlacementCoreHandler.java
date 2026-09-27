@@ -80,6 +80,23 @@ public final class PlacementCoreHandler {
     }
 
     /**
+     * 整批放置结束后播一次放置音效。
+     * <p>
+     * BlockItem.place 自己会播，但它的第一个参数是"要排除的玩家"、传的正是放置者本人 ——
+     * 结果只有旁人听得到、放的人反而没声音。而如果改成逐格自己播，
+     * 一次建造会连续放很多格，又吵成一片 —— 所以统一在整批结束时播一次。
+     */
+    public static void playPlaceSound(Level level, List<Change> changes) {
+        if (changes.isEmpty()) {
+            return;
+        }
+        BlockPos at = changes.get(0).pos();
+        net.minecraft.world.level.block.SoundType sound = level.getBlockState(at).getSoundType();
+        level.playSound(null, at, sound.getPlaceSound(), net.minecraft.sounds.SoundSource.BLOCKS,
+                (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F);
+    }
+
+     /**
      * 找这次要用的方块：<b>副手优先</b>，副手没东西才用背包。
      * <p>
      * 说明是"要是副手有东西，就在点击的方块上放置副手上的方块"——
@@ -187,6 +204,10 @@ public final class PlacementCoreHandler {
                 }
             }
         }
+        if (!level.isClientSide()) {
+            // 整批放完只播一次：逐格播会吵成一片。
+            playPlaceSound(level, changes);
+        }
         return changes;
     }
 
@@ -229,6 +250,10 @@ public final class PlacementCoreHandler {
                 break;
             }
         }
+        if (!level.isClientSide()) {
+            // 整批放完只播一次：逐格播会吵成一片。
+            playPlaceSound(level, changes);
+        }
         return changes;
     }
 
@@ -259,6 +284,10 @@ public final class PlacementCoreHandler {
                 changes.add(change);
                 break;
             }
+        }
+        if (!level.isClientSide()) {
+            // 整批放完只播一次：逐格播会吵成一片。
+            playPlaceSound(level, changes);
         }
         return changes;
     }
@@ -425,14 +454,8 @@ public final class PlacementCoreHandler {
             return null;
         }
         material.shrink(1);
-        // 放置音效。
-        // BlockItem.place 自己会播一次，但它的第一个参数是"要排除的玩家"，
-        // 传的是放置者本人 —— 结果只有旁人听得到，放的人反而没声音。
-        // 这里用 null 明确播给所有人，音色/音量取自这个方块的 SoundType。
-        BlockState placed = level.getBlockState(target);
-        net.minecraft.world.level.block.SoundType sound = placed.getSoundType();
-        level.playSound(null, target, sound.getPlaceSound(), net.minecraft.sounds.SoundSource.BLOCKS,
-                (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F);
+        // 音效不在这里播：一次建造会连续放很多格，逐格播会吵成一片。
+        // 由调用方在整批结束后调 playPlaceSound 播一次。
         return new Change(target.immutable(), previous, refund);
     }
 }
