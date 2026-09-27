@@ -41,14 +41,19 @@ import java.util.List;
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
 public final class PlacementPreviewRenderer {
 
-    /** 预览最多画多少格。副手方块数通常远小于它，设上限只是为了别把帧率拖垮。 */
-    private static final int MAX_PREVIEW = 128;
+    /** 生存下单次最多放置 32 个（与 PlacementCoreHandler.MAX_PLACE_SURVIVAL 一致）。 */
+    private static final int MAX_PREVIEW_SURVIVAL = 32;
+    /** 创造模式下的安全上限。 */
+    private static final int MAX_PREVIEW_CREATIVE = 1024;
     /** 线框略微外扩，避免与方块表面 z-fighting。 */
     private static final double INFLATE = 0.004D;
-    /** 线框颜色（青色，与模组主题一致）。 */
-    private static final float LINE_R = 0.31F;
-    private static final float LINE_G = 0.85F;
-    private static final float LINE_B = 0.91F;
+    /**
+     * 线框颜色：说明里写的是"会以黑框提示你将要连续放置方块的位置"，所以用近黑色。
+     * 全黑在暗处会看不见，取一点点灰。
+     */
+    private static final float LINE_R = 0.08F;
+    private static final float LINE_G = 0.08F;
+    private static final float LINE_B = 0.08F;
     private static final float LINE_A = 0.85F;
 
     private PlacementPreviewRenderer() {
@@ -89,7 +94,9 @@ public final class PlacementPreviewRenderer {
                 || !KunJinKaoSwordItem.isConstructionWandEnabled(sword)) {
             return targets;
         }
-        ItemStack material = player.getOffhandItem();
+        // 材料同样取自背包（说明：消耗背包中的方块），不是副手 ——
+        // 之前预览为空就是因为这里查的是副手。
+        ItemStack material = PlacementCoreHandler.findMaterial(player);
         if (!(material.getItem() instanceof BlockItem)) {
             return targets;
         }
@@ -101,7 +108,8 @@ public final class PlacementPreviewRenderer {
         BlockPos clicked = hit.getBlockPos();
         BlockPos first = clicked.relative(face);
         Direction extend = PlacementCoreHandler.extensionDirection(player, face);
-        int limit = Math.min(material.getCount(), MAX_PREVIEW);
+        int cap = player.isCreative() ? MAX_PREVIEW_CREATIVE : MAX_PREVIEW_SURVIVAL;
+        int limit = Math.min(material.getCount(), cap);
         for (int i = 0; i < limit; i++) {
             BlockPos target = first.relative(extend, i);
             // 与服务端 tryPlaceAt 的前置判定、顺序都保持一致：目标可替换、依托面实心。
