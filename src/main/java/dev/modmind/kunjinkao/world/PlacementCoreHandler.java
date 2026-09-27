@@ -120,16 +120,17 @@ public final class PlacementCoreHandler {
     /**
     /**
     /**
-     * 基础建造模式：沿着「和点击的那一格同种方块」铺成的面，往外铺开一片。
+    /**
+     * 基础建造模式：在被点击的那一面所在的平面上，向外铺开一片方块。
      * <p>
-     * 用户说明：「要按点击的方块在相邻的方块上放置，如果不是点击的方块就不要放置，包里要是有也放」。
-     * 落到实现上就是两条约束：
+     * 两条规则（都来自用户说明）：
      * <ul>
-     *   <li><b>材料必须是同一种方块</b>：手里（副手优先，其次背包）那一叠的物品要和点击方块的物品一致，
-     *       否则一格都不放；</li>
-     *   <li><b>依托也必须是同一种方块</b>：每格身后那一格（target.relative(face.getOpposite())）
-     *       要和点击方块同类，不是就跳过这一格 —— 于是只能在同种材质的面内延伸，
-     *       不会跨到旁边的泥土或空气上去。</li>
+     *   <li><b>材料</b>：副手拿着一种和点击方块<b>不同</b>的方块时，视作显式指定材料 ——
+     *       用它，并且不受限制；否则材料必须<b>和点击的方块同种</b>
+     *       （副手优先、其次背包；找不到就一格都不放）。
+     *       也就是「如果不是点击的方块就不要放置」。</li>
+     *   <li><b>依托</b>：只要<b>相邻</b>就行 —— 目标格子周围六个方向里有任意一个是实心即可，
+     *       不要求正后方那一格。这样墙沿、地板边缘、台阶边上都能正常铺。</li>
      * </ul>
      * 面平面上的两个切向轴由 face 的法线轴排除而来，所以墙、地面、天花板都成立。
      * 上限仍是说明里的生存 32 / 创造 1024。
@@ -142,13 +143,12 @@ public final class PlacementCoreHandler {
         if (origin.isAir()) {
             return changes;
         }
-        // 材料不限材质：副手放泥土、点击石头地面，就是"在石头上铺泥土"。
-        // "如果不是点击的方块就不要放置"约束的是【依托】，不是材料（见下面循环里那一条）。
-        // 副手拿着一种"和点击方块不同"的方块 = 用副手指定材料，并跳过同种约束
-        //（"不匹配的材料放副手可以跳过约束"，也就是能往石头上铺泥土）。
+        net.minecraft.world.item.Item originItem = origin.getBlock().asItem();
+        // 副手拿着"另一种"方块 = 显式指定材料，跳过"必须同种"这条。
         ItemStack offhand = player.getOffhandItem();
-        boolean override = isPlaceable(offhand) && offhand.getItem() != origin.getBlock().asItem();
-        if (!isPlaceable(findMaterial(player))) {
+        boolean override = isPlaceable(offhand) && offhand.getItem() != originItem;
+        ItemStack material = override ? offhand : findMaterial(player, originItem);
+        if (!isPlaceable(material)) {
             return changes;
         }
         BlockPos first = clickedPos.relative(face);
@@ -170,21 +170,15 @@ public final class PlacementCoreHandler {
                     if (Math.max(Math.abs(i), Math.abs(j)) != r) {
                         continue;
                     }
-                    if (!isPlaceable(findMaterial(player))) {
+                    ItemStack current = override ? player.getOffhandItem() : findMaterial(player, originItem);
+                    if (!isPlaceable(current)) {
                         return changes;
                     }
                     BlockPos target = first.relative(ta, i).relative(tb, j);
                     if (!level.getBlockState(target).canBeReplaced()) {
                         continue;
                     }
-                    // 依托必须是同种方块，跳过而不是中断：墙沿或地板边缘的一个缺口
-                    // 不该把整片都截断。
-                    BlockPos support = target.relative(face.getOpposite());
-                    // 默认只沿"和点击方块同种"的面延伸；副手指定了别的材料时跳过这条。
-                    if (!override && level.getBlockState(support).getBlock() != origin.getBlock()) {
-                        continue;
-                    }
-                    Change change = tryPlaceAt(level, player, support, face, target);
+                    Change change = tryPlaceAdjacent(level, player, target);
                     if (change != null) {
                         changes.add(change);
                         placed++;
@@ -193,6 +187,25 @@ public final class PlacementCoreHandler {
             }
         }
         return changes;
+    }
+
+    /**
+     * 放置一格，依托只要求"相邻"：在目标周围六个方向里找第一个实心的邻居当依托，
+     * 朝向就是"从依托指向目标"。找不到任何相邻实心方块就放弃这一格。
+     */
+    private static Change tryPlaceAdjacent(Level level, Player player, BlockPos target) {
+        for (Direction side : Direction.values()) {
+            BlockPos support = target.relative(side);
+            BlockState supportState = level.getBlockState(support);
+            if (supportState.canBeReplaced()) {
+                continue;
+            }
+            Change change = tryPlaceAt(level, player, support, side.getOpposite(), target);
+            if (change != null) {
+                return change;
+            }
+        }
+        return null;
     }
 
     // ===================== 天使核心 =====================

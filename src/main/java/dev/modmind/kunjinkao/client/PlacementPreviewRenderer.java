@@ -107,6 +107,16 @@ public final class PlacementPreviewRenderer {
         };
     }
 
+    /** 目标格子周围六个方向里，是否有任意一个不是可替换的（= 能当依托）。 */
+    private static boolean hasAdjacentSupport(Level level, BlockPos target) {
+        for (Direction side : Direction.values()) {
+            if (!level.getBlockState(target.relative(side)).canBeReplaced()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 按服务端那条链算出这次会铺到哪几格（只含确实放得下的）。 */
     private static List<BlockPos> previewTargets(Level level, Player player, BlockHitResult hit) {
         List<BlockPos> targets = new ArrayList<>();
@@ -122,11 +132,14 @@ public final class PlacementPreviewRenderer {
             return targets;
         }
         // 材料不限材质（与服务端一致）：副手放泥土、点石头地面，就是石头上铺泥土。
-        // 副手指定了"不匹配的材料"时跳过同种约束（与服务端一致）。
+        // 与服务端一致：副手指定"另一种"方块时用它并跳过同种约束，
+        // 否则材料必须和点击的方块同种（副手优先、其次背包）。
         ItemStack offhand = player.getOffhandItem();
         boolean override = offhand.getItem() instanceof BlockItem
                 && offhand.getItem() != origin.getBlock().asItem();
-        ItemStack material = PlacementCoreHandler.findMaterial(player);
+        ItemStack material = override
+                ? offhand
+                : PlacementCoreHandler.findMaterial(player, origin.getBlock().asItem());
         if (!(material.getItem() instanceof BlockItem)) {
             return targets;
         }
@@ -156,8 +169,8 @@ public final class PlacementPreviewRenderer {
                     }
                     // 与服务端一致：依托必须是同种方块（而不是仅仅"实心"），
                     // 于是预览只会画在同种材质的面内，不会跨到旁边的泥土或空气上。
-                    BlockPos support = target.relative(face.getOpposite());
-                    if (!override && level.getBlockState(support).getBlock() != origin.getBlock()) {
+                    // 与服务端一致：依托只要求"相邻"——周围六个方向里有任意一个是实心即可。
+                    if (!hasAdjacentSupport(level, target)) {
                         continue;
                     }
                     targets.add(target);
