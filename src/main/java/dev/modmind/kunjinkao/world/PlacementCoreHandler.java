@@ -357,6 +357,14 @@ public final class PlacementCoreHandler {
             return null;
         }
         material.shrink(1);
+        // 放置音效。
+        // BlockItem.place 自己会播一次，但它的第一个参数是"要排除的玩家"，
+        // 传的是放置者本人 —— 结果只有旁人听得到，放的人反而没声音。
+        // 这里用 null 明确播给所有人，音色/音量取自这个方块的 SoundType。
+        BlockState placed = level.getBlockState(target);
+        net.minecraft.world.level.block.SoundType sound = placed.getSoundType();
+        level.playSound(null, target, sound.getPlaceSound(), net.minecraft.sounds.SoundSource.BLOCKS,
+                (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F);
         return new Change(target.immutable(), previous, refund);
     }
 }
