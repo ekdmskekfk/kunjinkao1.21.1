@@ -70,17 +70,23 @@ public final class SwordAutoPickupHandler {
         ItemStack tool = player.getMainHandItem();
         List<ItemStack> drops = new ArrayList<>(Block.getDrops(state, level, pos, blockEntity, player, tool));
 
-        // 战利品表为空的方块（基岩、屏障、命令方块等）回退为方块自身，
-        // 并在移除之前把方块实体数据写进物品，这样机器里的东西不会丢。
+        // 战利品表为空的方块（基岩、屏障、命令方块等）回退为方块自身。
         if (drops.isEmpty() && state.getBlock().asItem() != Items.AIR) {
-            ItemStack fallback = new ItemStack(state.getBlock().asItem());
-            if (blockEntity != null) {
-                blockEntity.saveToItem(fallback, level.registryAccess());
-            }
-            drops.add(fallback);
+            drops.add(new ItemStack(state.getBlock().asItem()));
         }
         if (drops.isEmpty()) {
             return;
+        }
+        // 关键：不论掉落是从战利品表来的还是上面补的，只要它就是这个方块自己的物品，
+        // 就再把方块实体数据写一次。上一版只在"战利品表为空"时写，
+        // 于是那些战利品表里本来就有一件、但数据要靠破坏流程补上的机器（大多数机器都是这样）
+        // 被收进背包时数据就丢了。写在移除方块之前，方块实体还在。
+        if (blockEntity != null) {
+            for (ItemStack drop : drops) {
+                if (drop.getItem() == state.getBlock().asItem()) {
+                    blockEntity.saveToItem(drop, level.registryAccess());
+                }
+            }
         }
 
         state.getBlock().playerWillDestroy(level, pos, state, player);
