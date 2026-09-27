@@ -700,7 +700,7 @@ public class KunJinKaoSwordItem extends SwordItem {
         if (isDestructionCoreEnabled(stack)) {
             if (!level.isClientSide() && player instanceof net.minecraft.server.level.ServerPlayer) {
                 PlacementUndoHistory.push(player,
-                        PlacementCoreHandler.destroyFrom(player, level, clickedPos));
+                        PlacementCoreHandler.destroyFrom(player, level, clickedPos, context.getClickedFace()));
             }
             return InteractionResult.sidedSuccess(level.isClientSide());
         }

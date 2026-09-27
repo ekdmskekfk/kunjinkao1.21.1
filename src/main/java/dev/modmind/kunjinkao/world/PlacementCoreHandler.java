@@ -56,7 +56,7 @@ public final class PlacementCoreHandler {
      * <p>
      * 同样来自建筑手杖的规定（"各种材质的手杖单次最多破坏4个方块"）。
      */
-    private static final int MAX_DESTROY = 4;
+    private static final int MAX_DESTROY = 1024;
     /** 天使核心最多能穿透几格去找落脚点。 */
     private static final int ANGEL_DISTANCE = 4;
     /** 对空右键时，在半空中离眼睛多远放置。 */
@@ -270,35 +270,55 @@ public final class PlacementCoreHandler {
      * @return 本次连带破坏的所有改动（不含玩家手动挖掉的那一格）
      */
     /**
-     * 破坏核心的右键入口：从<b>被点击的那一格</b>起，连同它一起，
-     * 沿方向破坏连续的相同方块，最多 {@link #MAX_DESTROY} 个，且不掉落。
+    /**
+     * 破坏核心的右键入口：在被点击的那一面所在的<b>平面</b>上，破坏连成一片的相同方块。
      * <p>
-     * 说明：「右键可批量破坏连续的相同方块，被破坏的方块会直接消失，不会掉落。
-     * 各种材质的手杖单次最多破坏4个方块」——4 个是<b>总数</b>，所以这里从 i = 0 开始。
+     * 与放置一样是"面"而不是"一排"：以被点击的那一格为中心，沿该面的两个切向轴一圈圈向外扩，
+     * 只破坏<b>和点击方块同种</b>的方块，被破坏的方块直接消失、不掉落。
+     * 上限为 {@link #MAX_DESTROY}（1024）。
+     * <p>
+     * 不同种、空气、以及带方块实体的方块都跳过（跳过而不是中断：
+     * 面中间有个异类方块不该让整片都停下来）。带方块实体的跳过是为了避免留下幽灵方块。
      *
      * @return 本次破坏的所有改动（用于撤销）
      */
-    public static List<Change> destroyFrom(Player player, Level level, BlockPos originPos) {
+    public static List<Change> destroyFrom(Player player, Level level, BlockPos clickedPos, Direction face) {
         List<Change> changes = new ArrayList<>();
-        BlockState origin = level.getBlockState(originPos);
+        BlockState origin = level.getBlockState(clickedPos);
         if (origin.isAir()) {
             return changes;
         }
-        Vec3 look = player.getLookAngle();
-        Direction face = Direction.getNearest(look.x, look.y, look.z);
-        Direction extend = extensionDirection(player, face);
-        for (int i = 0; i < MAX_DESTROY; i++) {
-            BlockPos target = originPos.relative(extend, i);
-            BlockState state = level.getBlockState(target);
-            // 只破坏"连续的相同方块"：碰上别的方块或空气就停。
-            if (state.isAir() || state.getBlock() != origin.getBlock()) {
-                break;
+        Direction.Axis normalAxis = face.getAxis();
+        List<Direction> tangents = new ArrayList<>(2);
+        for (Direction.Axis axis : Direction.Axis.values()) {
+            if (axis != normalAxis) {
+                tangents.add(Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE));
             }
-            if (state.getDestroySpeed(level, target) < 0.0F || state.hasBlockEntity()) {
-                break;
+        }
+        Direction ta = tangents.get(0);
+        Direction tb = tangents.get(1);
+        int destroyed = 0;
+        int maxRing = 64;
+        for (int r = 0; r <= maxRing && destroyed < MAX_DESTROY; r++) {
+            for (int i = -r; i <= r && destroyed < MAX_DESTROY; i++) {
+                for (int j = -r; j <= r && destroyed < MAX_DESTROY; j++) {
+                    if (Math.max(Math.abs(i), Math.abs(j)) != r) {
+                        continue;
+                    }
+                    BlockPos target = clickedPos.relative(ta, i).relative(tb, j);
+                    BlockState state = level.getBlockState(target);
+                    // 只破坏和点击方块同种的；异类/空气就跳过这一格，不影响其余。
+                    if (state.isAir() || state.getBlock() != origin.getBlock()) {
+                        continue;
+                    }
+                    if (state.getDestroySpeed(level, target) < 0.0F || state.hasBlockEntity()) {
+                        continue;
+                    }
+                    changes.add(new Change(target.immutable(), state, ItemStack.EMPTY));
+                    level.destroyBlock(target, false, player);
+                    destroyed++;
+                }
             }
-            changes.add(new Change(target.immutable(), state, ItemStack.EMPTY));
-            level.destroyBlock(target, false, player);
         }
         return changes;
     }
