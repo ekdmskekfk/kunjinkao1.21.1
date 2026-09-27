@@ -83,7 +83,10 @@ public final class PlacementCoreHandler {
             // 往往不是实心，isFaceSturdy 失败就直接 break ——
             // 表现出来就是"一次只能放一个方块"。用前一格则链条永远成立。
             BlockPos support = i == 0 ? clickedPos : first.relative(extend, i - 1);
-            Direction supportFace = i == 0 ? face : extend.getOpposite();
+            // tryPlaceAt 是按 support.relative(face) 去放的，所以这里的朝向必须是"朝前"的
+            // extend —— 上一版写成了 extend.getOpposite()，于是第二格起它会去放
+            // 刚刚放好的那一格（canBeReplaced 失败），循环立刻 break。
+            Direction supportFace = i == 0 ? face : extend;
             Change change = tryPlaceAt(level, player, support, supportFace, target);
             if (change == null) {
                 break;
