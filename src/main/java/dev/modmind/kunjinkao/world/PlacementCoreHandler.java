@@ -184,7 +184,7 @@ public final class PlacementCoreHandler {
      * 与面法线垂直、且最贴近玩家朝向的那条轴。
      * 俯视顶面时会挑出你正对的那条水平方向，于是得到"朝面向的那一侧延伸一排"。
      */
-    private static Direction extensionDirection(Player player, Direction face) {
+    public static Direction extensionDirection(Player player, Direction face) {
         Vec3 look = player.getLookAngle();
         Direction.Axis faceAxis = face.getAxis();
         Direction best = null;
