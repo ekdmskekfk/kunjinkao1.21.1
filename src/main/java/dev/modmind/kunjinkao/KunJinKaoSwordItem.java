@@ -694,6 +694,17 @@ public class KunJinKaoSwordItem extends SwordItem {
             return InteractionResult.sidedSuccess(level.isClientSide());
         }
 
+        // ---- 0.5) 破坏核心：右键批量破坏，优先于放置 ----
+        // 说明里破坏模式是"右键可批量破坏连续的相同方块"，所以它必须排在放置核心前面，
+        // 否则右键会被建筑手杖截走，表现就是"破坏核心开了却还在放方块"。
+        if (isDestructionCoreEnabled(stack)) {
+            if (!level.isClientSide() && player instanceof net.minecraft.server.level.ServerPlayer) {
+                PlacementUndoHistory.push(player,
+                        PlacementCoreHandler.destroyFrom(player, level, clickedPos));
+            }
+            return InteractionResult.sidedSuccess(level.isClientSide());
+        }
+
         // ---- 1) 放置类核心（建筑手杖 / 天使核心）----
         // 优先级最高：它们需要副手有方块，条件最明确。
         boolean angel = isAngelCoreEnabled(stack);

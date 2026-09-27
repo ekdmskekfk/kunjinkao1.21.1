@@ -270,6 +270,40 @@ public final class PlacementCoreHandler {
      * @return 本次连带破坏的所有改动（不含玩家手动挖掉的那一格）
      */
     /**
+     * 破坏核心的右键入口：从<b>被点击的那一格</b>起，连同它一起，
+     * 沿方向破坏连续的相同方块，最多 {@link #MAX_DESTROY} 个，且不掉落。
+     * <p>
+     * 说明：「右键可批量破坏连续的相同方块，被破坏的方块会直接消失，不会掉落。
+     * 各种材质的手杖单次最多破坏4个方块」——4 个是<b>总数</b>，所以这里从 i = 0 开始。
+     *
+     * @return 本次破坏的所有改动（用于撤销）
+     */
+    public static List<Change> destroyFrom(Player player, Level level, BlockPos originPos) {
+        List<Change> changes = new ArrayList<>();
+        BlockState origin = level.getBlockState(originPos);
+        if (origin.isAir()) {
+            return changes;
+        }
+        Vec3 look = player.getLookAngle();
+        Direction face = Direction.getNearest(look.x, look.y, look.z);
+        Direction extend = extensionDirection(player, face);
+        for (int i = 0; i < MAX_DESTROY; i++) {
+            BlockPos target = originPos.relative(extend, i);
+            BlockState state = level.getBlockState(target);
+            // 只破坏"连续的相同方块"：碰上别的方块或空气就停。
+            if (state.isAir() || state.getBlock() != origin.getBlock()) {
+                break;
+            }
+            if (state.getDestroySpeed(level, target) < 0.0F || state.hasBlockEntity()) {
+                break;
+            }
+            changes.add(new Change(target.immutable(), state, ItemStack.EMPTY));
+            level.destroyBlock(target, false, player);
+        }
+        return changes;
+    }
+
+    /**
      * 破坏所视那一侧连续的一排<b>相同</b>方块，且不掉落任何物品。
      * <p>
      * 说明里的上限：「各种材质的手杖单次最多破坏 4 个方块」。
