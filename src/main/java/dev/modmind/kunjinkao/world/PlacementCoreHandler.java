@@ -78,8 +78,13 @@ public final class PlacementCoreHandler {
                 break;
             }
             BlockPos target = first.relative(extend, i);
-            // 支撑面取相邻一格，保证每格都有依托、放置朝向连贯。
-            Change change = tryPlaceAt(level, player, target.relative(face.getOpposite()), face, target);
+            // 依托取"前一格"：第一格靠被点击的方块，之后每格靠刚刚放下的那一格。
+            // 原来对每一格都用"侧面的那一格"当依托，而那一格在墙边、地板边缘或半空中
+            // 往往不是实心，isFaceSturdy 失败就直接 break ——
+            // 表现出来就是"一次只能放一个方块"。用前一格则链条永远成立。
+            BlockPos support = i == 0 ? clickedPos : first.relative(extend, i - 1);
+            Direction supportFace = i == 0 ? face : extend.getOpposite();
+            Change change = tryPlaceAt(level, player, support, supportFace, target);
             if (change == null) {
                 break;
             }
