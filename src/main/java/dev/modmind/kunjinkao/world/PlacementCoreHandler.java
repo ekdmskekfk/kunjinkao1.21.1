@@ -15,6 +15,8 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 
 /**
@@ -139,19 +141,14 @@ public final class PlacementCoreHandler {
     /**
     /**
     /**
-     * 基础建造模式：在被点击的那一面所在的平面上，向外铺开一片方块。
+    /**
+     * 基础建造模式：从被点击面的外侧起，沿该面所在的平面做<b>洪泛填充</b>，把连成一片的
+     * 同种材质面上铺满方块。
      * <p>
-     * 两条规则（都来自用户说明）：
-     * <ul>
-     *   <li><b>材料</b>：副手拿着一种和点击方块<b>不同</b>的方块时，视作显式指定材料 ——
-     *       用它，并且不受限制；否则材料必须<b>和点击的方块同种</b>
-     *       （副手优先、其次背包；找不到就一格都不放）。
-     *       也就是「如果不是点击的方块就不要放置」。</li>
-     *   <li><b>依托</b>：只要<b>相邻</b>就行 —— 目标格子周围六个方向里有任意一个是实心即可，
-     *       不要求正后方那一格。这样墙沿、地板边缘、台阶边上都能正常铺。</li>
-     * </ul>
-     * 面平面上的两个切向轴由 face 的法线轴排除而来，所以墙、地面、天花板都成立。
-     * 上限仍是说明里的生存 32 / 创造 1024。
+     * 这是照建筑手杖（constructionwand）的 ActionConstruction 做的：
+     * 它不是"按某个方向排一排"，而是从起点出发一格一格扩散，
+     * 每一步都要 <b>与点击方块同类</b> 才继续 —— 于是自然形成"沿着同种材质的面延伸"，
+     * 遇到别的方块就停，也不会跨到旁边去。
      *
      * @return 本次放下的所有改动（空列表表示一格都没放）
      */
@@ -162,50 +159,51 @@ public final class PlacementCoreHandler {
             return changes;
         }
         net.minecraft.world.item.Item originItem = origin.getBlock().asItem();
-        // 副手拿着"另一种"方块 = 显式指定材料，跳过"必须同种"这条。
         ItemStack offhand = player.getOffhandItem();
         boolean override = isPlaceable(offhand) && offhand.getItem() != originItem;
-        ItemStack material = override ? offhand : findMaterial(player, originItem);
-        if (!isPlaceable(material)) {
+        if (!override && !isPlaceable(findMaterial(player, originItem))) {
             return changes;
         }
-        BlockPos first = clickedPos.relative(face);
-        Direction.Axis normalAxis = face.getAxis();
-        List<Direction> tangents = new ArrayList<>(2);
-        for (Direction.Axis axis : Direction.Axis.values()) {
-            if (axis != normalAxis) {
-                tangents.add(Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE));
+        int limit = player.isCreative() ? MAX_PLACE_CREATIVE : MAX_PLACE_SURVIVAL;
+        // 该面平面内的四个基本方向；对角线由两步基本方向自然覆盖，不必单列。
+        List<Direction> planeDirs = new ArrayList<>(4);
+        for (Direction dir : Direction.values()) {
+            if (dir.getAxis() != face.getAxis()) {
+                planeDirs.add(dir);
             }
         }
-        Direction ta = tangents.get(0);
-        Direction tb = tangents.get(1);
-        int limit = player.isCreative() ? MAX_PLACE_CREATIVE : MAX_PLACE_SURVIVAL;
-        int placed = 0;
-        int maxRing = 32;
-        for (int r = 0; r <= maxRing && placed < limit; r++) {
-            for (int i = -r; i <= r && placed < limit; i++) {
-                for (int j = -r; j <= r && placed < limit; j++) {
-                    if (Math.max(Math.abs(i), Math.abs(j)) != r) {
-                        continue;
-                    }
-                    ItemStack current = override ? player.getOffhandItem() : findMaterial(player, originItem);
-                    if (!isPlaceable(current)) {
-                        return changes;
-                    }
-                    BlockPos target = first.relative(ta, i).relative(tb, j);
-                    if (!level.getBlockState(target).canBeReplaced()) {
-                        continue;
-                    }
-                    Change change = tryPlaceAdjacent(level, player, target);
-                    if (change != null) {
-                        changes.add(change);
-                        placed++;
-                    }
+        BlockPos first = clickedPos.relative(face);
+        Set<BlockPos> seen = new HashSet<>();
+        java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
+        seen.add(first);
+        queue.add(first);
+        while (!queue.isEmpty() && changes.size() < limit) {
+            BlockPos pos = queue.poll();
+            // 洪泛只在"身后那一格与点击方块同类"的位置上继续 —— 这就是
+            // 「如果不是点击的方块就不要放置」；副手指定了别的材料时跳过这条。
+            BlockPos support = pos.relative(face.getOpposite());
+            if (!override && level.getBlockState(support).getBlock() != origin.getBlock()) {
+                continue;
+            }
+            ItemStack current = override ? player.getOffhandItem() : findMaterial(player, originItem);
+            if (!isPlaceable(current)) {
+                break;
+            }
+            // 只放在"能放"的位置上：空气，或替换模式下的可替换方块。
+            if (level.getBlockState(pos).canBeReplaced()) {
+                Change change = tryPlaceAt(level, player, support, face, pos);
+                if (change != null) {
+                    changes.add(change);
+                }
+            }
+            for (Direction dir : planeDirs) {
+                BlockPos next = pos.relative(dir);
+                if (seen.add(next)) {
+                    queue.add(next);
                 }
             }
         }
         if (!level.isClientSide()) {
-            // 整批放完只播一次：逐格播会吵成一片。
             playPlaceSound(level, changes);
         }
         return changes;
@@ -432,9 +430,9 @@ public final class PlacementCoreHandler {
         if (!isPlaceable(material) || !level.getBlockState(target).canBeReplaced()) {
             return null;
         }
-        if (!level.getBlockState(support).isFaceSturdy(level, support, face)) {
-            return null;
-        }
+        // 刻意不检查"依托是否实心"：建筑手杖的 isPositionPlaceable 只看
+        // "目标是空气、或替换模式下可替换"，并不要求依托实心。
+        // BlockItem.place 自己会在放不下时返回失败，交给它判断即可。
         BlockState previous = level.getBlockState(target);
         // 归还物品要复制"真正被放下去的那个"，而不是 new ItemStack(它的物品类型)：
         // 后者只保留物品 id，机器里的东西、设置、附魔都会丢，撤销时给回的是一台空机器。

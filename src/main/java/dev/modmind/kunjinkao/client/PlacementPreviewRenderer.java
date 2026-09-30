@@ -142,8 +142,6 @@ public final class PlacementPreviewRenderer {
         if (origin.isAir()) {
             return targets;
         }
-        // 与服务端一致：副手指定"另一种"方块时用它并跳过同种约束，
-        // 否则材料必须和点击的方块同种（副手优先、其次背包）。
         ItemStack offhand = player.getOffhandItem();
         boolean override = offhand.getItem() instanceof BlockItem
                 && offhand.getItem() != origin.getBlock().asItem();
@@ -153,25 +151,32 @@ public final class PlacementPreviewRenderer {
         if (!(material.getItem() instanceof BlockItem)) {
             return targets;
         }
+        // 与服务端同一条洪泛：从点击面的外侧起，在该面平面内一格一格扩散，
+        // 只在"身后那一格与点击方块同类"的位置继续。
+        List<Direction> planeDirs = new ArrayList<>(4);
+        for (Direction dir : Direction.values()) {
+            if (dir.getAxis() != face.getAxis()) {
+                planeDirs.add(dir);
+            }
+        }
         BlockPos first = clicked.relative(face);
-        Direction[] axes = tangents(face);
-        Direction ta = axes[0];
-        Direction tb = axes[1];
-        for (int r = 0; r <= 32 && targets.size() < MAX_PREVIEW; r++) {
-            for (int i = -r; i <= r && targets.size() < MAX_PREVIEW; i++) {
-                for (int j = -r; j <= r && targets.size() < MAX_PREVIEW; j++) {
-                    if (Math.max(Math.abs(i), Math.abs(j)) != r) {
-                        continue;
-                    }
-                    BlockPos target = first.relative(ta, i).relative(tb, j);
-                    if (!level.getBlockState(target).canBeReplaced()) {
-                        continue;
-                    }
-                    // 依托只要求相邻（与服务端 tryPlaceAdjacent 一致）。
-                    if (!hasAdjacentSupport(level, target)) {
-                        continue;
-                    }
-                    targets.add(target);
+        java.util.Set<BlockPos> seen = new java.util.HashSet<>();
+        java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
+        seen.add(first);
+        queue.add(first);
+        while (!queue.isEmpty() && targets.size() < MAX_PREVIEW) {
+            BlockPos pos = queue.poll();
+            BlockPos support = pos.relative(face.getOpposite());
+            if (!override && level.getBlockState(support).getBlock() != origin.getBlock()) {
+                continue;
+            }
+            if (level.getBlockState(pos).canBeReplaced()) {
+                targets.add(pos);
+            }
+            for (Direction dir : planeDirs) {
+                BlockPos next = pos.relative(dir);
+                if (seen.add(next)) {
+                    queue.add(next);
                 }
             }
         }
@@ -211,13 +216,5 @@ public final class PlacementPreviewRenderer {
         return targets;
     }
 
-    /** 目标格子周围六个方向里，是否有任意一个不是可替换的（= 能当依托）。 */
-    private static boolean hasAdjacentSupport(Level level, BlockPos target) {
-        for (Direction side : Direction.values()) {
-            if (!level.getBlockState(target.relative(side)).canBeReplaced()) {
-                return true;
-            }
-        }
-        return false;
-    }
+
 }
