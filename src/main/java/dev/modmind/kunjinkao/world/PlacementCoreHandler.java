@@ -98,6 +98,66 @@ public final class PlacementCoreHandler {
                 (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F);
     }
 
+    /**
+     * 还能不能拿出这一种方块 —— 背包 / 副手 / 容器（潜影盒·收纳袋）/ AE2 终端 / ProjectE 的 EMC。
+     * <p>
+     * 取材顺序与参考实现的 ContainerManager 一致：先身上，再容器，最后模组兼容。
+     */
+    public static boolean hasMaterial(Player player, net.minecraft.world.item.Item item) {
+        if (isPlaceable(findMaterial(player, item))) {
+            return true;
+        }
+        if (ContainerMaterials.has(player, item)) {
+            return true;
+        }
+        if (countFromTerminals(player, item) > 0L) {
+            return true;
+        }
+        return EmcMaterials.canSupply(player, item);
+    }
+
+    /** 从玩家身上的 AE2 终端类物品里统计某种方块共有多少（非破坏性，SIMULATE）。 */
+    private static long countFromTerminals(Player player, net.minecraft.world.item.Item item) {
+        net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
+        long total = 0L;
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (Ae2Materials.isTerminal(stack)) {
+                total += Ae2Materials.count(player, stack, item, Integer.MAX_VALUE);
+            }
+        }
+        for (ItemStack offhand : player.getInventory().offhand) {
+            if (Ae2Materials.isTerminal(offhand)) {
+                total += Ae2Materials.count(player, offhand, item, Integer.MAX_VALUE);
+            }
+        }
+        return total;
+    }
+
+    /**
+     * 取走一个：背包 -> 副手 -> 容器 -> AE2 终端 -> ProjectE 的 EMC。
+     *
+     * @return 真取到了才返回 true
+     */
+    public static boolean consumeMaterial(Player player, net.minecraft.world.item.Item item) {
+        if (ContainerMaterials.consumeOne(player, item)) {
+            return true;
+        }
+        net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (Ae2Materials.isTerminal(stack) && Ae2Materials.extract(player, stack, item, 1L) > 0L) {
+                return true;
+            }
+        }
+        for (ItemStack offhand : player.getInventory().offhand) {
+            if (Ae2Materials.isTerminal(offhand) && Ae2Materials.extract(player, offhand, item, 1L) > 0L) {
+                return true;
+            }
+        }
+        return EmcMaterials.spend(player, item, 1);
+    }
+
      /**
      * 找这次要用的方块：<b>副手优先</b>，副手没东西才用背包。
      * <p>
@@ -467,7 +527,7 @@ public final class PlacementCoreHandler {
         }
         // 材料可能来自潜影盒/收纳袋，那种情况下 shrink 背包里那一叠是无效的，
         // 统一交给 ContainerMaterials.consumeOne（它自己按 背包 -> 副手 -> 容器 的顺序取）。
-        ContainerMaterials.consumeOne(player, material.getItem());
+        consumeMaterial(player, material.getItem());
         // 音效不在这里播：一次建造会连续放很多格，逐格播会吵成一片。
         // 由调用方在整批结束后调 playPlaceSound 播一次。
         return new Change(target.immutable(), previous, refund);
