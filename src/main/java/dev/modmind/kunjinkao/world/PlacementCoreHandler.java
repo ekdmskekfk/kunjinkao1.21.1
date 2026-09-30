@@ -127,7 +127,8 @@ public final class PlacementCoreHandler {
                 return stack;
             }
         }
-        return ItemStack.EMPTY;
+        // 再翻一层容器（潜影盒 / 收纳袋）—— 对应参考实现的容器取材。
+        return ContainerMaterials.findInContainers(player, required);
     }
 
     /**
@@ -464,7 +465,9 @@ public final class PlacementCoreHandler {
         if (!result.consumesAction()) {
             return null;
         }
-        material.shrink(1);
+        // 材料可能来自潜影盒/收纳袋，那种情况下 shrink 背包里那一叠是无效的，
+        // 统一交给 ContainerMaterials.consumeOne（它自己按 背包 -> 副手 -> 容器 的顺序取）。
+        ContainerMaterials.consumeOne(player, material.getItem());
         // 音效不在这里播：一次建造会连续放很多格，逐格播会吵成一片。
         // 由调用方在整批结束后调 playPlaceSound 播一次。
         return new Change(target.immutable(), previous, refund);
