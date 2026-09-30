@@ -130,6 +130,35 @@ public final class PlacementCoreHandler {
         return ItemStack.EMPTY;
     }
 
+    /**
+     * 该面平面内的 8 个方向：4 个正向 + 4 条对角线。
+     * <p>
+     * 与 constructionwand 里 ActionConstruction / ActionDestruction 用的方向表一致 ——
+     * 对角线是必需的，否则在拐角处扩散不过去。
+     */
+    public static List<Direction> planeDirections(Direction face) {
+        List<Direction> cardinals = new ArrayList<>(4);
+        for (Direction dir : Direction.values()) {
+            if (dir.getAxis() != face.getAxis()) {
+                cardinals.add(dir);
+            }
+        }
+        List<Direction> all = new ArrayList<>(8);
+        all.addAll(cardinals);
+        for (int i = 0; i < cardinals.size(); i++) {
+            for (int j = i + 1; j < cardinals.size(); j++) {
+                Direction a = cardinals.get(i);
+                Direction b = cardinals.get(j);
+                if (a.getAxis() == b.getAxis()) {
+                    continue;
+                }
+                all.add(Direction.getNearest(a.getStepX() + b.getStepX(),
+                        a.getStepY() + b.getStepY(), a.getStepZ() + b.getStepZ()));
+            }
+        }
+        return all;
+    }
+
     private static boolean isPlaceable(ItemStack stack) {
         return !stack.isEmpty() && stack.getItem() instanceof BlockItem;
     }
@@ -166,12 +195,7 @@ public final class PlacementCoreHandler {
         }
         int limit = player.isCreative() ? MAX_PLACE_CREATIVE : MAX_PLACE_SURVIVAL;
         // 该面平面内的四个基本方向；对角线由两步基本方向自然覆盖，不必单列。
-        List<Direction> planeDirs = new ArrayList<>(4);
-        for (Direction dir : Direction.values()) {
-            if (dir.getAxis() != face.getAxis()) {
-                planeDirs.add(dir);
-            }
-        }
+        List<Direction> planeDirs = planeDirections(face);
         BlockPos first = clickedPos.relative(face);
         Set<BlockPos> seen = new HashSet<>();
         java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
@@ -231,26 +255,27 @@ public final class PlacementCoreHandler {
     // ===================== 天使核心 =====================
 
     /**
-     * 把方块放到所视方块的背面。若背面已被占用，就沿同一方向继续穿透，
-     * 最多 ANGEL_DISTANCE 格再找落脚点 —— 对应官方的"天使距离"。
+    /**
+     * 天使核心：在<b>点击面的背面</b>放一格。
+     * <p>
+     * 照 constructionwand 的 ActionAngel 做的 —— 它只算一个位置：
+     * {@code origin.offset(face.getOpposite().getNormal())}，即被点击方块的另一侧。
+     * （原先这里写成"沿背面穿透最多 ANGEL_DISTANCE 格"，与参考实现不符。）
      */
     public static List<Change> placeAngel(Player player, Level level, BlockPos clickedPos, Direction face) {
         List<Change> changes = new ArrayList<>();
-        if (!isPlaceable(findMaterial(player))) {
+        BlockState origin = level.getBlockState(clickedPos);
+        if (origin.isAir() || !isPlaceable(findMaterial(player))) {
             return changes;
         }
         Direction through = face.getOpposite();
-        for (int i = 1; i <= ANGEL_DISTANCE; i++) {
-            BlockPos target = clickedPos.relative(through, i);
-            Change change = tryPlaceAt(level, player, target.relative(face), through, target);
-            if (change != null) {
-                changes.add(change);
-                break;
+        BlockPos target = clickedPos.relative(through);
+        Change change = tryPlaceAt(level, player, clickedPos, through, target);
+        if (change != null) {
+            changes.add(change);
+            if (!level.isClientSide()) {
+                playPlaceSound(level, changes);
             }
-        }
-        if (!level.isClientSide()) {
-            // 整批放完只播一次：逐格播会吵成一片。
-            playPlaceSound(level, changes);
         }
         return changes;
     }
@@ -299,16 +324,12 @@ public final class PlacementCoreHandler {
      */
     /**
     /**
-     * 破坏核心的右键入口：在被点击的那一面所在的<b>平面</b>上，破坏连成一片的相同方块。
+    /**
+     * 破坏核心：在被点击那一格所在的面上，洪泛破坏连成一片的<b>同种</b>方块。
      * <p>
-     * 与放置一样是"面"而不是"一排"：以被点击的那一格为中心，沿该面的两个切向轴一圈圈向外扩，
-     * 只破坏<b>和点击方块同种</b>的方块，被破坏的方块直接消失、不掉落。
-     * 上限为 {@link #MAX_DESTROY}（1024）。
-     * <p>
-     * 不同种、空气、以及带方块实体的方块都跳过（跳过而不是中断：
-     * 面中间有个异类方块不该让整片都停下来）。带方块实体的跳过是为了避免留下幽灵方块。
-     *
-     * @return 本次破坏的所有改动（用于撤销）
+     * 照 constructionwand 的 ActionDestruction 做的：扩散方向取该面平面内的 4 个正向
+     * <b>加上 4 条对角线</b>（参考实现是 8 个方向），只在"下一个方块与原始方块同类"时继续；
+     * 被破坏的方块直接消失、不掉落。
      */
     public static List<Change> destroyFrom(Player player, Level level, BlockPos clickedPos, Direction face) {
         List<Change> changes = new ArrayList<>();
@@ -316,35 +337,27 @@ public final class PlacementCoreHandler {
         if (origin.isAir()) {
             return changes;
         }
-        Direction.Axis normalAxis = face.getAxis();
-        List<Direction> tangents = new ArrayList<>(2);
-        for (Direction.Axis axis : Direction.Axis.values()) {
-            if (axis != normalAxis) {
-                tangents.add(Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE));
+        List<Direction> dirs = planeDirections(face);
+        Set<BlockPos> seen = new HashSet<>();
+        java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
+        seen.add(clickedPos);
+        queue.add(clickedPos);
+        while (!queue.isEmpty() && changes.size() < MAX_DESTROY) {
+            BlockPos pos = queue.poll();
+            BlockState state = level.getBlockState(pos);
+            if (!state.isAir() && state.getBlock() == origin.getBlock()
+                    && state.getDestroySpeed(level, pos) >= 0.0F && !state.hasBlockEntity()) {
+                changes.add(new Change(pos.immutable(), state, ItemStack.EMPTY));
+                level.destroyBlock(pos, false, player);
             }
-        }
-        Direction ta = tangents.get(0);
-        Direction tb = tangents.get(1);
-        int destroyed = 0;
-        int maxRing = 64;
-        for (int r = 0; r <= maxRing && destroyed < MAX_DESTROY; r++) {
-            for (int i = -r; i <= r && destroyed < MAX_DESTROY; i++) {
-                for (int j = -r; j <= r && destroyed < MAX_DESTROY; j++) {
-                    if (Math.max(Math.abs(i), Math.abs(j)) != r) {
-                        continue;
-                    }
-                    BlockPos target = clickedPos.relative(ta, i).relative(tb, j);
-                    BlockState state = level.getBlockState(target);
-                    // 只破坏和点击方块同种的；异类/空气就跳过这一格，不影响其余。
-                    if (state.isAir() || state.getBlock() != origin.getBlock()) {
-                        continue;
-                    }
-                    if (state.getDestroySpeed(level, target) < 0.0F || state.hasBlockEntity()) {
-                        continue;
-                    }
-                    changes.add(new Change(target.immutable(), state, ItemStack.EMPTY));
-                    level.destroyBlock(target, false, player);
-                    destroyed++;
+            for (Direction dir : dirs) {
+                BlockPos next = pos.relative(dir);
+                if (!seen.add(next)) {
+                    continue;
+                }
+                BlockState nextState = level.getBlockState(next);
+                if (!nextState.isAir() && nextState.getBlock() == origin.getBlock()) {
+                    queue.add(next);
                 }
             }
         }

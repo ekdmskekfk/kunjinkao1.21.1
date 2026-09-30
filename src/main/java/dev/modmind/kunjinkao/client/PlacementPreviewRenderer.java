@@ -153,12 +153,7 @@ public final class PlacementPreviewRenderer {
         }
         // 与服务端同一条洪泛：从点击面的外侧起，在该面平面内一格一格扩散，
         // 只在"身后那一格与点击方块同类"的位置继续。
-        List<Direction> planeDirs = new ArrayList<>(4);
-        for (Direction dir : Direction.values()) {
-            if (dir.getAxis() != face.getAxis()) {
-                planeDirs.add(dir);
-            }
-        }
+        List<Direction> planeDirs = PlacementCoreHandler.planeDirections(face);
         BlockPos first = clicked.relative(face);
         java.util.Set<BlockPos> seen = new java.util.HashSet<>();
         java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
@@ -191,25 +186,27 @@ public final class PlacementPreviewRenderer {
         if (origin.isAir()) {
             return targets;
         }
-        Direction[] axes = tangents(hit.getDirection());
-        Direction ta = axes[0];
-        Direction tb = axes[1];
-        for (int r = 0; r <= 64 && targets.size() < MAX_PREVIEW; r++) {
-            for (int i = -r; i <= r && targets.size() < MAX_PREVIEW; i++) {
-                for (int j = -r; j <= r && targets.size() < MAX_PREVIEW; j++) {
-                    if (Math.max(Math.abs(i), Math.abs(j)) != r) {
-                        continue;
-                    }
-                    BlockPos target = clicked.relative(ta, i).relative(tb, j);
-                    BlockState state = level.getBlockState(target);
-                    // 与服务端 destroyFrom 一致：只取同种方块，异类/空气跳过。
-                    if (state.isAir() || state.getBlock() != origin.getBlock()) {
-                        continue;
-                    }
-                    if (state.getDestroySpeed(level, target) < 0.0F || state.hasBlockEntity()) {
-                        continue;
-                    }
-                    targets.add(target);
+        // 与服务端 destroyFrom 同一条洪泛、同一张 8 方向表（含对角线）。
+        java.util.List<Direction> dirs = PlacementCoreHandler.planeDirections(hit.getDirection());
+        java.util.Set<BlockPos> seen = new java.util.HashSet<>();
+        java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
+        seen.add(clicked);
+        queue.add(clicked);
+        while (!queue.isEmpty() && targets.size() < MAX_PREVIEW) {
+            BlockPos pos = queue.poll();
+            BlockState state = level.getBlockState(pos);
+            if (!state.isAir() && state.getBlock() == origin.getBlock()
+                    && state.getDestroySpeed(level, pos) >= 0.0F && !state.hasBlockEntity()) {
+                targets.add(pos);
+            }
+            for (Direction dir : dirs) {
+                BlockPos next = pos.relative(dir);
+                if (!seen.add(next)) {
+                    continue;
+                }
+                BlockState nextState = level.getBlockState(next);
+                if (!nextState.isAir() && nextState.getBlock() == origin.getBlock()) {
+                    queue.add(next);
                 }
             }
         }
