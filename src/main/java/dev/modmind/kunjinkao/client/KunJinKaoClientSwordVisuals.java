@@ -75,17 +75,20 @@ public final class KunJinKaoClientSwordVisuals {
     private static boolean compileModelLogged;
 
     /**
+    /**
      * 是否让自己的手持剑在编译期间切换到 kun_jin_kao_compile_* 模型。
      * <p>
-     * 默认 false，原因是素材形态不匹配：剑本体（kun_jin_kao_3d 经 ItemModelGenerator 生成）
-     * 是一张 1254×1254 平面贴图、占满 16 单位；而那 8 个编译阶段是 3.4~13 单位的 3D 方块几何。
-     * 一切换，玩家看到的就是「手里的大剑消失、剩一个小方块」。
+     * 打开，与 {@link #renderCompileModel} 的八级切换配套。
      * <p>
-     * 关闭后：手持物品始终是完整剑；逐级成形由屏幕中央的裁剪揭示动画呈现
-     * （见 {@link #renderCompileModel}，它用完整模型自上而下揭示）。
+     * 【这条注释原先写的关闭理由已经失效，留在此处备查：
+     * 当时剑本体是 kun_jin_kao_3d 经 ItemModelGenerator 生成的 1254x1254 平面贴图、占满 16 单位，
+     * 而那 8 个编译阶段是 3.4~13 单位的 3D 方块几何，一切换就成了
+     * 「手里的大剑消失、剩一个小方块」。现在两者都是扁平的 minecraft:item/handheld 贴图
+     * （剑本体指向 kun_jin_kao，阶段指向 kun_jin_kao_stage_0..7），形态一致，这条理由不再成立。】
+     * <p>
      * 远端编译玩家那条分支不受影响 —— 第三人称仍会隐藏其手持剑，由抓取层代画。
      */
-    private static final boolean SWITCH_LOCAL_HAND_MODEL = false;
+    private static final boolean SWITCH_LOCAL_HAND_MODEL = true;
 
     /** 排查编译动画时打开：每次动画开始时打印一行诊断，排查完请关掉以免刷日志。 */
     private static final boolean DEBUG_COMPILE_LOG = false;
@@ -234,23 +237,18 @@ public final class KunJinKaoClientSwordVisuals {
         int x = screenWidth / 2 - size / 2;
         int y = screenHeight / 2 - size / 2 + 6;
 
-        // 用【整张剑图 + 逐帧连续的裁剪线】揭示，而不是在 8 张阶段图之间切换：
-        // 8 级切换每级占整高 12.5%，即使做交叉淡入也仍读得出台阶感；
-        // 而裁剪线的位置是逐帧连续的，无论 alpha 混合是否生效，推进本身就是平滑的。
-        // 贴图内容在整张 1254x1254 里的纵向范围是 y 37..1196（约 2.95% ~ 95.45%）。
-        float contentTop = y + size * 0.0295F;
-        float contentBottom = y + size * 0.9545F;
-        int cut = Math.round(contentBottom - (contentBottom - contentTop) * reveal);
-
+        // 八级切换：整段 DRAW_COMPtLE_TtCKS 均分成 8 级，每级换一张 kun_jin_kao_stage_N。
+        // 八张图是同一套造型的递进揭示（由护手向外长出来），逐级切换读起来
+        // 就是"这台终端在一行一行地把自己写出来"。
+        int stage = Mth.clamp((int) (reveal * 8.0F), 0, 7);
         graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
-        graphics.enableScissor(x, cut, x + size, Math.round(contentBottom) + 1);
         graphics.blit(ResourceLocation.fromNamespaceAndPath(
-                        KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao.png"),
+                        KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao_stage_" + stage + ".png"),
                 x, y, 0, 0, size, size, size, size);
-        graphics.disableScissor();
-        // 切口处的扫描亮线：让推进方向一眼可读，也让整条边不像"被切掉"
+        // 当前级的底部给一条扫描亮线：让"正在写入第几行"一眼可读。
         int scanAlpha = (int) (alpha * 190.0F);
         if (scanAlpha > 4) {
+            int cut = y + Math.round(size * (stage + 1) / 8.0F);
             graphics.fill(x, cut - 1, x + size, cut + 1, (scanAlpha << 24) | 0xBFF6FF);
         }
         // 复位着色器颜色，避免影响同一图层里后续的绘制
