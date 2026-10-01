@@ -2,6 +2,8 @@ package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -66,30 +68,41 @@ public final class SwordAutoPickupHandler {
 
     /** 取掉落（含方块实体数据），塞进背包，然后清掉方块。 */
     /**
-     * 取掉落并塞进背包，然后清掉方块。
+    /**
+     * <b>直接取走这个方块本身</b>，而不是"破坏它、再收走掉落物"。
      * <p>
-     * 这里刻意<b>完全走原版的破坏流程</b>（对照 Level.destroyBlock）：
-     * <pre>
-     *   playerWillDestroy -> levelEvent(2001) -> Block.dropResources -> setBlock -> gameEvent
-     * </pre>
-     * 掉落的物品数据因此与"自己正常挖掉"一模一样 —— 因为就是同一条流程算出来的。
-     * dropResources 会走 BlockDropsEvent，本类的 onBlockDrops 再把那些掉落实体
-     * 转进玩家背包（而不是让它们掉在地上）。
+     * 区别是实质性的：走战利品表的话，石头会变成圆石、矿石会变成原矿、
+     * 草方块会变成泥土 —— 那都是"掉落物"，不是"这个方块"。
+     * 这里改用原版"中键取方块"的那套 {@code getCloneItemStack}：
+     * 它给出这个方块自己的物品，并带上方块实体数据与相关组件。
      * <p>
-     * 之前这里是自己先 Block.getDrops 取一份、再补一句 blockEntity.saveToItem ——
-     * 而 saveToItem 内部是 removeComponentsFromTag + applyComponents(collectComponents())，
-     * 会把战利品表已经写好的组件<b>覆盖</b>掉，于是收进背包的方块丢了数据。
+     * 取完直接把方块抹掉（不掉落任何东西），因为东西已经在包里了。
      */
     private static void collectIntoInventory(ServerPlayer player, ServerLevel level, BlockPos pos, BlockState state) {
-        ItemStack tool = player.getMainHandItem();
         BlockEntity blockEntity = level.getBlockEntity(pos);
-        // 顺序与原版一致：先让方块做它自己的收尾，再播音效、算掉落、抹掉方块。
+        // 与中键取方块同源：命中结果只用于让方块决定自己的物品形态。
+        BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
+        ItemStack picked = state.getBlock().getCloneItemStack(state, hit, level, pos, player);
+        if (picked.isEmpty()) {
+            // 极少数方块没有对应物品（例如纯技术方块），退回方块自身的物品。
+            picked = new ItemStack(state.getBlock().asItem());
+        }
+        if (picked.isEmpty()) {
+            return;
+        }
+        // 方块实体数据写进这一件物品（saveToItem 在这里是正解：
+        // 我们要的就是"把这个方块取下来"，而不是让它走一遍掉落流程）。
+        if (blockEntity != null) {
+            blockEntity.saveToItem(picked, level.registryAccess());
+        }
+
+        // 抹掉方块：不掉落任何东西，因为东西已经进包了。
         state.getBlock().playerWillDestroy(level, pos, state, player);
         level.levelEvent(2001, pos, Block.getId(state));
-        // 原版掉落流程；它会触发 BlockDropsEvent，由本类的 onBlockDrops 转进背包。
-        Block.dropResources(state, level, pos, blockEntity, player, tool);
-        level.setBlock(pos, level.getFluidState(pos).createLegacyBlock(), 3);
+        level.removeBlock(pos, false);
         level.gameEvent(GameEvent.BLOCK_DESTROY, pos, GameEvent.Context.of(player, state));
+
+        giveOrDrop(player, java.util.List.of(picked));
     }
 
     /**
