@@ -65,37 +65,31 @@ public final class SwordAutoPickupHandler {
     }
 
     /** 取掉落（含方块实体数据），塞进背包，然后清掉方块。 */
+    /**
+     * 取掉落并塞进背包，然后清掉方块。
+     * <p>
+     * 这里刻意<b>完全走原版的破坏流程</b>（对照 Level.destroyBlock）：
+     * <pre>
+     *   playerWillDestroy -> levelEvent(2001) -> Block.dropResources -> setBlock -> gameEvent
+     * </pre>
+     * 掉落的物品数据因此与"自己正常挖掉"一模一样 —— 因为就是同一条流程算出来的。
+     * dropResources 会走 BlockDropsEvent，本类的 onBlockDrops 再把那些掉落实体
+     * 转进玩家背包（而不是让它们掉在地上）。
+     * <p>
+     * 之前这里是自己先 Block.getDrops 取一份、再补一句 blockEntity.saveToItem ——
+     * 而 saveToItem 内部是 removeComponentsFromTag + applyComponents(collectComponents())，
+     * 会把战利品表已经写好的组件<b>覆盖</b>掉，于是收进背包的方块丢了数据。
+     */
     private static void collectIntoInventory(ServerPlayer player, ServerLevel level, BlockPos pos, BlockState state) {
-        BlockEntity blockEntity = level.getBlockEntity(pos);
         ItemStack tool = player.getMainHandItem();
-        List<ItemStack> drops = new ArrayList<>(Block.getDrops(state, level, pos, blockEntity, player, tool));
-
-        // 战利品表为空的方块（基岩、屏障、命令方块等）回退为方块自身。
-        if (drops.isEmpty() && state.getBlock().asItem() != Items.AIR) {
-            drops.add(new ItemStack(state.getBlock().asItem()));
-        }
-        if (drops.isEmpty()) {
-            return;
-        }
-        // 关键：不论掉落是从战利品表来的还是上面补的，只要它就是这个方块自己的物品，
-        // 就再把方块实体数据写一次。上一版只在"战利品表为空"时写，
-        // 于是那些战利品表里本来就有一件、但数据要靠破坏流程补上的机器（大多数机器都是这样）
-        // 被收进背包时数据就丢了。写在移除方块之前，方块实体还在。
-        if (blockEntity != null) {
-            for (ItemStack drop : drops) {
-                if (drop.getItem() == state.getBlock().asItem()) {
-                    blockEntity.saveToItem(drop, level.registryAccess());
-                }
-            }
-        }
-
+        BlockEntity blockEntity = level.getBlockEntity(pos);
+        // 顺序与原版一致：先让方块做它自己的收尾，再播音效、算掉落、抹掉方块。
         state.getBlock().playerWillDestroy(level, pos, state, player);
-        // 与剑的其它破坏路径一致：不走 Level.destroyBlock（它的返回值会被 setBlock 的结果影响）。
         level.levelEvent(2001, pos, Block.getId(state));
+        // 原版掉落流程；它会触发 BlockDropsEvent，由本类的 onBlockDrops 转进背包。
+        Block.dropResources(state, level, pos, blockEntity, player, tool);
         level.setBlock(pos, level.getFluidState(pos).createLegacyBlock(), 3);
         level.gameEvent(GameEvent.BLOCK_DESTROY, pos, GameEvent.Context.of(player, state));
-
-        giveOrDrop(player, drops);
     }
 
     /**
