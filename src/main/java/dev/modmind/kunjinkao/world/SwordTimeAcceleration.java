@@ -208,7 +208,7 @@ public final class SwordTimeAcceleration {
             if (level instanceof ServerLevel serverLevel) {
                 player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
                         "message.kunjinkao.time_accel_local_unsupported"), true);
-                tryToggleTime(player, serverLevel.getServer(), stack);
+                ensureTimeAccel(player, serverLevel.getServer(), stack);
             }
             return true;
         }
@@ -242,6 +242,27 @@ public final class SwordTimeAcceleration {
      *
      * @return 是否处理了这次右键
      */
+    /**
+     * <b>确保</b>整体时间加速是开着的 —— 已经开着就什么都不做，绝不关闭。
+     * <p>
+     * 给"点到了不可局部加速的方块"那条退路用。那里如果用 tryToggleTime，
+     * 连续点几个方块就会一开一关：第一次开、第二次关、第三次又开……
+     * 而之前那些靠整体刻率在跑的加速全都跟着失效，屏幕上还弹"已停止加速"。
+     * 退路只该负责"把它打开"，关不关是玩家对着天空右键自己的事。
+     */
+    public static void ensureTimeAccel(Player player, MinecraftServer server, ItemStack stack) {
+        int mode = clampMode(KunJinKaoSwordItem.getTimeAccelMode(stack));
+        if (mode == MODE_OFF || !TIME_SESSIONS.isEmpty()) {
+            return;
+        }
+        captureBaseline(server);
+        int multiplier = KunJinKaoSwordItem.getTimeAccelMultiplier(stack);
+        TIME_SESSIONS.add(new Session(null, multiplier, expiresAt(mode), server.overworld().dimension()));
+        refreshTickrate(server);
+        player.displayClientMessage(Component.translatable("message.kunjinkao.time_accel_time_started",
+                (int) targetTickrate(multiplier)), true);
+    }
+
     public static boolean tryToggleTime(Player player, MinecraftServer server, ItemStack stack) {
         int mode = clampMode(KunJinKaoSwordItem.getTimeAccelMode(stack));
         if (mode == MODE_OFF) {
