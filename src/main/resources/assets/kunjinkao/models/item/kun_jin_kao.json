@@ -1,7 +1,7 @@
 {
-  "parent": "kunjinkao:item/kun_jin_kao_3d",
+  "parent": "minecraft:item/handheld",
   "textures": {
-    "layer0": "kunjinkao:item/kun_jin_kao"
+    "layer0": "kunjinkao:item/kun_jin_kao_stage_7"
   },
   "overrides": [
     {
