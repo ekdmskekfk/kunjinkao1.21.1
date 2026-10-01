@@ -237,18 +237,32 @@ public final class KunJinKaoClientSwordVisuals {
         int x = screenWidth / 2 - size / 2;
         int y = screenHeight / 2 - size / 2 + 6;
 
-        // 八级切换：整段 DRAW_COMPtLE_TtCKS 均分成 8 级，每级换一张 kun_jin_kao_stage_N。
-        // 八张图是同一套造型的递进揭示（由护手向外长出来），逐级切换读起来
-        // 就是"这台终端在一行一行地把自己写出来"。
-        int stage = Mth.clamp((int) (reveal * 8.0F), 0, 7);
+        // 八级切换 + 交叉淡入。
+        //
+        // 层级仍然是 8 级（整段 DRAW_COMPtLE_TtCKS 均分，每级 6 tick），但切换点不再"啪"地一跳：
+        // 每一级走到后 45% 时，把下一级以递增的 alpha 叠上来，于是两级之间是渐变的。
+        // 最上面再压一条扫描亮线 —— 它跟着【连续】的 reveal 走、而不是卡在级边界，
+        // 所以即使层级是离散的，肉眼看到的推进也是连着的。
+        float scaled = reveal * 8.0F;
+        int stage = Mth.clamp((int) scaled, 0, 7);
+        float within = Mth.clamp(scaled - stage, 0.0F, 1.0F);
+        float blend = stage < 7 ? Mth.clamp((within - 0.55F) / 0.45F, 0.0F, 1.0F) : 0.0F;
         graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
         graphics.blit(ResourceLocation.fromNamespaceAndPath(
                         KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao_stage_" + stage + ".png"),
                 x, y, 0, 0, size, size, size, size);
-        // 当前级的底部给一条扫描亮线：让"正在写入第几行"一眼可读。
+        if (blend > 0.0F) {
+            // 下一级淡入；用普通混合即可 —— 这套图只有内容与透明两态，叠加不会发灰。
+            graphics.setColor(1.0F, 1.0F, 1.0F, alpha * blend);
+            graphics.blit(ResourceLocation.fromNamespaceAndPath(
+                            KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao_stage_" + (stage + 1) + ".png"),
+                    x, y, 0, 0, size, size, size, size);
+            graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
+        }
+        // 扫描亮线跟着连续的 reveal 走，把离散的级切换缝起来。
         int scanAlpha = (int) (alpha * 190.0F);
         if (scanAlpha > 4) {
-            int cut = y + Math.round(size * (stage + 1) / 8.0F);
+            int cut = y + Math.round(size * reveal);
             graphics.fill(x, cut - 1, x + size, cut + 1, (scanAlpha << 24) | 0xBFF6FF);
         }
         // 复位着色器颜色，避免影响同一图层里后续的绘制
