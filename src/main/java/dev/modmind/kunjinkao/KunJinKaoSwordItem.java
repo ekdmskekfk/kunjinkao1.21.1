@@ -666,7 +666,35 @@ public class KunJinKaoSwordItem extends SwordItem {
         Level level = context.getLevel();
         BlockPos clickedPos = context.getClickedPos();
 
-        // ---- 0) shift + 右键：加速 ----
+        // ---- 0) 破坏核心：右键批量破坏，优先于放置 ----
+        // 说明里破坏模式是"右键可批量破坏连续的相同方块"，所以它必须排在放置核心前面，
+        // 否则右键会被建筑手杖截走，表现就是"破坏核心开了却还在放方块"。
+        if (isDestructionCoreEnabled(stack)) {
+            if (!level.isClientSide() && player instanceof net.minecraft.server.level.ServerPlayer) {
+                PlacementUndoHistory.push(player,
+                        PlacementCoreHandler.destroyFrom(player, level, clickedPos, context.getClickedFace()));
+            }
+            return InteractionResult.sidedSuccess(level.isClientSide());
+        }
+
+        // ---- 1) 放置类核心（建筑手杖 / 天使核心）----
+        // 优先级最高：它们需要副手有方块，条件最明确。
+        boolean angel = isAngelCoreEnabled(stack);
+        boolean wand = isConstructionWandEnabled(stack);
+        if ((angel || wand) && PlacementCoreHandler.hasOffhandBlock(player)) {
+            if (!level.isClientSide()) {
+                // 这一步的所有改动入撤销栈；放置会退物品，空结果不入栈。
+                PlacementUndoHistory.push(player, angel
+                        ? PlacementCoreHandler.placeAngel(player, level, clickedPos, context.getClickedFace())
+                        : PlacementCoreHandler.placeConstructionRow(player, level, clickedPos,
+                                context.getClickedFace()));
+            }
+            return InteractionResult.sidedSuccess(level.isClientSide());
+        }
+
+        // ---- 2) shift + 右键：加速 ----
+        // 注意它排在放置类核心【之后】：shift+右键 也要能放置，
+        // 否则按住 shift 时右键会被这里截走，建筑手杖/天使核心永远收不到点击。
         // 开了加速时，shift+右键 一律在这里处理完 —— 关键是不能漏到 use() 去：
         // useOn 返回 PASS 时原版会接着调 use()，那里也会看 shift + 加速开关，
         // 于是"点了一个不可加速的方块"会莫名其妙触发整体时间加速，
@@ -694,46 +722,20 @@ public class KunJinKaoSwordItem extends SwordItem {
             return InteractionResult.sidedSuccess(level.isClientSide());
         }
 
-        // ---- 0.5) 破坏核心：右键批量破坏，优先于放置 ----
-        // 说明里破坏模式是"右键可批量破坏连续的相同方块"，所以它必须排在放置核心前面，
-        // 否则右键会被建筑手杖截走，表现就是"破坏核心开了却还在放方块"。
-        if (isDestructionCoreEnabled(stack)) {
-            if (!level.isClientSide() && player instanceof net.minecraft.server.level.ServerPlayer) {
-                PlacementUndoHistory.push(player,
-                        PlacementCoreHandler.destroyFrom(player, level, clickedPos, context.getClickedFace()));
-            }
-            return InteractionResult.sidedSuccess(level.isClientSide());
-        }
-
-        // ---- 1) 放置类核心（建筑手杖 / 天使核心）----
-        // 优先级最高：它们需要副手有方块，条件最明确。
-        boolean angel = isAngelCoreEnabled(stack);
-        boolean wand = isConstructionWandEnabled(stack);
-        if ((angel || wand) && PlacementCoreHandler.hasOffhandBlock(player)) {
-            if (!level.isClientSide()) {
-                // 这一步的所有改动入撤销栈；放置会退物品，空结果不入栈。
-                PlacementUndoHistory.push(player, angel
-                        ? PlacementCoreHandler.placeAngel(player, level, clickedPos, context.getClickedFace())
-                        : PlacementCoreHandler.placeConstructionRow(player, level, clickedPos,
-                                context.getClickedFace()));
-            }
-            return InteractionResult.sidedSuccess(level.isClientSide());
-        }
-
-        // ---- 2) 刷子：长按可刷的方块 ----
+        // ---- 3) 刷子：长按可刷的方块 ----
         // 只负责进入"使用中"状态，真正的推进在 onUseTick 里，和原版刷子一样。
         if (isBrushEnabled(stack) && SwordToolHandler.isBrushable(level, clickedPos)) {
             player.startUsingItem(context.getHand());
             return InteractionResult.CONSUME;
         }
 
-        // ---- 3) 锄头 / 铲子：草方块 → 耕地 / 草径 ----
+        // ---- 4) 锄头 / 铲子：草方块 → 耕地 / 草径 ----
         InteractionResult toolResult = SwordToolHandler.applyTillOrFlatten(context, getToolMode(stack));
         if (toolResult != InteractionResult.PASS) {
             return toolResult;
         }
 
-        // ---- 4) 避雷针：召唤闪电 ----
+        // ---- 5) 避雷针：召唤闪电 ----
         if (isLightningRodEnabled(stack) && SwordToolHandler.strikeLightningRod(context)) {
             return InteractionResult.sidedSuccess(level.isClientSide());
         }
