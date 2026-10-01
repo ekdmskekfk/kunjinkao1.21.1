@@ -119,7 +119,19 @@ public final class SwordTimeAcceleration {
     private static final org.apache.logging.log4j.Logger LOGGER =
             org.apache.logging.log4j.LogManager.getLogger("KunJinKao");
 
-    private static final Map<Long, Session> BLOCK_SESSIONS = new HashMap<>();
+    /**
+     * 会话键：维度 + 坐标。
+     * <p>
+     * 之前用的是把它压成一个 long 的哈希，而那里写的是 {@code pos.asLong() & 0xFFFFFFFFL} ——
+     * BlockPos.asLong() 是 64 位（X 26 + Y 12 + Z 26），截成低 32 位后
+     * <b>X 坐标整个丢了</b>。于是 Z 相同的两台机器会撞进同一个键：
+     * 点第二台时 remove 会把第一台的会话删掉 —— 表现就是"加速一台之后，
+     * 点另一台就把前一台的加速停了"。改用 record 精确比较，不再有碰撞。
+     */
+    private record BlockKey(net.minecraft.resources.ResourceKey<Level> dimension, BlockPos pos) {
+    }
+
+    private static final Map<BlockKey, Session> BLOCK_SESSIONS = new HashMap<>();
     private static final List<Session> TIME_SESSIONS = new ArrayList<>();
     /** 开启时间加速之前的 tick 率，停掉时恢复。 */
     private static float previousTickrate = BASE_TICKRATE;
@@ -175,8 +187,8 @@ public final class SwordTimeAcceleration {
         return table[(index + 1) % table.length];
     }
 
-    private static long blockKey(net.minecraft.resources.ResourceKey<Level> dimension, BlockPos pos) {
-        return ((long) dimension.location().hashCode() << 32) ^ (pos.asLong() & 0xFFFFFFFFL);
+    private static BlockKey blockKey(net.minecraft.resources.ResourceKey<Level> dimension, BlockPos pos) {
+        return new BlockKey(dimension, pos.immutable());
     }
 
     // ===================== 入口 =====================
