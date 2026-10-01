@@ -200,16 +200,11 @@ public final class SwordTimeAcceleration {
             return false;
         }
         if (!acceleratable) {
-            // 这台机器不接受额外 tick（AE2 的网络机器是典型：靠 ME 网络调度，
-            // state.getTicker 返回 null）。局部加速原理上做不到，
-            // 唯一可行的办法是把整体刻率提上去 —— 限时档 256 秒后自动复原。
-            // 参考实现（无用之物）在 ticker 为 null 时同样是直接放弃，
-            // 所以这不是本模组判定过严，而是这一类机器本来就没有可额外调用的入口。
-            if (level instanceof ServerLevel serverLevel) {
-                player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
-                        "message.kunjinkao.time_accel_local_unsupported"), true);
-                ensureTimeAccel(player, serverLevel.getServer(), stack);
-            }
+            // 这个方块不能被局部加速 —— 什么都不做。
+            // 尤其是【不要】弹提示、也不要退化成整体时间加速：
+            // 普通石头、泥土这类方块同样走这一支，右键它们却把整个世界拔快、
+            // 或者弹一句莫名其妙的提示，都是不该有的反应。
+            // 仍然吃掉这次右键（返回 true），否则会漏回原版、被别的逻辑接走。
             return true;
         }
         if (level instanceof ServerLevel serverLevel) {
