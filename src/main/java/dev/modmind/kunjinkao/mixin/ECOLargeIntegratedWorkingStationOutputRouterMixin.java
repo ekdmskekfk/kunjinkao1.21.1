@@ -153,8 +153,9 @@ public abstract class ECOLargeIntegratedWorkingStationOutputRouterMixin implemen
         if (now != kunjinkao$lastPauseReasonId) {
             kunjinkao$lastPauseReasonId = now;
             Object grid = resolveGrid();
-            KJK_LOGGER.info("[KJK-PATCH] 暂停原因变化 -> {}（网格{}null）{}",
-                    now, grid == null ? "==" : "!=", kunjinkao$shortTrace());
+            KJK_LOGGER.info("[KJK-PATCH] 暂停原因变化 -> {}（网格{}null, instanceof Router={}, 待输出非空={}）{}",
+                    now, grid == null ? "==" : "!=", this instanceof ECOCraftingOutputRouter,
+                    kunjinkao$firstBatchHasPendingOutput(), kunjinkao$shortTrace());
         }
     }
 
@@ -179,6 +180,28 @@ public abstract class ECOLargeIntegratedWorkingStationOutputRouterMixin implemen
             return -1;
         }
     }
+    /**
+     * 反射读 pendingBatches.peekFirst().pendingOutput 是否非空。
+     * 这几个字段都是私有的，编译期够不着。
+     */
+    private boolean kunjinkao$firstBatchHasPendingOutput() {
+        try {
+            java.lang.reflect.Field batches = this.getClass().getDeclaredField("pendingBatches");
+            batches.setAccessible(true);
+            Object deque = batches.get(this);
+            if (!(deque instanceof java.util.Deque<?> d) || d.isEmpty()) {
+                return false;
+            }
+            Object batch = d.peekFirst();
+            java.lang.reflect.Field out = batch.getClass().getDeclaredField("pendingOutput");
+            out.setAccessible(true);
+            Object counter = out.get(batch);
+            return counter != null && !(Boolean) counter.getClass().getMethod("isEmpty").invoke(counter);
+        } catch (ReflectiveOperationException e) {
+            return false;
+        }
+    }
+
 
     /** 去掉本模组自身的帧，避免把补丁的调用栈也打出来。 */
     private static String kunjinkao$shortTrace() {
