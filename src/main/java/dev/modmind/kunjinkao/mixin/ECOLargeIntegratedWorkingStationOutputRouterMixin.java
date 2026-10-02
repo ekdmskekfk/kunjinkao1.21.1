@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 
 import java.lang.reflect.Method;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.UUID;
 
 /**
@@ -138,6 +139,34 @@ public abstract class ECOLargeIntegratedWorkingStationOutputRouterMixin implemen
             return "读取失败: " + e;
         }
     }
+
+    /**
+     * 诊断：确认"机器认为自己没有网格"这一推断。
+     * <p>
+     * tickPendingBatch() 无参，描述符必然精确。只在网格为 null 时打印，
+     * 因此不会刷屏 —— 而它一旦出现，就坐实了 deliverBatchOutputs 在
+     * 第 26~27 条指令处直接 return false 的那条路径。
+     */
+    @Inject(method = "tickPendingBatch", at = @At("HEAD"))
+    private void kunjinkao$logGridState(CallbackInfo ci) {
+        if (kunjinkao$gridIsNull) {
+            return;
+        }
+        Object grid = resolveGrid();
+        if (grid == null) {
+            if (!kunjinkao$gridNullLogged) {
+                kunjinkao$gridNullLogged = true;
+                KJK_LOGGER.info("[KJK-PATCH] ★ getMainNode().getGrid() == null —— 这台机器当前不在任何 ME 网格里。"
+                        + "这正是 deliverBatchOutputs 直接 return false 的那条路径（与网络空间无关）。");
+            }
+        } else {
+            kunjinkao$gridNullLogged = false;
+        }
+    }
+
+    /** 只在网格为 null 时打印一次，避免刷屏。 */
+    private boolean kunjinkao$gridNullLogged;
+    private static final boolean kunjinkao$gridIsNull = false;
 
     /** 取本机所在网格；任一步失败返回 null。 */
     private Object resolveGrid() {
