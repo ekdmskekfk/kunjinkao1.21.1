@@ -172,3 +172,16 @@ tasks.register('copyModJar', Copy) {
 tasks.named('build').configure {
     finalizedBy 'copyModJar'
 }
+
+// ★ 关键：jar 的 MANIFEST 里必须有 MixinConfigs，否则 NeoForge 的 mixin 代理
+//   （FMLMixinPlatformAgent）会直接 reject 这个容器，mixin 静默不生效。
+//   判断依据来自实例日志：
+//     [mixin/]: FMLMixinPlatformAgent rejected container SecureJarResource(kunjinkao)
+//   只写 neoforge.mods.toml 的 [[mixins]] 是不够的 —— 那条声明本身没错，
+//   但真正的注册入口是 manifest 属性。
+//   没有这个方法引用混淆成员（只是实现一个接口 + 反射），因此不需要 refmap。
+jar {
+    manifest {
+        attributes(['MixinConfigs': 'kunjinkao.mixins.json'])
+    }
+}
