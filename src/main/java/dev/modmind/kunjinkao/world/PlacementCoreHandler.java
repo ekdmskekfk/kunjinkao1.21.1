@@ -251,7 +251,10 @@ public final class PlacementCoreHandler {
         net.minecraft.world.item.Item originItem = origin.getBlock().asItem();
         ItemStack offhand = player.getOffhandItem();
         boolean override = isPlaceable(offhand) && offhand.getItem() != originItem;
-        if (!override && !isPlaceable(findMaterial(player, originItem))) {
+        // 本次到底要放哪一种物品，从头到尾只在这里决定一次：
+        // 副手指定了别的方块就用副手那个，否则必须是与点击方块同种的那种。
+        net.minecraft.world.item.Item intendedItem = override ? offhand.getItem() : originItem;
+        if (!isPlaceable(findMaterial(player, intendedItem))) {
             return changes;
         }
         int limit = player.isCreative() ? MAX_PLACE_CREATIVE : MAX_PLACE_SURVIVAL;
@@ -276,7 +279,7 @@ public final class PlacementCoreHandler {
             }
             // 只放在"能放"的位置上：空气，或替换模式下的可替换方块。
             if (level.getBlockState(pos).canBeReplaced()) {
-                Change change = tryPlaceAt(level, player, support, face, pos);
+                Change change = tryPlaceAt(level, player, support, face, pos, intendedItem);
                 if (change != null) {
                     changes.add(change);
                 }
@@ -298,14 +301,14 @@ public final class PlacementCoreHandler {
      * 放置一格，依托只要求"相邻"：在目标周围六个方向里找第一个实心的邻居当依托，
      * 朝向就是"从依托指向目标"。找不到任何相邻实心方块就放弃这一格。
      */
-    private static Change tryPlaceAdjacent(Level level, Player player, BlockPos target) {
+    private static Change tryPlaceAdjacent(Level level, Player player, BlockPos target, net.minecraft.world.item.Item materialItem) {
         for (Direction side : Direction.values()) {
             BlockPos support = target.relative(side);
             BlockState supportState = level.getBlockState(support);
             if (supportState.canBeReplaced()) {
                 continue;
             }
-            Change change = tryPlaceAt(level, player, support, side.getOpposite(), target);
+            Change change = tryPlaceAt(level, player, support, side.getOpposite(), target, materialItem);
             if (change != null) {
                 return change;
             }
@@ -331,7 +334,7 @@ public final class PlacementCoreHandler {
         }
         Direction through = face.getOpposite();
         BlockPos target = clickedPos.relative(through);
-        Change change = tryPlaceAt(level, player, clickedPos, through, target);
+        Change change = tryPlaceAt(level, player, clickedPos, through, target, findMaterial(player).getItem());
         if (change != null) {
             changes.add(change);
             if (!level.isClientSide()) {
@@ -363,7 +366,8 @@ public final class PlacementCoreHandler {
             if (level.getBlockState(supportPos).canBeReplaced()) {
                 continue;
             }
-            Change change = tryPlaceAt(level, player, supportPos, support.getOpposite(), target);
+            Change change = tryPlaceAt(level, player, supportPos, support.getOpposite(), target,
+                    player.getOffhandItem().getItem());
             if (change != null) {
                 changes.add(change);
                 break;
@@ -499,8 +503,13 @@ public final class PlacementCoreHandler {
      *
      * @return 成功时返回这一步的可撤销记录；失败返回 null
      */
-    private static Change tryPlaceAt(Level level, Player player, BlockPos support, Direction face, BlockPos target) {
-        ItemStack material = findMaterial(player);
+    private static Change tryPlaceAt(Level level, Player player, BlockPos support, Direction face, BlockPos target,
+                                     net.minecraft.world.item.Item materialItem) {
+        // 【必须】由调用方指定要放哪一种物品。
+        // 之前这里自己调 findMaterial(player)（不带过滤）取"背包里第一件可放置的方块"，
+        // 于是判定时说"要灵魂沙"，真正放下去时却可能是凋零骷髅头 ——
+        // 副手 override 那条路也一样被无视。现在材料只由一个地方决定。
+        ItemStack material = materialItem == null ? findMaterial(player) : findMaterial(player, materialItem);
         if (!isPlaceable(material) || !level.getBlockState(target).canBeReplaced()) {
             return null;
         }
