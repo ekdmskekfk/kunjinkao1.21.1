@@ -4,6 +4,9 @@ import appeng.api.config.Actionable;
 import appeng.api.stacks.AEKey;
 import cn.dancingsnow.neoecoae.api.me.output.ECOCraftingOutputRouter;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 
 import java.lang.reflect.Method;
 import java.util.UUID;
@@ -93,6 +96,47 @@ public abstract class ECOLargeIntegratedWorkingStationOutputRouterMixin implemen
             // 取不到就当作放不下；上层会维持"输出受阻"，不会抛出。
         }
         return 0L;
+    }
+
+    /**
+     * 诊断：暂停原因文本被取用时，打印当前原因。
+     * <p>
+     * 这个方法【没有参数】，描述符天然精确，是唯一能安全注入的入口
+     * （setPauseReason 与 deliverBatchOutputs 的参数都是私有内嵌类型，
+     * 用 Enum/Object 代替会抛 InvalidInjectionException 并让整个混入类失效）。
+     * 它被调用就证明机器确实处在暂停状态、且界面正在显示原因。
+     */
+    @Inject(method = "getPauseReasonText", at = @At("HEAD"))
+    private void kunjinkao$logCurrentPauseReason(CallbackInfoReturnable<net.minecraft.network.chat.Component> cir) {
+        Object reason = kunjinkao$currentPauseReason();
+        KJK_LOGGER.info("[KJK-PATCH] 当前暂停原因 = {}", reason);
+    }
+
+    /**
+     * 诊断：把未消耗的输入退回网络这一条路径。
+     * <p>
+     * 参数 KeyCounter 是 AE2 的公开类型，因此可以精确注入 ——
+     * 这正是 deliverBatchOutputs 之外最可能设置「产物输出受阻」的地方。
+     */
+    @Inject(method = "recoverCounterToNetwork", at = @At("HEAD"))
+    private void kunjinkao$logRecoverHead(appeng.api.stacks.KeyCounter counter, CallbackInfoReturnable<Boolean> cir) {
+        KJK_LOGGER.info("[KJK-PATCH] recoverCounterToNetwork 被调用，counter 数量={}", counter.size());
+    }
+
+    @Inject(method = "recoverCounterToNetwork", at = @At("RETURN"))
+    private void kunjinkao$logRecoverResult(appeng.api.stacks.KeyCounter counter, CallbackInfoReturnable<Boolean> cir) {
+        KJK_LOGGER.info("[KJK-PATCH] recoverCounterToNetwork 返回 = {}", cir.getReturnValue());
+    }
+
+    /** 反射读 pauseReasonId（私有字段），仅在诊断时用。 */
+    private Object kunjinkao$currentPauseReason() {
+        try {
+            java.lang.reflect.Field f = this.getClass().getDeclaredField("pauseReasonId");
+            f.setAccessible(true);
+            return f.get(this);
+        } catch (ReflectiveOperationException e) {
+            return "读取失败: " + e;
+        }
     }
 
     /** 取本机所在网格；任一步失败返回 null。 */
