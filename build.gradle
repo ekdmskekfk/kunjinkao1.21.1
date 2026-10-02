@@ -83,6 +83,16 @@ dependencies {
     // JEI：只做编译期依赖（compileOnly）+ 运行时由玩家自备。
     // 用 "19.+" 让 Gradle 解析 1.21.1 对应的最新 19.x；确认无误后可以钉成具体版本。
     compileOnly "mezz.jei:jei-1.21.1-neoforge:19.+"
+
+    // AE2 与 neoecoae：同样只做编译期依赖。
+    // 需要它们是因为给 neoecoae 打的补丁 mixin 要声明一个带 AE2 类型的方法
+    // （neoecoae$insertIntoCpuForJob(UUID, AEKey, long, Actionable)），
+    // 方法签名必须逐字一致才织得进去。
+    // libs/ 已加进 .gitignore —— 这两个 jar 不进仓库，克隆后需自行放入。
+    compileOnly files(
+            "libs/appliedenergistics2-19.2.17.jar",
+            "libs/neoecoae-21.2.0.jar"
+    )
 }
 
 publishing {

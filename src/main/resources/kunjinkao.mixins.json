@@ -1,0 +1,12 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "dev.modmind.kunjinkao.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "ECOLargeIntegratedWorkingStationOutputRouterMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -30,5 +30,5 @@ run/
 runs/
 dsh-launcher/
 
-
-
+# 第三方编译期依赖（AE2 / neoecoae 的 jar），不进仓库
+libs/
