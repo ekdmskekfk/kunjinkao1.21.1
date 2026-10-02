@@ -148,7 +148,7 @@ public abstract class ECOLargeIntegratedWorkingStationOutputRouterMixin implemen
      * 只在变化时打印，所以不会刷屏。
      */
     @Inject(method = "tickPendingBatch", at = @At("HEAD"))
-    private void kunjinkao$watchPauseReason(CallbackInfo ci) {
+    private void kunjinkao$watchPauseReason(CallbackInfoReturnable<appeng.api.networking.ticking.TickRateModulation> cir) {
         int now = kunjinkao$readPauseReasonId();
         if (now != kunjinkao$lastPauseReasonId) {
             kunjinkao$lastPauseReasonId = now;
