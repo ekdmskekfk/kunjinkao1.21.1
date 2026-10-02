@@ -51,15 +51,15 @@ public final class PlacementCoreHandler {
      * 建筑手杖原版的说明写的是「生存模式下单次最多放置32个方块」，
      * 这里按用户要求不沿用那个 32，改为与破坏模式一致的 1024。
      */
-    private static final int MAX_PLACE_SURVIVAL = 1024;
+    public static final int MAX_PLACE_SURVIVAL = 1024;
     /** 创造模式同样按上限走（保留常量是为了将来要区分时方便）。 */
-    private static final int MAX_PLACE_CREATIVE = 1024;
+    public static final int MAX_PLACE_CREATIVE = 1024;
     /**
      * 破坏模式：单次最多破坏 4 个方块。
      * <p>
      * 同样来自建筑手杖的规定（"各种材质的手杖单次最多破坏4个方块"）。
      */
-    private static final int MAX_DESTROY = 1024;
+    public static final int MAX_DESTROY = 1024;
     /** 天使核心最多能穿透几格去找落脚点。 */
     private static final int ANGEL_DISTANCE = 4;
     /** 对空右键时，在半空中离眼睛多远放置。 */

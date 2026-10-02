@@ -39,15 +39,21 @@ import java.util.List;
  *   <li>放置：被点击面的平面上、由同种材料铺开的一片（与 PlacementCoreHandler 同一条链）；</li>
  *   <li>破坏：被点击那一格所在面上、连成一片的同种方块。</li>
  * </ul>
- * 预览最多只画 {@link #MAX_PREVIEW} 格 —— 实际能放/能破坏的上限是 1024，
- * 但预览没必要画那么多，画多了既看不清也拖帧率。
+ * 预览最多画多少格，直接取自执行侧的上限（{@link #MAX_PREVIEW_PLACE} /
+ * {@link #MAX_PREVIEW_DESTROY}）—— 预览画的范围必须与实际会发生的范围一致，
+ * 否则"预览"就是在骗人。之前这里是写死的 32，而实际能铺 1024。
  */
 @OnlyIn(Dist.CLIENT)
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
 public final class PlacementPreviewRenderer {
 
-    /** 预览最多画多少格。 */
-    private static final int MAX_PREVIEW = 32;
+    /**
+     * 预览上限【必须】与执行上限一致 —— 否则"预览"就是在骗人：
+     * 之前这里是写死的 32，而实际能铺 1024，于是玩家以为只能放 32 格。
+     * 现在直接引用执行侧的常量，两边不会各自漂移。
+     */
+    private static final int MAX_PREVIEW_PLACE = PlacementCoreHandler.MAX_PLACE_SURVIVAL;
+    private static final int MAX_PREVIEW_DESTROY = PlacementCoreHandler.MAX_DESTROY;
     /** 线框略微外扩，避免与方块表面 z-fighting。 */
     private static final double INFLATE = 0.004D;
     /** 色相每秒转多少圈。 */
@@ -159,7 +165,7 @@ public final class PlacementPreviewRenderer {
         java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
         seen.add(first);
         queue.add(first);
-        while (!queue.isEmpty() && targets.size() < MAX_PREVIEW) {
+        while (!queue.isEmpty() && targets.size() < MAX_PREVIEW_PLACE) {
             BlockPos pos = queue.poll();
             BlockPos support = pos.relative(face.getOpposite());
             if (!override && level.getBlockState(support).getBlock() != origin.getBlock()) {
@@ -192,7 +198,7 @@ public final class PlacementPreviewRenderer {
         java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
         seen.add(clicked);
         queue.add(clicked);
-        while (!queue.isEmpty() && targets.size() < MAX_PREVIEW) {
+        while (!queue.isEmpty() && targets.size() < MAX_PREVIEW_DESTROY) {
             BlockPos pos = queue.poll();
             BlockState state = level.getBlockState(pos);
             if (!state.isAir() && state.getBlock() == origin.getBlock()
