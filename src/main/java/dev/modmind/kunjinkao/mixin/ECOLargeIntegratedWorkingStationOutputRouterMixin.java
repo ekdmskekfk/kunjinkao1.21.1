@@ -141,32 +141,61 @@ public abstract class ECOLargeIntegratedWorkingStationOutputRouterMixin implemen
     }
 
     /**
-     * 诊断：确认"机器认为自己没有网格"这一推断。
+     * 诊断：暂停原因发生变化时打印，并附调用栈。
      * <p>
-     * tickPendingBatch() 无参，描述符必然精确。只在网格为 null 时打印，
-     * 因此不会刷屏 —— 而它一旦出现，就坐实了 deliverBatchOutputs 在
-     * 第 26~27 条指令处直接 return false 的那条路径。
+     * 「网格为 null」的假设已被日志证伪（那条诊断一次都没打印），
+     * 因此改为直接盯住 pauseReasonId 的变化 —— 它是 private int，用反射读；
+     * 只在变化时打印，所以不会刷屏。
      */
     @Inject(method = "tickPendingBatch", at = @At("HEAD"))
-    private void kunjinkao$logGridState(CallbackInfo ci) {
-        if (kunjinkao$gridIsNull) {
-            return;
-        }
-        Object grid = resolveGrid();
-        if (grid == null) {
-            if (!kunjinkao$gridNullLogged) {
-                kunjinkao$gridNullLogged = true;
-                KJK_LOGGER.info("[KJK-PATCH] ★ getMainNode().getGrid() == null —— 这台机器当前不在任何 ME 网格里。"
-                        + "这正是 deliverBatchOutputs 直接 return false 的那条路径（与网络空间无关）。");
-            }
-        } else {
-            kunjinkao$gridNullLogged = false;
+    private void kunjinkao$watchPauseReason(CallbackInfo ci) {
+        int now = kunjinkao$readPauseReasonId();
+        if (now != kunjinkao$lastPauseReasonId) {
+            kunjinkao$lastPauseReasonId = now;
+            Object grid = resolveGrid();
+            KJK_LOGGER.info("[KJK-PATCH] 暂停原因变化 -> {}（网格{}null）{}",
+                    now, grid == null ? "==" : "!=", kunjinkao$shortTrace());
         }
     }
 
-    /** 只在网格为 null 时打印一次，避免刷屏。 */
-    private boolean kunjinkao$gridNullLogged;
-    private static final boolean kunjinkao$gridIsNull = false;
+    /**
+     * 诊断：returnStoredInputs 是另一个会设置 OUTPUT_BLOCKED 的公开方法。
+     * 它被调用即说明机器在"把已存的输入还回去"。
+     */
+    @Inject(method = "returnStoredInputs", at = @At("HEAD"))
+    private void kunjinkao$logReturnStoredInputs(CallbackInfo ci) {
+        KJK_LOGGER.info("[KJK-PATCH] returnStoredInputs 被调用（它会设置 OUTPUT_BLOCKED）{}",
+                kunjinkao$shortTrace());
+    }
+
+    private int kunjinkao$lastPauseReasonId = -1;
+
+    private int kunjinkao$readPauseReasonId() {
+        try {
+            java.lang.reflect.Field f = this.getClass().getDeclaredField("pauseReasonId");
+            f.setAccessible(true);
+            return f.getInt(this);
+        } catch (ReflectiveOperationException e) {
+            return -1;
+        }
+    }
+
+    /** 去掉本模组自身的帧，避免把补丁的调用栈也打出来。 */
+    private static String kunjinkao$shortTrace() {
+        StringBuilder sb = new StringBuilder();
+        StackTraceElement[] trace = new Throwable().getStackTrace();
+        int shown = 0;
+        for (StackTraceElement el : trace) {
+            if (el.getClassName().contains("kunjinkao")) {
+                continue;
+            }
+            sb.append("\n    at ").append(el);
+            if (++shown >= 6) {
+                break;
+            }
+        }
+        return sb.toString();
+    }
 
     /** 取本机所在网格；任一步失败返回 null。 */
     private Object resolveGrid() {
