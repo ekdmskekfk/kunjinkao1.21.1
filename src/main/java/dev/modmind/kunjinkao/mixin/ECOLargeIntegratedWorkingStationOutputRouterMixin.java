@@ -49,6 +49,18 @@ import java.util.UUID;
 @Mixin(targets = "cn.dancingsnow.neoecoae.blocks.entity.ECOLargeIntegratedWorkingStationBlockEntity")
 public abstract class ECOLargeIntegratedWorkingStationOutputRouterMixin implements ECOCraftingOutputRouter {
 
+    /**
+     * 诊断日志。
+     * <p>
+     * 刻意【不】使用 @Inject：那要求与目标方法逐字一致的方法描述符，而 setPauseReason
+     * 收的是私有内嵌枚举 PauseReason —— 用 Enum 或 Object 代替都会让 Mixin 抛
+     * InvalidInjectionException，且失败的是【整个混入类】，连
+     * implements ECOCraftingOutputRouter 一起失效（0.3.4 就是这么坏掉的）。
+     * 这两处日志写在补丁自己的方法体内，不可能影响织入。
+     */
+    private static final org.slf4j.Logger KJK_LOGGER =
+            org.slf4j.LoggerFactory.getLogger("kunjinkao/neoecoae-patch");
+
     /** 反射查找一次就够。 */
     private static Method getMainNodeMethod;
     private static Method getGridMethod;
@@ -58,6 +70,8 @@ public abstract class ECOLargeIntegratedWorkingStationOutputRouterMixin implemen
     public long neoecoae$insertIntoCpuForJob(UUID jobId, AEKey key, long amount, Actionable mode) {
         Object grid = resolveGrid();
         if (grid == null) {
+            KJK_LOGGER.info("[KJK-PATCH] insertIntoCpuForJob(job={}, key={}, amount={}) -> 网格为 null",
+                    jobId, key, amount);
             return 0L;
         }
         try {
@@ -67,9 +81,15 @@ public abstract class ECOLargeIntegratedWorkingStationOutputRouterMixin implemen
             Object crafting = getCraftingServiceMethod.invoke(grid);
             // 网格的合成服务（被 neoecoae 的 CraftingServiceMixin 加工过）才是真正的 Router。
             if (crafting instanceof ECOCraftingOutputRouter router) {
-                return router.neoecoae$insertIntoCpuForJob(jobId, key, amount, mode);
+                long accepted = router.neoecoae$insertIntoCpuForJob(jobId, key, amount, mode);
+                KJK_LOGGER.info("[KJK-PATCH] 已转发: job={} key={} 请求={} 接受={}",
+                        jobId, key, amount, accepted);
+                return accepted;
             }
-        } catch (ReflectiveOperationException ignored) {
+            KJK_LOGGER.info("[KJK-PATCH] 合成服务 {} 不是 ECOCraftingOutputRouter",
+                    crafting == null ? "null" : crafting.getClass().getName());
+        } catch (ReflectiveOperationException e) {
+            KJK_LOGGER.info("[KJK-PATCH] 取合成服务失败: {}", e.toString());
             // 取不到就当作放不下；上层会维持"输出受阻"，不会抛出。
         }
         return 0L;
