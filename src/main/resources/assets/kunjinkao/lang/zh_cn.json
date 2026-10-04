@@ -185,5 +185,7 @@
   "screen.kunjinkao.records_prev": "▲ 上一页",
   "screen.kunjinkao.records_next": "▼ 下一页",
   "screen.kunjinkao.area_mode_pause": "暂停场",
-  "screen.kunjinkao.area_mode_accel": "范围加速"
+  "screen.kunjinkao.area_mode_accel": "范围加速",
+  "screen.kunjinkao.page_prev": "上一页",
+  "screen.kunjinkao.page_next": "下一页"
 }

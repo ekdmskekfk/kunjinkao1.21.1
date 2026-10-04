@@ -185,5 +185,7 @@
   "screen.kunjinkao.records_prev": "▲ Prev",
   "screen.kunjinkao.records_next": "▼ Next",
   "screen.kunjinkao.area_mode_pause": "Pause Field",
-  "screen.kunjinkao.area_mode_accel": "Area Accel"
+  "screen.kunjinkao.area_mode_accel": "Area Accel",
+  "screen.kunjinkao.page_prev": "Prev",
+  "screen.kunjinkao.page_next": "Next"
 }

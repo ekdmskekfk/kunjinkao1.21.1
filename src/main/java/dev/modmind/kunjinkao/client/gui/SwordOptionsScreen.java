@@ -87,7 +87,7 @@ public final class SwordOptionsScreen extends Screen {
     private int page;
     /** 放置记录页当前页。 */
     private int recordPage;
-    private Button pageButton;
+
     private Button areaModeButton;
     private Button pauseSizeButton;
     private Button areaAccelSizeButton;
@@ -251,16 +251,43 @@ public final class SwordOptionsScreen extends Screen {
         placementUndoToggle = addButton(rightX + BOX_PAD + btnW + BTN_GAP, contentTop + ROW_H, btnW,
                 this::togglePlacementUndo);
 
-        pageButton = addButton(panelX + panelW - 72, panelY + 1, 66, this::switchPage);
-        pageButton.setMessage(Component.translatable("screen.kunjinkao.page_records"));
+        addPageNav();
         refreshLabels();
     }
 
-    /** 设置页 / 放置记录页 互相切换。 */
-    private void switchPage() {
-        page = page == 0 ? 1 : 0;
-        recordPage = 0;
-        rebuildWidgets();
+    /** 页面总数。第一页是设置，第二页第一项就是放置记录。 */
+    private static final int PAGE_COUNT = 2;
+
+    /**
+     * 标题栏右上角的翻页按钮：上一页 / 下一页。
+     * <p>
+     * 到头的那一侧置灰（{@code active = false}），而不是藏起来 ——
+     * 按钮位置固定，连点的时候不会因为按钮忽隐忽现而点错。
+     */
+    private void addPageNav() {
+        int navW = 64;
+        int navX = panelX + panelW - SIDE_PAD - navW * 2 - 4;
+        int navY = panelY + 1;
+
+        Button prev = addButton(navX, navY, navW, () -> {
+            if (page > 0) {
+                page--;
+                recordPage = 0;
+                rebuildWidgets();
+            }
+        });
+        prev.setMessage(Component.translatable("screen.kunjinkao.page_prev"));
+        prev.active = page > 0;
+
+        Button next = addButton(navX + navW + 4, navY, navW, () -> {
+            if (page < PAGE_COUNT - 1) {
+                page++;
+                recordPage = 0;
+                rebuildWidgets();
+            }
+        });
+        next.setMessage(Component.translatable("screen.kunjinkao.page_next"));
+        next.active = page < PAGE_COUNT - 1;
     }
 
     /**
@@ -275,26 +302,23 @@ public final class SwordOptionsScreen extends Screen {
         int btnW = Math.max(56, (sectionW - BOX_PAD * 2 - BTN_GAP) / 2);
 
         panelW = SIDE_PAD * 3 + sectionW * 2;
-        panelH = TITLE_H + ROW_H + 6 + HEADER_H + RECORDS_PER_PAGE * RECORD_ROW_STEP + 6 + BTN_H + SIDE_PAD;
+        // 「放置记录」是这一页的第一项：列表在最上，区域模式那三个按钮排在它下面。
+        panelH = TITLE_H + HEADER_H + BOX_PAD + RECORDS_PER_PAGE * RECORD_ROW_STEP
+                + 2 + BTN_H + 6 + ROW_H + SIDE_PAD;
         panelX = (width - panelW) / 2;
         panelY = (height - panelH) / 2;
 
         int leftX = panelX + SIDE_PAD;
         int rightX = leftX + sectionW + SECTION_GAP;
 
-        int top = panelY + TITLE_H;
-        areaModeButton = addButton(leftX, top, sectionW, this::cycleAreaMode);
-        pauseSizeButton = addButton(rightX, top, btnW, this::cyclePauseSize);
-        areaAccelSizeButton = addButton(rightX + btnW + BTN_GAP, top, btnW, this::cycleAreaAccelSize);
-
-        int listTitleY = top + ROW_H + 6;
-        int contentTop = addSection(panelX + SIDE_PAD, listTitleY, panelW - SIDE_PAD * 2,
+        // ===== 第一项：放置记录列表 =====
+        int contentTop = addSection(panelX + SIDE_PAD, panelY + TITLE_H, panelW - SIDE_PAD * 2,
                 "screen.kunjinkao.page_records", RECORDS_PER_PAGE);
         recordTextX = panelX + SIDE_PAD + BOX_PAD;
         recordTextTop = contentTop;
         buildRecordRows();
 
-        int navY = contentTop + RECORDS_PER_PAGE * RECORD_ROW_STEP + 6;
+        int navY = contentTop + RECORDS_PER_PAGE * RECORD_ROW_STEP + 2;
         recordsPrevButton = addButton(panelX + SIDE_PAD, navY, btnW, () -> {
             if (recordPage > 0) {
                 recordPage--;
@@ -305,8 +329,14 @@ public final class SwordOptionsScreen extends Screen {
             recordPage++;
             rebuildWidgets();
         });
-        pageButton = addButton(panelX + panelW - 72, panelY + 1, 66, this::switchPage);
-        pageButton.setMessage(Component.translatable("screen.kunjinkao.page_settings"));
+
+        // ===== 第二项：区域模式的三个按钮 =====
+        int settingsY = navY + BTN_H + 6;
+        areaModeButton = addButton(leftX, settingsY, sectionW, this::cycleAreaMode);
+        pauseSizeButton = addButton(rightX, settingsY, btnW, this::cyclePauseSize);
+        areaAccelSizeButton = addButton(rightX + btnW + BTN_GAP, settingsY, btnW, this::cycleAreaAccelSize);
+
+        addPageNav();
         refreshLabels();
     }
 
