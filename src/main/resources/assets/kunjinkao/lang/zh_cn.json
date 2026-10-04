@@ -168,9 +168,9 @@
   "message.kunjinkao.area_mode_off": "区域模式：关（shift+右键 回到加速机器）",
   "message.kunjinkao.area_mode_pause": "区域模式：暂停场（shift+右键 立/撤）",
   "message.kunjinkao.area_mode_accel": "区域模式：范围加速（shift+右键 立/撤）",
-  "message.kunjinkao.pause_field_started": "暂停场已立起：%sx%sx%s（生物与机器停止，玩家被钉住；管理员与场主不受影响）",
+  "message.kunjinkao.pause_field_started": "暂停场已立起：%s（生物与机器停止，玩家被钉住；管理员与场主不受影响）",
   "message.kunjinkao.pause_field_stopped": "暂停场已撤除",
-  "message.kunjinkao.area_accel_started": "范围加速已开启：%sx%sx%s",
+  "message.kunjinkao.area_accel_started": "范围加速已开启：%s",
   "message.kunjinkao.area_accel_stopped": "范围加速已关闭",
   "screen.kunjinkao.page_settings": "设置",
   "screen.kunjinkao.page_records": "放置记录",
@@ -191,5 +191,6 @@
   "screen.kunjinkao.section_area": "区域",
   "screen.kunjinkao.open_records": "放置记录",
   "screen.kunjinkao.records_back": "返回",
-"screen.kunjinkao.records_prev": "▲ 上一页"
+"screen.kunjinkao.records_prev": "▲ 上一页",
+"screen.kunjinkao.area_accel_multiplier": "范围加速倍率"
 }

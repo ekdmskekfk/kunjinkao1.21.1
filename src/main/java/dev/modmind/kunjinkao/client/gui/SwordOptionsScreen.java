@@ -407,8 +407,11 @@ public final class SwordOptionsScreen extends Screen {
             int y = recordTextTop + (i - from) * RECORD_ROW_STEP;
             recordLines.add(recordLabel(entry));
             PlacementSyncPayload.Entry captured = entry;
-            addButton(panelX + panelW - SIDE_PAD - BOX_PAD - revokeW, y, revokeW,
+            // 这个按钮是在循环里现建的，不在 refreshLabels 的覆盖范围内 ——
+            // 必须当场把文字设上，否则就是个空白按钮（addButton 默认给的是 empty）。
+            Button revoke = addButton(panelX + panelW - SIDE_PAD - BOX_PAD - revokeW, y, revokeW,
                     () -> revokeRecord(captured));
+            revoke.setMessage(Component.translatable("screen.kunjinkao.record_revoke"));
         }
         if (all.isEmpty()) {
             recordLines.add(Component.translatable("screen.kunjinkao.records_empty"));

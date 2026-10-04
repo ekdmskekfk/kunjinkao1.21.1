@@ -168,9 +168,9 @@
   "message.kunjinkao.area_mode_off": "Area mode: OFF (shift+right-click goes back to machine acceleration)",
   "message.kunjinkao.area_mode_pause": "Area mode: PAUSE FIELD (shift+right-click to place or remove)",
   "message.kunjinkao.area_mode_accel": "Area mode: AREA ACCELERATION (shift+right-click to place or remove)",
-  "message.kunjinkao.pause_field_started": "Pause field raised: %sx%sx%s (mobs and machines stop, players are pinned; admins and the owner are exempt)",
+  "message.kunjinkao.pause_field_started": "Pause field raised: %s (mobs and machines stop, players are pinned; admins and the owner are exempt)",
   "message.kunjinkao.pause_field_stopped": "Pause field removed",
-  "message.kunjinkao.area_accel_started": "Area acceleration ON: %sx%sx%s",
+  "message.kunjinkao.area_accel_started": "Area acceleration ON: %s",
   "message.kunjinkao.area_accel_stopped": "Area acceleration OFF",
   "screen.kunjinkao.page_settings": "Settings",
   "screen.kunjinkao.page_records": "Placements",
@@ -190,5 +190,6 @@
   "screen.kunjinkao.page_next": "Next",
   "screen.kunjinkao.section_area": "Area",
   "screen.kunjinkao.open_records": "Placements",
-  "screen.kunjinkao.records_back": "Back"
+  "screen.kunjinkao.records_back": "Back",
+"screen.kunjinkao.area_accel_multiplier": "Accel Multiplier"
 }
