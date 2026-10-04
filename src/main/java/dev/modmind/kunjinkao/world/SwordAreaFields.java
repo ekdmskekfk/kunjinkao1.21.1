@@ -248,7 +248,17 @@ public final class SwordAreaFields {
      * 它自带每刻的额外 tick 预算，不会因为一个 9x9x9 的场把服务器烧掉。
      */
     public static void tickAreaAcceleration(MinecraftServer server) {
+        // 【诊断】计数放在最前面：放在 cache 判空之后的话，缓存一空就提前返回，
+        // 计数器永远走不到，日志一行都不会出 —— 那样"处理器没跑"和"缓存为空"
+        // 两种完全不同的原因会长得一模一样。
+        boolean verbose = ++diagnosticTicker >= 100;
+        if (verbose) {
+            diagnosticTicker = 0;
+        }
         if (cache.isEmpty()) {
+            if (verbose) {
+                LOGGER.info("[AREA-ACCEL] 缓存为空：一条放置记录都没有");
+            }
             return;
         }
         List<SwordPlacementRegistry.Entry> accel = new ArrayList<>();
@@ -257,15 +267,9 @@ public final class SwordAreaFields {
                 accel.add(entry);
             }
         }
-        // 【诊断】每 100 tick 打一次：范围加速到底有没有记录、有没有被推。
-        // "没有加速"可能是三种完全不同的原因：记录没建、记录建了但类型不对、
-        // 或者记录对了但这一 tick 没跑到这儿 —— 不打日志只能靠猜。定位完即可删。
-        boolean verbose = ++diagnosticTicker >= 100;
-        if (verbose) {
-            diagnosticTicker = 0;
-            if (accel.isEmpty()) {
-                LOGGER.info("[AREA-ACCEL] 缓存 {} 条记录，其中范围加速 0 条", cache.size());
-            }
+        // 【诊断】每 100 tick 打一次。
+        if (verbose && accel.isEmpty()) {
+            LOGGER.info("[AREA-ACCEL] 缓存 {} 条记录，其中范围加速 0 条", cache.size());
         }
         for (SwordPlacementRegistry.Entry entry : accel) {
             if (!(server.getLevel(entry.dimension()) instanceof ServerLevel serverLevel)) {
