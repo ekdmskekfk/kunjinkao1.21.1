@@ -57,6 +57,8 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
     public static final int BEHEADING = 19;
     /** 刷怪蛋掉落：击杀生物额外掉刷怪蛋。 */
     public static final int SPAWN_EGG_DROP = 20;
+    /** 暂停场开关：开启后 shift+右键 立/撤暂停场。 */
+    public static final int PAUSE_FIELD = 22;
 
     public static final Type<SwordSettingPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "sword_setting"));
@@ -95,6 +97,7 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
                 case TIME_ACCEL_MODE -> KunJinKaoColdDataEffectsHandler.handleSetTimeAccelMode(context.player(), hand, value);
                 case TIME_ACCEL_MULTIPLIER -> KunJinKaoColdDataEffectsHandler.handleSetTimeAccelMultiplier(context.player(), hand, value);
                 case WRENCH -> KunJinKaoColdDataEffectsHandler.handleToggleWrench(context.player(), hand, value != 0);
+            case PAUSE_FIELD -> KunJinKaoColdDataEffectsHandler.handleTogglePauseField(context.player(), hand, value != 0);
                 case SILK_TOUCH -> KunJinKaoColdDataEffectsHandler.handleToggleSilkTouch(context.player(), hand, value != 0);
                 case BEHEADING -> KunJinKaoColdDataEffectsHandler.handleToggleBeheading(context.player(), hand, value != 0);
                 case SPAWN_EGG_DROP -> KunJinKaoColdDataEffectsHandler.handleToggleSpawnEggDrop(context.player(), hand, value != 0);

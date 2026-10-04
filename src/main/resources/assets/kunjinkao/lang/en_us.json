@@ -163,5 +163,10 @@
   "gui.kunjinkao.accelerator.filter_whitelist": "Whitelist",
   "gui.kunjinkao.accelerator.filter_ignore_nbt": "Ignore NBT",
   "gui.kunjinkao.accelerator.filter_blacklist": "Blacklist",
-  "gui.kunjinkao.accelerator.filter": "Filter (drag blocks in from JEI)"
+  "gui.kunjinkao.accelerator.filter": "Filter (drag blocks in from JEI)",
+  "key.kunjinkao.toggle_pause_field": "Toggle Pause Field",
+  "message.kunjinkao.pause_field_enabled": "Pause field mode ON: shift+right-click to place or remove a pause field",
+  "message.kunjinkao.pause_field_disabled": "Pause field mode OFF: shift+right-click goes back to machine acceleration",
+  "message.kunjinkao.pause_field_started": "Pause field raised: radius %s (mobs and machines stop, players are pinned; admins and the owner are exempt)",
+  "message.kunjinkao.pause_field_stopped": "Pause field removed"
 }

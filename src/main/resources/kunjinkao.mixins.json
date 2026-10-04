@@ -4,7 +4,8 @@
   "package": "dev.modmind.kunjinkao.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "ECOLargeIntegratedWorkingStationOutputRouterMixin"
+    "ECOLargeIntegratedWorkingStationOutputRouterMixin",
+    "LevelPauseMixin"
   ],
   "injectors": {
     "defaultRequire": 1

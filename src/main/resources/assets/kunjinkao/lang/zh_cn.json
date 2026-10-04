@@ -163,5 +163,10 @@
   "gui.kunjinkao.accelerator.filter_whitelist": "白名单",
   "gui.kunjinkao.accelerator.filter_ignore_nbt": "忽略 NBT",
   "gui.kunjinkao.accelerator.filter_blacklist": "黑名单",
-  "gui.kunjinkao.accelerator.filter": "过滤器（可从 JEI 拖入方块）"
+  "gui.kunjinkao.accelerator.filter": "过滤器（可从 JEI 拖入方块）",
+  "key.kunjinkao.toggle_pause_field": "快速开关暂停场",
+  "message.kunjinkao.pause_field_enabled": "暂停场模式已开启：shift+右键 立/撤暂停场",
+  "message.kunjinkao.pause_field_disabled": "暂停场模式已关闭：shift+右键 回到加速机器",
+  "message.kunjinkao.pause_field_started": "暂停场已立起：半径 %s 格（生物与机器停止，玩家被钉住；管理员与场主不受影响）",
+  "message.kunjinkao.pause_field_stopped": "暂停场已撤除"
 }

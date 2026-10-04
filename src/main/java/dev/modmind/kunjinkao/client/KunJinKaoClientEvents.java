@@ -51,6 +51,7 @@ public class KunJinKaoClientEvents {
         handleOpenSwordOptions();
         handleOpenAdminPassword();
         handleUndoPlacement();
+        handleTogglePauseField();
         handleToggleWrench();
         handleCollectBlock();
     }
@@ -259,6 +260,29 @@ public class KunJinKaoClientEvents {
         }
         NetworkHandler.sendToServer(new dev.modmind.kunjinkao.network.CollectBlockPayload());
     }
+    private static void handleTogglePauseField() {
+        if (!KunJinKaoKeyBindings.TOGGLE_PAUSE_FIELD.consumeClick()) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        if (player == null || minecraft.screen != null) {
+            return;
+        }
+        InteractionHand hand = findSwordHand(player);
+        if (hand == null) {
+            return;
+        }
+        ItemStack stack = player.getItemInHand(hand);
+        boolean enabled = !KunJinKaoSwordItem.isPauseFieldEnabled(stack);
+        // 本地先改，按键反馈才跟得上；服务端那份由下面的包同步。
+        KunJinKaoSwordItem.setPauseFieldEnabled(stack, enabled);
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.PAUSE_FIELD,
+                enabled ? 1 : 0));
+        player.displayClientMessage(Component.translatable(enabled
+                ? "message.kunjinkao.pause_field_enabled" : "message.kunjinkao.pause_field_disabled"), true);
+    }
+
     private static void handleToggleWrench() {
         if (!KunJinKaoKeyBindings.TOGGLE_WRENCH.consumeClick()) {
             return;

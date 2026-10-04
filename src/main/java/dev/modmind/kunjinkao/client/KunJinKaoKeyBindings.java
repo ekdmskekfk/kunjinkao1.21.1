@@ -74,6 +74,19 @@ public class KunJinKaoKeyBindings {
             CATEGORY
     );
 
+    /**
+     * V 键：快速开关「暂停场模式」。
+     * <p>
+     * 打开后 shift+右键方块 用来立/撤一个暂停场（生物与机器停止，玩家被钉住，
+     * 管理员与场主不受影响），而不是加速机器。
+     */
+    public static final KeyMapping TOGGLE_PAUSE_FIELD = new KeyMapping(
+            "key.kunjinkao.toggle_pause_field",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_V,
+            CATEGORY
+    );
+
     /** 撤销最近一步放置/破坏（需在 . 菜单的「放置」分区里先开启撤销）。 */
     public static final KeyMapping UNDO_PLACEMENT = new KeyMapping(
             "key.kunjinkao.undo_placement",

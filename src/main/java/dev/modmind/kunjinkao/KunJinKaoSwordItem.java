@@ -22,6 +22,7 @@ import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.block.state.BlockState;
 import dev.modmind.kunjinkao.world.PlacementCoreHandler;
 import dev.modmind.kunjinkao.world.PlacementUndoHistory;
+import dev.modmind.kunjinkao.world.SwordPauseField;
 import dev.modmind.kunjinkao.world.SwordTimeAcceleration;
 import dev.modmind.kunjinkao.world.SwordToolHandler;
 import dev.modmind.kunjinkao.block.entity.AcceleratorBlockEntity;
@@ -111,6 +112,9 @@ public class KunJinKaoSwordItem extends SwordItem {
     private static final String SPAWN_EGG_DROP_KEY = "SpawnEggDropEnabled";
     /** 扳手：给剑带上扳手标记。同时剑在 c:tools/wrench 标签里，模组会直接把它当扳手。 */
     private static final String WRENCH_KEY = "Wrench";
+
+    /** 暂停场：打开后 shift+右键 用来立/撤暂停场，而不是加速机器。 */
+    private static final String PAUSE_FIELD_KEY = "PauseField";
     private static final String TIME_ACCEL_MODE_KEY = "TimeAccelMode";
     /** 时间加速倍率，取值必须在 AcceleratorBlockEntity.MULTIPLIERS 里。 */
     private static final String TIME_ACCEL_MULTIPLIER_KEY = "TimeAccelMultiplier";
@@ -444,6 +448,16 @@ public class KunJinKaoSwordItem extends SwordItem {
         return dataTag(stack).getBoolean(WRENCH_KEY);
     }
 
+    /** 暂停场开关：打开后 shift+右键 立/撤暂停场。 */
+    public static boolean isPauseFieldEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(PAUSE_FIELD_KEY);
+    }
+
+    public static void setPauseFieldEnabled(ItemStack stack, boolean enabled) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(PAUSE_FIELD_KEY, enabled);
+    }
+
     public static void setWrenchEnabled(ItemStack stack, boolean enabled) {
         CompoundTag tag = dataTag(stack);
         tag.putBoolean(WRENCH_KEY, enabled);
@@ -644,6 +658,11 @@ public class KunJinKaoSwordItem extends SwordItem {
         }
         // 关着：这次右键不该再被当成扳手。目标是可加速方块就开/关加速场，
         // 否则单纯什么都不做 —— 两种情况都要吃掉，不能返回 PASS 把右键放回去。
+            // 暂停场开关开着：这次 shift+右键 用来立/撤暂停场，不再碰加速。
+            if (isPauseFieldEnabled(stack)) {
+                SwordPauseField.tryToggleBlock(player, context.getLevel(), context.getClickedPos());
+                return InteractionResult.sidedSuccess(context.getLevel().isClientSide());
+            }
         if (context.getLevel() instanceof ServerLevel serverLevel) {
             SwordTimeAcceleration.tryToggleBlock(player, serverLevel, context.getClickedPos(), stack);
         }
@@ -707,6 +726,11 @@ public class KunJinKaoSwordItem extends SwordItem {
             if (isWrenchEnabled(stack)) {
                 return super.useOn(context);
             }
+                // 暂停场开关开着：shift+右键 立/撤暂停场，这次不再走加速那条路。
+                if (isPauseFieldEnabled(stack)) {
+                    SwordPauseField.tryToggleBlock(player, level, clickedPos);
+                    return InteractionResult.sidedSuccess(level.isClientSide());
+                }
             int accelMode = SwordTimeAcceleration.clampMode(getTimeAccelMode(stack));
             if (accelMode == SwordTimeAcceleration.MODE_OFF) {
                 return super.useOn(context);
