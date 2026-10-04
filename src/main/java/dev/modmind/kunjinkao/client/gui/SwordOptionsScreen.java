@@ -92,6 +92,8 @@ public final class SwordOptionsScreen extends Screen {
     private Button pauseSizeButton;
     private Button areaAccelSizeButton;
     private Button recordsPrevButton;
+    private Button recordsBackButton;
+    private Button openRecordsButton;
     private Button recordsNextButton;
     /** 放置记录页每页显示几条。 */
     private static final int RECORDS_PER_PAGE = 7;
@@ -154,6 +156,10 @@ public final class SwordOptionsScreen extends Screen {
         sectionTitlePos.clear();
         recordLines.clear();
         if (page == 1) {
+            initAreaPage();
+            return;
+        }
+        if (page == 2) {
             initRecordsPage();
             return;
         }
@@ -296,47 +302,86 @@ public final class SwordOptionsScreen extends Screen {
      * 高度刻意与设置页一致（都是 231），切页时面板不跳。
      * 第一行三个按钮管区域模式与两档尺寸，下面是一页记录，每条右边一个「收回」。
      */
+    /**
+     * 第二页「区域」。刻意做成和第一页一样的形状：分区标题 + 带边框的方框 + 框内双列按钮，
+     * 只是内容少。
+     * <p>
+     * 「放置记录」在这里只是一个按钮 —— 点它才进第三层那个记录界面，
+     * 记录界面不参与上一页/下一页的翻页。
+     */
+    private void initAreaPage() {
+        int avail = Math.max(300, width - 12);
+        int sectionW = Math.min(SECTION_MAX_W, (avail - SIDE_PAD * 3 - SECTION_GAP) / 2);
+        panelW = SIDE_PAD * 3 + sectionW * 2;
+        int boxW = panelW - SIDE_PAD * 2;
+        int btnW = Math.max(56, (boxW - BOX_PAD * 2 - BTN_GAP) / 2);
+        panelH = TITLE_H + HEADER_H + boxHeight(2) + SIDE_PAD;
+        panelX = (width - panelW) / 2;
+        panelY = (height - panelH) / 2;
+
+        int contentTop = addSection(panelX + SIDE_PAD, panelY + TITLE_H, boxW,
+                "screen.kunjinkao.section_area", 2);
+        int leftX = panelX + SIDE_PAD + BOX_PAD;
+        int rightX = leftX + btnW + BTN_GAP;
+
+        areaModeButton = addButton(leftX, contentTop, btnW, this::cycleAreaMode);
+        openRecordsButton = addButton(rightX, contentTop, btnW, this::openRecords);
+        pauseSizeButton = addButton(leftX, contentTop + ROW_H, btnW, this::cyclePauseSize);
+        areaAccelSizeButton = addButton(rightX, contentTop + ROW_H, btnW, this::cycleAreaAccelSize);
+
+        addPageNav();
+        refreshLabels();
+    }
+
+    /** 进第三层：放置记录界面。 */
+    private void openRecords() {
+        page = 2;
+        recordPage = 0;
+        rebuildWidgets();
+    }
+
+    /** 从放置记录界面退回第二页。 */
+    private void backToArea() {
+        page = 1;
+        rebuildWidgets();
+    }
+
     private void initRecordsPage() {
         int avail = Math.max(300, width - 12);
         int sectionW = Math.min(SECTION_MAX_W, (avail - SIDE_PAD * 3 - SECTION_GAP) / 2);
         int btnW = Math.max(56, (sectionW - BOX_PAD * 2 - BTN_GAP) / 2);
 
         panelW = SIDE_PAD * 3 + sectionW * 2;
-        // 「放置记录」是这一页的第一项：列表在最上，区域模式那三个按钮排在它下面。
-        panelH = TITLE_H + HEADER_H + BOX_PAD + RECORDS_PER_PAGE * RECORD_ROW_STEP
-                + 2 + BTN_H + 6 + ROW_H + SIDE_PAD;
+        int boxW = panelW - SIDE_PAD * 2;
+        // 只有一块列表分区；▲▼ 排在分区框【外面】的下面。
+        panelH = TITLE_H + HEADER_H + boxHeight(RECORDS_PER_PAGE) + 4 + BTN_H + SIDE_PAD;
         panelX = (width - panelW) / 2;
         panelY = (height - panelH) / 2;
 
-        int leftX = panelX + SIDE_PAD;
-        int rightX = leftX + sectionW + SECTION_GAP;
-
-        // ===== 第一项：放置记录列表 =====
-        int contentTop = addSection(panelX + SIDE_PAD, panelY + TITLE_H, panelW - SIDE_PAD * 2,
+        int contentTop = addSection(panelX + SIDE_PAD, panelY + TITLE_H, boxW,
                 "screen.kunjinkao.page_records", RECORDS_PER_PAGE);
         recordTextX = panelX + SIDE_PAD + BOX_PAD;
         recordTextTop = contentTop;
         buildRecordRows();
 
-        int navY = contentTop + RECORDS_PER_PAGE * RECORD_ROW_STEP + 2;
-        recordsPrevButton = addButton(panelX + SIDE_PAD, navY, btnW, () -> {
+        // ▲▼ 放在分区框下沿之外：画在框里会压住最后一行记录，也会看起来"偏位"。
+        // contentTop = 框顶 + BOX_PAD，所以框底 = contentTop - BOX_PAD + boxHeight(...)。
+        int boxBottom = contentTop - BOX_PAD + boxHeight(RECORDS_PER_PAGE);
+        int navY = boxBottom + 4;
+        recordsPrevButton = addButton(panelX + SIDE_PAD + BOX_PAD, navY, btnW, () -> {
             if (recordPage > 0) {
                 recordPage--;
                 rebuildWidgets();
             }
         });
-        recordsNextButton = addButton(panelX + panelW - SIDE_PAD - btnW, navY, btnW, () -> {
+        recordsNextButton = addButton(panelX + panelW - SIDE_PAD - BOX_PAD - btnW, navY, btnW, () -> {
             recordPage++;
             rebuildWidgets();
         });
 
-        // ===== 第二项：区域模式的三个按钮 =====
-        int settingsY = navY + BTN_H + 6;
-        areaModeButton = addButton(leftX, settingsY, sectionW, this::cycleAreaMode);
-        pauseSizeButton = addButton(rightX, settingsY, btnW, this::cyclePauseSize);
-        areaAccelSizeButton = addButton(rightX + btnW + BTN_GAP, settingsY, btnW, this::cycleAreaAccelSize);
-
-        addPageNav();
+        // 标题栏右侧改成「返回」：记录界面不参与上一页/下一页翻页。
+        recordsBackButton = addButton(panelX + panelW - SIDE_PAD - 64, panelY + 1, 64, this::backToArea);
+        recordsBackButton.setMessage(Component.translatable("screen.kunjinkao.records_back"));
         refreshLabels();
     }
 
@@ -419,6 +464,34 @@ public final class SwordOptionsScreen extends Screen {
      * {@code blueScreenToggle == null} 早退，那个守卫在记录页永远成立 ——
      * 不单独处理的话记录页三个按钮会一直是空白。
      */
+    /** 第二页「区域」的按钮文字。 */
+    private void refreshAreaPageLabels() {
+        Player player = Minecraft.getInstance().player;
+        ItemStack stack = player == null ? ItemStack.EMPTY : player.getItemInHand(hand);
+        if (stack.getItem() instanceof KunJinKaoSwordItem) {
+            if (areaModeButton != null) {
+                areaModeButton.setMessage(label("screen.kunjinkao.area_mode",
+                        Component.translatable(switch (KunJinKaoSwordItem.getAreaMode(stack)) {
+                            case 1 -> "screen.kunjinkao.area_mode_pause";
+                            case 2 -> "screen.kunjinkao.area_mode_accel";
+                            default -> "screen.kunjinkao.switch_off";
+                        })));
+            }
+            if (pauseSizeButton != null) {
+                pauseSizeButton.setMessage(label("screen.kunjinkao.pause_size",
+                        Component.literal(sideText(SwordAreaFields.sideLength(KunJinKaoSwordItem.getPauseSize(stack))))));
+            }
+            if (areaAccelSizeButton != null) {
+                areaAccelSizeButton.setMessage(label("screen.kunjinkao.area_accel_size",
+                        Component.literal(sideText(SwordAreaFields.sideLength(
+                                KunJinKaoSwordItem.getAreaAccelSize(stack))))));
+            }
+        }
+        if (openRecordsButton != null) {
+            openRecordsButton.setMessage(Component.translatable("screen.kunjinkao.open_records"));
+        }
+    }
+
     private void refreshRecordsPageLabels() {
         Player player = Minecraft.getInstance().player;
         ItemStack stack = player == null ? ItemStack.EMPTY : player.getItemInHand(hand);
@@ -582,6 +655,10 @@ public final class SwordOptionsScreen extends Screen {
     /** 把所有按钮文字刷新成「名称：值」。 */
     private void refreshLabels() {
         if (page == 1) {
+            refreshAreaPageLabels();
+            return;
+        }
+        if (page == 2) {
             refreshRecordsPageLabels();
             return;
         }

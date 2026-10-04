@@ -1,7 +1,10 @@
 package dev.modmind.kunjinkao.event;
 
+import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import dev.modmind.kunjinkao.network.PlacementSyncPayload;
 import dev.modmind.kunjinkao.world.SwordAreaFields;
+import dev.modmind.kunjinkao.world.SwordPlacementRegistry;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -11,7 +14,9 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.bus.api.EventPriority;
 
 import java.util.UUID;
 
@@ -41,6 +46,54 @@ public final class SwordAreaFieldHandler {
         if (server.getTickCount() % 20 == 0) {
             PlacementSyncPayload.broadcast(server);
         }
+    }
+
+    /**
+     * 抢先处理 shift+右键：区域模式开着时，在这里立/撤区域场。
+     * <p>
+     * <b>必须挂在这个事件上，不能只挂 {@code onItemUseFirst}</b> ——
+     * 后者在客户端就返回 SUCCESS，服务端根本收不到那次右键，表现就是"点了没反应"。
+     * 加速那边同样靠这个事件兜底，所以它一直是好的，而区域场一开始漏了这一条。
+     * <p>
+     * 优先级取 HIGHEST，与 {@code SwordTimeAcceleration.onRightClickBlock} 同档：
+     * 两者互斥 —— 区域模式关着时这里直接放行，加速那边照旧处理；
+     * 开着时这里取消事件，加速那边看到 isCanceled 就返回。
+     */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (event.isCanceled() || !(event.getEntity() instanceof Player player)) {
+            return;
+        }
+        ItemStack stack = player.getItemInHand(event.getHand());
+        if (!(stack.getItem() instanceof KunJinKaoSwordItem)) {
+            return;
+        }
+        if (KunJinKaoSwordItem.isWrenchEnabled(stack)) {
+            return;
+        }
+        // 避雷针归 SwordTimeAcceleration 那条处理器，这里不插手，
+        // 否则两边都想接管，谁先谁后要看注册顺序。
+        if (KunJinKaoSwordItem.isLightningRodEnabled(stack)
+                && event.getLevel().getBlockState(event.getPos()).getBlock()
+                        instanceof net.minecraft.world.level.block.LightningRodBlock) {
+            return;
+        }
+        if (!player.isShiftKeyDown()) {
+            return;
+        }
+        int mode = KunJinKaoSwordItem.getAreaMode(stack);
+        if (mode == 0) {
+            return;
+        }
+        event.setCanceled(true);
+        int radius = mode == 1
+                ? KunJinKaoSwordItem.getPauseSize(stack)
+                : KunJinKaoSwordItem.getAreaAccelSize(stack);
+        int kind = mode == 1
+                ? SwordPlacementRegistry.KIND_PAUSE
+                : SwordPlacementRegistry.KIND_AREA_ACCEL;
+        SwordAreaFields.tryToggle(player, event.getLevel(), event.getPos(), kind, radius,
+                KunJinKaoSwordItem.getTimeAccelMultiplier(stack));
     }
 
     /** 服务器停了就清干净，免得状态跨局残留。 */
