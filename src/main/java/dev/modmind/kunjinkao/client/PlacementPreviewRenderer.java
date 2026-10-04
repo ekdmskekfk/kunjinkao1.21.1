@@ -39,8 +39,8 @@ import java.util.List;
  *   <li>放置：被点击面的平面上、由同种材料铺开的一片（与 PlacementCoreHandler 同一条链）；</li>
  *   <li>破坏：被点击那一格所在面上、连成一片的同种方块。</li>
  * </ul>
- * 预览最多画多少格，直接取自执行侧的上限（{@link #MAX_PREVIEW_PLACE} /
- * {@link #MAX_PREVIEW_DESTROY}）—— 预览画的范围必须与实际会发生的范围一致，
+    * 预览的上限取自执行侧，但仍会被"实际拿得出的材料数"再卡一次：
+    * 背包里只有 32 个方块时就只画 32 格 —— 预览既不能少画，也不能多画。
  * 否则"预览"就是在骗人。之前这里是写死的 32，而实际能铺 1024。
  */
 @OnlyIn(Dist.CLIENT)
@@ -48,9 +48,15 @@ import java.util.List;
 public final class PlacementPreviewRenderer {
 
     /**
-     * 预览上限【必须】与执行上限一致 —— 否则"预览"就是在骗人：
-     * 之前这里是写死的 32，而实际能铺 1024，于是玩家以为只能放 32 格。
-     * 现在直接引用执行侧的常量，两边不会各自漂移。
+    /**
+     * 预览的<b>硬上限</b>，取自执行侧（{@link PlacementCoreHandler#MAX_PLACE_SURVIVAL} /
+     * {@link PlacementCoreHandler#MAX_DESTROY}）。
+     * <p>
+     * 但它只是兜底 —— 放置预览真正画几格，还要再被"手里确实拿得出多少材料"卡一次：
+     * 背包里只有 32 个泥土，就只画 32 格，而不是画满上限。否则同样是在骗人，
+     * 只是换了个方向骗（画得比放得出来的多）。
+     * <p>
+     * 破坏预览不受材料限制，因为破坏不消耗东西，只看上限。
      */
     private static final int MAX_PREVIEW_PLACE = PlacementCoreHandler.MAX_PLACE_SURVIVAL;
     private static final int MAX_PREVIEW_DESTROY = PlacementCoreHandler.MAX_DESTROY;
@@ -157,6 +163,11 @@ public final class PlacementPreviewRenderer {
         if (!(material.getItem() instanceof BlockItem)) {
             return targets;
         }
+
+        // 预览只画"确实拿得出材料"的格数：背包里只有 32 个泥土，就只画 32 格。
+        // 上限仍然保留，是为了兜住极端情况（整背包都是同一种方块时不必画满）。
+        long available = PlacementCoreHandler.availableMaterialCount(player, material.getItem());
+        int limit = (int) Math.max(1L, Math.min(available, MAX_PREVIEW_PLACE));
         // 与服务端同一条洪泛：从点击面的外侧起，在该面平面内一格一格扩散，
         // 只在"身后那一格与点击方块同类"的位置继续。
         List<Direction> planeDirs = PlacementCoreHandler.planeDirections(face);
@@ -165,7 +176,7 @@ public final class PlacementPreviewRenderer {
         java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
         seen.add(first);
         queue.add(first);
-        while (!queue.isEmpty() && targets.size() < MAX_PREVIEW_PLACE) {
+        while (!queue.isEmpty() && targets.size() < limit) {
             BlockPos pos = queue.poll();
             BlockPos support = pos.relative(face.getOpposite());
             if (!override && level.getBlockState(support).getBlock() != origin.getBlock()) {

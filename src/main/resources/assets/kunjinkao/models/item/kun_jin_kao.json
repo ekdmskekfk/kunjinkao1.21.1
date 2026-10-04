@@ -1,8 +1,5 @@
 {
   "parent": "kunjinkao:item/kun_jin_kao_3d",
-  "textures": {
-    "layer0": "kunjinkao:item/kun_jin_kao_atlas"
-  },
   "overrides": [
     {
       "predicate": {

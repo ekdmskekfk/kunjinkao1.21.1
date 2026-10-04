@@ -116,6 +116,21 @@ public final class PlacementCoreHandler {
         return EmcMaterials.canSupply(player, item);
     }
 
+    /**
+     * 这一种方块现在究竟还能拿出多少个 —— 把四条取材路径全算上：
+     * 背包与副手、容器（潜影盒·收纳袋）、AE2 终端、ProjectE 的 EMC。
+     * <p>
+     * 预览要靠它决定"画几格"：背包里只有 32 个泥土时，就不该画 1024 个。
+     * 执行侧本身会在材料用尽时停下，所以这里主要是给预览用的；
+     * 放在本类里是为了两边共用同一个口径，不会各算一套。
+     */
+    public static long availableMaterialCount(Player player, net.minecraft.world.item.Item item) {
+        long total = ContainerMaterials.count(player, item);
+        total += countFromTerminals(player, item);
+        total += EmcMaterials.availableEmcCount(player, item);
+        return total;
+    }
+
     /** 从玩家身上的 AE2 终端类物品里统计某种方块共有多少（非破坏性，SIMULATE）。 */
     private static long countFromTerminals(Player player, net.minecraft.world.item.Item item) {
         net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
