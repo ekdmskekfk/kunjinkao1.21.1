@@ -51,7 +51,7 @@ public class KunJinKaoClientEvents {
         handleOpenSwordOptions();
         handleOpenAdminPassword();
         handleUndoPlacement();
-        handleTogglePauseField();
+        handleCycleAreaMode();
         handleToggleWrench();
         handleCollectBlock();
     }
@@ -260,8 +260,8 @@ public class KunJinKaoClientEvents {
         }
         NetworkHandler.sendToServer(new dev.modmind.kunjinkao.network.CollectBlockPayload());
     }
-    private static void handleTogglePauseField() {
-        if (!KunJinKaoKeyBindings.TOGGLE_PAUSE_FIELD.consumeClick()) {
+    private static void handleCycleAreaMode() {
+        if (!KunJinKaoKeyBindings.CYCLE_AREA_MODE.consumeClick()) {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
@@ -274,13 +274,15 @@ public class KunJinKaoClientEvents {
             return;
         }
         ItemStack stack = player.getItemInHand(hand);
-        boolean enabled = !KunJinKaoSwordItem.isPauseFieldEnabled(stack);
+        int mode = KunJinKaoSwordItem.nextAreaMode(KunJinKaoSwordItem.getAreaMode(stack));
         // 本地先改，按键反馈才跟得上；服务端那份由下面的包同步。
-        KunJinKaoSwordItem.setPauseFieldEnabled(stack, enabled);
-        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.PAUSE_FIELD,
-                enabled ? 1 : 0));
-        player.displayClientMessage(Component.translatable(enabled
-                ? "message.kunjinkao.pause_field_enabled" : "message.kunjinkao.pause_field_disabled"), true);
+        KunJinKaoSwordItem.setAreaMode(stack, mode);
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.AREA_MODE, mode));
+        player.displayClientMessage(Component.translatable(switch (mode) {
+            case 1 -> "message.kunjinkao.area_mode_pause";
+            case 2 -> "message.kunjinkao.area_mode_accel";
+            default -> "message.kunjinkao.area_mode_off";
+        }), true);
     }
 
     private static void handleToggleWrench() {

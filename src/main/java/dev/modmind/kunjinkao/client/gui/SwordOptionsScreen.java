@@ -4,7 +4,11 @@ import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import dev.modmind.kunjinkao.client.KunJinKaoKeyBindings;
 import dev.modmind.kunjinkao.network.NetworkHandler;
 // 9 个剑设置包已合并为 SwordSettingPayload，导入与发包点一起收敛。
+import dev.modmind.kunjinkao.network.PlacementSyncPayload;
+import dev.modmind.kunjinkao.network.RemovePlacementPayload;
 import dev.modmind.kunjinkao.network.SwordSettingPayload;
+import dev.modmind.kunjinkao.world.SwordAreaFields;
+import dev.modmind.kunjinkao.world.SwordPlacementRegistry;
 import dev.modmind.kunjinkao.world.SwordToolHandler;
 import dev.modmind.kunjinkao.block.entity.AcceleratorBlockEntity;
 import dev.modmind.kunjinkao.world.SwordTimeAcceleration;
@@ -78,6 +82,26 @@ public final class SwordOptionsScreen extends Screen {
     private Button spawnEggDropToggle;
     private Button silkTouchToggle;
 
+    // ===== 分页 =====
+    /** 0 = 设置页，1 = 放置记录页。 */
+    private int page;
+    /** 放置记录页当前页。 */
+    private int recordPage;
+    private Button pageButton;
+    private Button areaModeButton;
+    private Button pauseSizeButton;
+    private Button areaAccelSizeButton;
+    private Button recordsPrevButton;
+    private Button recordsNextButton;
+    /** 放置记录页每页显示几条。 */
+    private static final int RECORDS_PER_PAGE = 7;
+    /** 记录页每行行距，比按钮略高，免得文字贴着上一行。 */
+    private static final int RECORD_ROW_STEP = BTN_H + 2;
+    /** 当前这一页要画的记录文字，renderBackground 用。 */
+    private final List<Component> recordLines = new ArrayList<>();
+    private int recordTextX;
+    private int recordTextTop;
+
     // ===== init() 算出的面板与分区几何，renderBackground 复用 =====
     private int panelX;
     private int panelY;
@@ -93,7 +117,7 @@ public final class SwordOptionsScreen extends Screen {
     // 被跳过的数值记在 pending 里，render 每帧检查（窗口一过就补发）并在关屏时强制补发一次，
     // 保证玩家最终选定的值一定到达服务端，不会因为节流丢设置。
     // 开关/循环按钮不走节流：它们是离散操作，连点两下必须发两次。
-    private static final int SETTING_COUNT = 22;
+    private static final int SETTING_COUNT = 25;
     private static final long SEND_INTERVAL_MS = 100L;
     private static final int TIER_COUNT = 20;
     private final long[] lastSendMillis = new long[SETTING_COUNT];
@@ -111,11 +135,28 @@ public final class SwordOptionsScreen extends Screen {
         return Component.translatable(nameKey).append(Component.literal("：")).append(value);
     }
 
+    /**
+     * 收到最新的放置记录表时调（{@code PlacementSyncPayload}）。
+     * <p>
+     * 菜单正开着就重建控件，让列表立刻反映最新状态；没开就什么都不做 ——
+     * 重建会走 init()，没开着的屏幕重建没有意义。
+     */
+    public void onPlacementSync() {
+        if (this.minecraft != null) {
+            this.rebuildWidgets();
+        }
+    }
+
     @Override
     protected void init() {
         sectionBoxes.clear();
         sectionTitles.clear();
         sectionTitlePos.clear();
+        recordLines.clear();
+        if (page == 1) {
+            initRecordsPage();
+            return;
+        }
 
         int avail = Math.max(300, width - 12);
         int sectionW = Math.min(SECTION_MAX_W, (avail - SIDE_PAD * 3 - SECTION_GAP) / 2);
@@ -210,6 +251,191 @@ public final class SwordOptionsScreen extends Screen {
         placementUndoToggle = addButton(rightX + BOX_PAD + btnW + BTN_GAP, contentTop + ROW_H, btnW,
                 this::togglePlacementUndo);
 
+        pageButton = addButton(panelX + panelW - 78, panelY + 5, 70, this::switchPage);
+        pageButton.setMessage(Component.translatable("screen.kunjinkao.page_records"));
+        refreshLabels();
+    }
+
+    /** 设置页 / 放置记录页 互相切换。 */
+    private void switchPage() {
+        page = page == 0 ? 1 : 0;
+        recordPage = 0;
+        rebuildWidgets();
+    }
+
+    /**
+     * 放置记录页。
+     * <p>
+     * 高度刻意与设置页一致（都是 231），切页时面板不跳。
+     * 第一行三个按钮管区域模式与两档尺寸，下面是一页记录，每条右边一个「收回」。
+     */
+    private void initRecordsPage() {
+        int avail = Math.max(300, width - 12);
+        int sectionW = Math.min(SECTION_MAX_W, (avail - SIDE_PAD * 3 - SECTION_GAP) / 2);
+        int btnW = Math.max(56, (sectionW - BOX_PAD * 2 - BTN_GAP) / 2);
+
+        panelW = SIDE_PAD * 3 + sectionW * 2;
+        panelH = TITLE_H + ROW_H + 6 + HEADER_H + RECORDS_PER_PAGE * RECORD_ROW_STEP + 6 + BTN_H + SIDE_PAD;
+        panelX = (width - panelW) / 2;
+        panelY = (height - panelH) / 2;
+
+        int leftX = panelX + SIDE_PAD;
+        int rightX = leftX + sectionW + SECTION_GAP;
+
+        int top = panelY + TITLE_H;
+        areaModeButton = addButton(leftX, top, sectionW, this::cycleAreaMode);
+        pauseSizeButton = addButton(rightX, top, btnW, this::cyclePauseSize);
+        areaAccelSizeButton = addButton(rightX + btnW + BTN_GAP, top, btnW, this::cycleAreaAccelSize);
+
+        int listTitleY = top + ROW_H + 6;
+        int contentTop = addSection(panelX + SIDE_PAD, listTitleY, panelW - SIDE_PAD * 2,
+                "screen.kunjinkao.page_records", RECORDS_PER_PAGE);
+        recordTextX = panelX + SIDE_PAD + BOX_PAD;
+        recordTextTop = contentTop;
+        buildRecordRows();
+
+        int navY = contentTop + RECORDS_PER_PAGE * RECORD_ROW_STEP + 6;
+        recordsPrevButton = addButton(panelX + SIDE_PAD, navY, btnW, () -> {
+            if (recordPage > 0) {
+                recordPage--;
+                rebuildWidgets();
+            }
+        });
+        recordsNextButton = addButton(panelX + panelW - SIDE_PAD - btnW, navY, btnW, () -> {
+            recordPage++;
+            rebuildWidgets();
+        });
+        pageButton = addButton(panelX + panelW - 78, panelY + 5, 70, this::switchPage);
+        pageButton.setMessage(Component.translatable("screen.kunjinkao.page_settings"));
+        refreshLabels();
+    }
+
+    /** 按当前页号把记录铺成一行行文字 + 每条一个「收回」按钮。 */
+    private void buildRecordRows() {
+        List<PlacementSyncPayload.Entry> all = PlacementSyncPayload.clientEntries();
+        int pages = Math.max(1, (all.size() + RECORDS_PER_PAGE - 1) / RECORDS_PER_PAGE);
+        // 收回一条之后当前页可能越界（比如最后一页只剩一条），往回收一页而不是显示空白。
+        if (recordPage >= pages) {
+            recordPage = pages - 1;
+        }
+        if (recordPage < 0) {
+            recordPage = 0;
+        }
+        int from = recordPage * RECORDS_PER_PAGE;
+        int to = Math.min(all.size(), from + RECORDS_PER_PAGE);
+        int revokeW = 52;
+        for (int i = from; i < to; i++) {
+            PlacementSyncPayload.Entry entry = all.get(i);
+            int y = recordTextTop + (i - from) * RECORD_ROW_STEP;
+            recordLines.add(recordLabel(entry));
+            PlacementSyncPayload.Entry captured = entry;
+            addButton(panelX + panelW - SIDE_PAD - BOX_PAD - revokeW, y, revokeW,
+                    () -> revokeRecord(captured));
+        }
+        if (all.isEmpty()) {
+            recordLines.add(Component.translatable("screen.kunjinkao.records_empty"));
+            recordLines.add(Component.translatable("screen.kunjinkao.records_hint"));
+        }
+    }
+
+    /**
+     * 一条记录的显示文字：类型、维度、三轴坐标、尺寸。
+     * <p>
+     * 坐标按用户要求把 x / y / z 三轴都写全；维度用注册名（overworld / the_nether / the_end 或模组维度）。
+     */
+    private static Component recordLabel(PlacementSyncPayload.Entry entry) {
+        String kind = Component.translatable(entry.kind() == SwordPlacementRegistry.KIND_PAUSE
+                ? "screen.kunjinkao.record_kind_pause"
+                : "screen.kunjinkao.record_kind_accel").getString();
+        int side = SwordAreaFields.sideLength(entry.radius());
+        return Component.literal(String.format("%s  [%s]  x=%d  y=%d  z=%d  %dx%dx%d",
+                kind, entry.dimension(), entry.pos().getX(), entry.pos().getY(), entry.pos().getZ(),
+                side, side, side));
+    }
+
+    /** 收回一条记录：本地先不改（服务端才是权威），等服务端把新表推回来。 */
+    private void revokeRecord(PlacementSyncPayload.Entry entry) {
+        NetworkHandler.sendToServer(new RemovePlacementPayload(entry.kind(), entry.dimension(), entry.pos()));
+    }
+
+    private void cycleAreaMode() {
+        withSword(stack -> {
+            int mode = KunJinKaoSwordItem.nextAreaMode(KunJinKaoSwordItem.getAreaMode(stack));
+            KunJinKaoSwordItem.setAreaMode(stack, mode);
+            NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.AREA_MODE, mode));
+        });
+    }
+
+    private void cyclePauseSize() {
+        withSword(stack -> {
+            int radius = SwordAreaFields.nextRadius(KunJinKaoSwordItem.getPauseSize(stack));
+            KunJinKaoSwordItem.setPauseSize(stack, radius);
+            NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.PAUSE_SIZE, radius));
+        });
+    }
+
+    private void cycleAreaAccelSize() {
+        withSword(stack -> {
+            int radius = SwordAreaFields.nextRadius(KunJinKaoSwordItem.getAreaAccelSize(stack));
+            KunJinKaoSwordItem.setAreaAccelSize(stack, radius);
+            NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.AREA_ACCEL_SIZE, radius));
+        });
+    }
+
+    /**
+     * 记录页的按钮文字。
+     * <p>
+     * 单独一支，是因为设置页的 {@link #refreshLabels()} 一进来就靠
+     * {@code blueScreenToggle == null} 早退，那个守卫在记录页永远成立 ——
+     * 不单独处理的话记录页三个按钮会一直是空白。
+     */
+    private void refreshRecordsPageLabels() {
+        Player player = Minecraft.getInstance().player;
+        ItemStack stack = player == null ? ItemStack.EMPTY : player.getItemInHand(hand);
+        if (stack.getItem() instanceof KunJinKaoSwordItem) {
+            if (areaModeButton != null) {
+                areaModeButton.setMessage(label("screen.kunjinkao.area_mode",
+                        Component.translatable(switch (KunJinKaoSwordItem.getAreaMode(stack)) {
+                            case 1 -> "screen.kunjinkao.area_mode_pause";
+                            case 2 -> "screen.kunjinkao.area_mode_accel";
+                            default -> "screen.kunjinkao.switch_off";
+                        })));
+            }
+            if (pauseSizeButton != null) {
+                pauseSizeButton.setMessage(label("screen.kunjinkao.pause_size",
+                        Component.literal(sideText(SwordAreaFields.sideLength(KunJinKaoSwordItem.getPauseSize(stack))))));
+            }
+            if (areaAccelSizeButton != null) {
+                areaAccelSizeButton.setMessage(label("screen.kunjinkao.area_accel_size",
+                        Component.literal(sideText(SwordAreaFields.sideLength(
+                                KunJinKaoSwordItem.getAreaAccelSize(stack))))));
+            }
+        }
+        if (recordsPrevButton != null) {
+            recordsPrevButton.setMessage(Component.translatable("screen.kunjinkao.records_prev"));
+        }
+        if (recordsNextButton != null) {
+            recordsNextButton.setMessage(Component.translatable("screen.kunjinkao.records_next"));
+        }
+    }
+
+    private static String sideText(int side) {
+        return side + "x" + side + "x" + side;
+    }
+
+    /** 拿着剑才改设置；不是剑就直接关屏，与其它开关的行为一致。 */
+    private void withSword(java.util.function.Consumer<ItemStack> action) {
+        Player player = Minecraft.getInstance().player;
+        if (player == null) {
+            onClose();
+            return;
+        }
+        ItemStack stack = player.getItemInHand(hand);
+        if (!(stack.getItem() instanceof KunJinKaoSwordItem)) {
+            onClose();
+            return;
+        }
+        action.accept(stack);
         refreshLabels();
     }
 
@@ -253,6 +479,12 @@ public final class SwordOptionsScreen extends Screen {
             int[] pos = sectionTitlePos.get(i);
             graphics.drawString(font, sectionTitles.get(i), pos[0], pos[1], COLOR_SECTION, false);
             drawBorder(graphics, box[0], box[1], box[2], box[3], COLOR_BORDER);
+        }
+
+        // 记录页的文字画在分区框里：每条一行，右边给「收回」按钮留出位置。
+        for (int i = 0; i < recordLines.size(); i++) {
+            graphics.drawString(font, recordLines.get(i), recordTextX,
+                    recordTextTop + i * RECORD_ROW_STEP + 5, COLOR_SECTION, false);
         }
     }
 
@@ -319,6 +551,10 @@ public final class SwordOptionsScreen extends Screen {
 
     /** 把所有按钮文字刷新成「名称：值」。 */
     private void refreshLabels() {
+        if (page == 1) {
+            refreshRecordsPageLabels();
+            return;
+        }
         if (blueScreenToggle == null) {
             return;
         }

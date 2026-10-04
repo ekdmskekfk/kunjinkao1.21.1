@@ -84,7 +84,7 @@ public class ClientModEvents {
         event.register(KunJinKaoKeyBindings.OPEN_SWORD_OPTIONS);
         event.register(KunJinKaoKeyBindings.OPEN_ADMIN_PASSWORD);
         event.register(KunJinKaoKeyBindings.UNDO_PLACEMENT);
-        event.register(KunJinKaoKeyBindings.TOGGLE_PAUSE_FIELD);
+        event.register(KunJinKaoKeyBindings.CYCLE_AREA_MODE);
         event.register(KunJinKaoKeyBindings.TOGGLE_WRENCH);
         event.register(KunJinKaoKeyBindings.COLLECT_BLOCK);
     }

@@ -322,8 +322,16 @@ public final class KunJinKaoColdDataEffectsHandler {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setWrenchEnabled(stack, enabled));
     }
 
-    public static void handleTogglePauseField(Player player, InteractionHand hand, boolean enabled) {
-        withSword(player, hand, stack -> KunJinKaoSwordItem.setPauseFieldEnabled(stack, enabled));
+    public static void handleAreaMode(Player player, InteractionHand hand, int mode) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setAreaMode(stack, mode));
+    }
+
+    public static void handlePauseSize(Player player, InteractionHand hand, int radius) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setPauseSize(stack, radius));
+    }
+
+    public static void handleAreaAccelSize(Player player, InteractionHand hand, int radius) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setAreaAccelSize(stack, radius));
     }
 
     /** 时间加速倍率：shift+滚轮 调节，服务端同样夹到合法档位。 */

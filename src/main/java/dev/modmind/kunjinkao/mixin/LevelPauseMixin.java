@@ -1,6 +1,6 @@
 package dev.modmind.kunjinkao.mixin;
 
-import dev.modmind.kunjinkao.world.SwordPauseField;
+import dev.modmind.kunjinkao.world.SwordAreaFields;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.TickingBlockEntity;
 import org.spongepowered.asm.mixin.Mixin;
@@ -23,7 +23,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
  *       tickingblockentity.tick();          // ← 这里
  *   }
  * </pre>
- * 客户端不参与判定（{@link SwordPauseField#isPaused(Level, net.minecraft.core.BlockPos)}
+ * 客户端不参与判定（{@link SwordAreaFields#isPaused(Level, net.minecraft.core.BlockPos)}
  * 在客户端直接返回 false），所以两边不会各停各的。
  */
 @Mixin(Level.class)
@@ -38,7 +38,7 @@ public abstract class LevelPauseMixin {
     )
     private void kunjinkao$skipPausedBlockEntities(TickingBlockEntity ticker) {
         Level self = (Level) (Object) this;
-        if (SwordPauseField.isPaused(self, ticker.getPos())) {
+        if (SwordAreaFields.isPaused(self, ticker.getPos())) {
             return;
         }
         ticker.tick();

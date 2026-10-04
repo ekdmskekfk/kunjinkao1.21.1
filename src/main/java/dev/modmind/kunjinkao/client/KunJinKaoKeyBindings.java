@@ -75,13 +75,14 @@ public class KunJinKaoKeyBindings {
     );
 
     /**
-     * V 键：快速开关「暂停场模式」。
+     * V 键：循环切换「区域模式」：关 -> 暂停场 -> 范围加速 -> 关。
      * <p>
-     * 打开后 shift+右键方块 用来立/撤一个暂停场（生物与机器停止，玩家被钉住，
-     * 管理员与场主不受影响），而不是加速机器。
+     * 选中的那一种会占住 shift+右键：在那格立/撤一个立方体区域场
+     * （暂停场让生物与机器停下、玩家被钉住；范围加速让区域里的机器加速）。
+     * 管理员与场主不会被暂停场冻住。尺寸在菜单第二页调。
      */
-    public static final KeyMapping TOGGLE_PAUSE_FIELD = new KeyMapping(
-            "key.kunjinkao.toggle_pause_field",
+    public static final KeyMapping CYCLE_AREA_MODE = new KeyMapping(
+            "key.kunjinkao.cycle_area_mode",
             InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_V,
             CATEGORY

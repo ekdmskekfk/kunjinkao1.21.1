@@ -42,6 +42,11 @@ public final class NetworkHandler {
         // 原 RequestHudEntityListPayload / RequestExcludedPlayersPayload / ToggleHudNightVisionPayload /
         // ToggleHudTrueInvisibilityPayload / ToggleHudMagnetPayload 五条注册合并为这一条，由 actionId 判别。
         reg.playToServer(SimpleActionPayload.TYPE, SimpleActionPayload.STREAM_CODEC, SimpleActionPayload::handle);
+        // 放置记录：收回（C2S）与整表同步（S2C）
+        reg.playToServer(RemovePlacementPayload.TYPE, RemovePlacementPayload.STREAM_CODEC,
+                RemovePlacementPayload::handle);
+        reg.playToClient(PlacementSyncPayload.TYPE, PlacementSyncPayload.STREAM_CODEC,
+                PlacementSyncPayload::handle);
         reg.playToClient(HudEntityListPayload.TYPE, HudEntityListPayload.STREAM_CODEC, HudEntityListPayload::handle);
         reg.playToServer(ManageHudEntityPayload.TYPE, ManageHudEntityPayload.STREAM_CODEC, ManageHudEntityPayload::handle);
         reg.playToClient(HudEntityActionResultPayload.TYPE, HudEntityActionResultPayload.STREAM_CODEC, HudEntityActionResultPayload::handle);

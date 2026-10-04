@@ -88,6 +88,13 @@ public final class PlacementPreviewRenderer {
         if (!(sword.getItem() instanceof KunJinKaoSwordItem)) {
             return;
         }
+        // 区域模式开着就只画区域场的立方体，并把建筑手杖 / 破坏核心的预览整个让掉 ——
+        // 两种预览叠在一起会互相盖住，之前踩过这个坑。
+        int areaMode = KunJinKaoSwordItem.getAreaMode(sword);
+        if (areaMode != 0) {
+            drawAreaFieldPreview(event, sword, target.getBlockPos(), areaMode);
+            return;
+        }
         List<BlockPos> targets;
         if (KunJinKaoSwordItem.isDestructionCoreEnabled(sword)) {
             // 破坏核心优先：此时不要再叠一层建筑手杖的预览。
@@ -113,6 +120,42 @@ public final class PlacementPreviewRenderer {
                     rgb[0], rgb[1], rgb[2], 1.0F);
             pose.popPose();
         }
+    }
+
+    /**
+     * 区域场预览：把以点击方块为中心的那个立方体画成线框。
+     * <p>
+     * 范围严格按判定口径来：中心格 ±radius，边长 {@code 2*radius+1} ——
+     * 也就是 3x3x3 / 5x5x5 / 7x7x7 / 9x9x9。预览画多大，实际就停多大。
+     * <p>
+     * 两种模式用颜色和脉动速度区分：暂停场是冷青、慢脉动；范围加速是暖黄、快脉动。
+     */
+    private static void drawAreaFieldPreview(RenderHighlightEvent.Block event, ItemStack sword,
+                                             BlockPos center, int areaMode) {
+        boolean pause = areaMode == 1;
+        int radius = pause
+                ? KunJinKaoSwordItem.getPauseSize(sword)
+                : KunJinKaoSwordItem.getAreaAccelSize(sword);
+
+        double minX = center.getX() - radius;
+        double minY = center.getY() - radius;
+        double minZ = center.getZ() - radius;
+        double size = radius * 2 + 1;
+        AABB box = new AABB(minX, minY, minZ, minX + size, minY + size, minZ + size);
+
+        float phase = (float) ((System.currentTimeMillis() % 100000L) / 1000.0D);
+        float pulse = 0.55F + 0.45F * Math.abs((float) Math.sin(phase * (pause ? 1.6F : 3.2F)));
+        float red = pause ? 0.34F : 1.0F;
+        float green = pause ? 0.82F : 0.78F;
+        float blue = pause ? 1.0F : 0.22F;
+
+        Vec3 camera = event.getCamera().getPosition();
+        PoseStack pose = event.getPoseStack();
+        var buffer = event.getMultiBufferSource().getBuffer(RenderType.lines());
+        pose.pushPose();
+        pose.translate(-camera.x, -camera.y, -camera.z);
+        LevelRenderer.renderLineBox(pose, buffer, box, red * pulse, green * pulse, blue * pulse, 1.0F);
+        pose.popPose();
     }
 
     /** HSV -> RGB，色相 0..1。 */
