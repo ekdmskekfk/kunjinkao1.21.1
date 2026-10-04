@@ -251,7 +251,7 @@ public final class SwordOptionsScreen extends Screen {
         placementUndoToggle = addButton(rightX + BOX_PAD + btnW + BTN_GAP, contentTop + ROW_H, btnW,
                 this::togglePlacementUndo);
 
-        pageButton = addButton(panelX + panelW - 78, panelY + 5, 70, this::switchPage);
+        pageButton = addButton(panelX + panelW - 72, panelY + 1, 66, this::switchPage);
         pageButton.setMessage(Component.translatable("screen.kunjinkao.page_records"));
         refreshLabels();
     }
@@ -305,7 +305,7 @@ public final class SwordOptionsScreen extends Screen {
             recordPage++;
             rebuildWidgets();
         });
-        pageButton = addButton(panelX + panelW - 78, panelY + 5, 70, this::switchPage);
+        pageButton = addButton(panelX + panelW - 72, panelY + 1, 66, this::switchPage);
         pageButton.setMessage(Component.translatable("screen.kunjinkao.page_settings"));
         refreshLabels();
     }

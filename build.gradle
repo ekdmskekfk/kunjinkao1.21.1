@@ -219,12 +219,25 @@ tasks.register('deployToTestInstance') {
         def stale = targetDir.listFiles({ f ->
             f.isFile() && f.name.startsWith('kunjinkao') && f.name.endsWith('.jar') && f.name != jar.name
         } as FileFilter)
+        // 删旧版。File.delete() 的返回值不可靠：文件被别的进程占用时它可能返回 true
+        // 而文件仍在（Windows 上实测过），所以必须用 exists() 二次确认。
+        // 这一步一旦漏掉，mods 里会同时留下两个同 ID 的模组，下次启动必然失败 ——
+        // 所以宁可让构建失败，也不能让它静默过去。
+        def undeleted = []
         (stale ?: new File[0]).sort { it.name }.each { old ->
-            if (old.delete()) {
-                logger.lifecycle("[deploy] 删除旧版 ${old.name}")
+            old.delete()
+            if (old.exists()) {
+                undeleted << old.name
             } else {
-                logger.warn("[deploy] 删不掉 ${old.name} —— 游戏可能正开着")
+                logger.lifecycle("[deploy] 删除旧版 ${old.name}")
             }
+        }
+        if (undeleted) {
+            throw new GradleException(
+                    "[deploy] 删不掉旧版：${undeleted.join(', ')}。\n" +
+                    "  最可能的原因：【游戏正开着】，它占用了这些 jar。\n" +
+                    "  请先关掉游戏再构建 —— 否则 mods 目录里会同时存在两个同 ID 的模组，\n" +
+                    "  下次启动会因为模组重复而直接失败。")
         }
         // 2) 复制
         java.nio.file.Files.copy(jar.toPath(), new File(targetDir, jar.name).toPath(),

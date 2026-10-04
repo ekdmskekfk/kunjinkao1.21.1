@@ -460,7 +460,11 @@ public class KunJinKaoSwordItem extends SwordItem {
     }
 
     public static void setAreaMode(ItemStack stack, int mode) {
-        dataTag(stack).putInt(AREA_MODE_KEY, Math.max(0, Math.min(2, mode)));
+        // 必须 writeDataTag 写回去：dataTag() 返回的是 CUSTOM_DATA 的【拷贝】，
+        // 直接 putInt 到拷贝上等于什么都没做 —— 这一处漏掉就是"区域模式怎么点都开不了"的原因。
+        CompoundTag tag = dataTag(stack);
+        tag.putInt(AREA_MODE_KEY, Math.max(0, Math.min(2, mode)));
+        writeDataTag(stack, tag);
     }
 
     public static int nextAreaMode(int current) {
@@ -472,7 +476,9 @@ public class KunJinKaoSwordItem extends SwordItem {
     }
 
     public static void setPauseSize(ItemStack stack, int radius) {
-        dataTag(stack).putInt(PAUSE_SIZE_KEY, SwordAreaFields.clampRadius(radius));
+        CompoundTag tag = dataTag(stack);
+        tag.putInt(PAUSE_SIZE_KEY, SwordAreaFields.clampRadius(radius));
+        writeDataTag(stack, tag);
     }
 
     public static int getAreaAccelSize(ItemStack stack) {
@@ -480,7 +486,9 @@ public class KunJinKaoSwordItem extends SwordItem {
     }
 
     public static void setAreaAccelSize(ItemStack stack, int radius) {
-        dataTag(stack).putInt(AREA_ACCEL_SIZE_KEY, SwordAreaFields.clampRadius(radius));
+        CompoundTag tag = dataTag(stack);
+        tag.putInt(AREA_ACCEL_SIZE_KEY, SwordAreaFields.clampRadius(radius));
+        writeDataTag(stack, tag);
     }
 
     /**
@@ -638,7 +646,11 @@ public class KunJinKaoSwordItem extends SwordItem {
                 }
                 return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
             }
-            return cycleMode(level, player, hand);
+            // 加速模式关着时，shift+右键 什么都不做。
+            // 这里原本是 cycleMode()（切换抢夺模式）—— 对着方块按 shift+右键 时 useOn 返回 PASS
+            // 会落回 use()，于是"点一下方块"就顺手把抢夺模式换了，屏幕下方还弹一句
+            // 看起来毫不相干的提示。抢夺模式改由 . 菜单里的按钮切换。
+            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
         }
         // 天使核心：对着空气右键可以在半空放置方块（方块取自副手）。
         // 官方限制一并保留：副手要有方块，且下落不超过 10 格。
