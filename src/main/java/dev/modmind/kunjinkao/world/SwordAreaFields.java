@@ -12,10 +12,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
-import org.slf4j.Logger;
-import com.mojang.logging.LogUtils;
-
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -37,8 +33,6 @@ import java.util.UUID;
  * 查询只扫缓存。
  */
 public final class SwordAreaFields {
-
-    private static final Logger LOGGER = LogUtils.getLogger();
 
     /** 菜单里的四档，对应 3x3x3 / 5x5x5 / 7x7x7 / 9x9x9。 */
     public static final int MIN_RADIUS = 1;
@@ -207,9 +201,6 @@ public final class SwordAreaFields {
             registry.add(new SwordPlacementRegistry.Entry(
                     kind, level.dimension(), immutable, clampRadius(radius),
                     Math.max(1, multiplier), player.getUUID()));
-            // 【诊断】建场时把关键值打出来：mode/kind/radius/multiplier 四个都可能出错。
-            LOGGER.info("[AREA-ACCEL] 建场 kind={} pos={} radius={} multiplier={}",
-                    kind, immutable, clampRadius(radius), Math.max(1, multiplier));
             // 边长拼成 "3x3x3" 再作为一个参数传进去。
             // 原来只传了一个数字，而翻译串里有三个 %s，占位符替换不了，
             // 屏幕上就直接显示出 %sx%sx%s 了。
@@ -248,37 +239,17 @@ public final class SwordAreaFields {
      * 它自带每刻的额外 tick 预算，不会因为一个 9x9x9 的场把服务器烧掉。
      */
     public static void tickAreaAcceleration(MinecraftServer server) {
-        // 【诊断】计数放在最前面：放在 cache 判空之后的话，缓存一空就提前返回，
-        // 计数器永远走不到，日志一行都不会出 —— 那样"处理器没跑"和"缓存为空"
-        // 两种完全不同的原因会长得一模一样。
-        boolean verbose = ++diagnosticTicker >= 100;
-        if (verbose) {
-            diagnosticTicker = 0;
-        }
         if (cache.isEmpty()) {
-            if (verbose) {
-                LOGGER.info("[AREA-ACCEL] 缓存为空：一条放置记录都没有");
-            }
             return;
         }
-        List<SwordPlacementRegistry.Entry> accel = new ArrayList<>();
         for (SwordPlacementRegistry.Entry entry : cache) {
-            if (entry.kind() == SwordPlacementRegistry.KIND_AREA_ACCEL) {
-                accel.add(entry);
-            }
-        }
-        // 【诊断】每 100 tick 打一次。
-        if (verbose && accel.isEmpty()) {
-            LOGGER.info("[AREA-ACCEL] 缓存 {} 条记录，其中范围加速 0 条", cache.size());
-        }
-        for (SwordPlacementRegistry.Entry entry : accel) {
-            if (!(server.getLevel(entry.dimension()) instanceof ServerLevel serverLevel)) {
-                if (verbose) {
-                    LOGGER.info("[AREA-ACCEL] 维度取不到 ServerLevel：{}", entry.dimension().location());
-                }
+            if (entry.kind() != SwordPlacementRegistry.KIND_AREA_ACCEL) {
                 continue;
             }
-            // 【关键】逐格单独调 accelerateArea（半径 0），不要一次覆盖整个立方体。
+            if (!(server.getLevel(entry.dimension()) instanceof ServerLevel serverLevel)) {
+                continue;
+            }
+            // 逐格单独调 accelerateArea（半径 0），不要一次覆盖整个立方体。
             //
             // accelerateArea 内部有一个每刻 4096 的额外 tick 总预算
             // （MAX_EXTRA_TICKS_PER_TICK），而且它按 dx/dy/dz 从 -half 开始的顺序消耗。
@@ -290,7 +261,6 @@ public final class SwordAreaFields {
             //
             // 一格一格调，每台机器各自拿到完整预算，等价于在这个立方体里摆了 N 个单台加速器 ——
             // 这也正是"范围加速"该有的语义。
-            int dispatched = 0;
             int half = entry.radius();
             for (int dx = -half; dx <= half; dx++) {
                 for (int dy = -half; dy <= half; dy++) {
@@ -300,17 +270,9 @@ public final class SwordAreaFields {
                             continue;
                         }
                         AcceleratorBlockEntity.accelerateArea(serverLevel, target, 0, entry.multiplier(), null);
-                        dispatched++;
                     }
                 }
             }
-            if (verbose) {
-                LOGGER.info("[AREA-ACCEL] 中心={} radius={} multiplier={} 覆盖到 {} 台机器",
-                        entry.pos(), entry.radius(), entry.multiplier(), dispatched);
-            }
         }
     }
-
-    /** 【诊断用】节流计数，定位完随诊断日志一起删。 */
-    private static int diagnosticTicker;
 }
