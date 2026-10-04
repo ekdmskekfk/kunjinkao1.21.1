@@ -12,6 +12,9 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
+import org.slf4j.Logger;
+import com.mojang.logging.LogUtils;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -34,6 +37,8 @@ import java.util.UUID;
  * 查询只扫缓存。
  */
 public final class SwordAreaFields {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     /** 菜单里的四档，对应 3x3x3 / 5x5x5 / 7x7x7 / 9x9x9。 */
     public static final int MIN_RADIUS = 1;
@@ -202,6 +207,9 @@ public final class SwordAreaFields {
             registry.add(new SwordPlacementRegistry.Entry(
                     kind, level.dimension(), immutable, clampRadius(radius),
                     Math.max(1, multiplier), player.getUUID()));
+            // 【诊断】建场时把关键值打出来：mode/kind/radius/multiplier 四个都可能出错。
+            LOGGER.info("[AREA-ACCEL] 建场 kind={} pos={} radius={} multiplier={}",
+                    kind, immutable, clampRadius(radius), Math.max(1, multiplier));
             // 边长拼成 "3x3x3" 再作为一个参数传进去。
             // 原来只传了一个数字，而翻译串里有三个 %s，占位符替换不了，
             // 屏幕上就直接显示出 %sx%sx%s 了。
@@ -249,11 +257,32 @@ public final class SwordAreaFields {
                 accel.add(entry);
             }
         }
+        // 【诊断】每 100 tick 打一次：范围加速到底有没有记录、有没有被推。
+        // "没有加速"可能是三种完全不同的原因：记录没建、记录建了但类型不对、
+        // 或者记录对了但这一 tick 没跑到这儿 —— 不打日志只能靠猜。定位完即可删。
+        boolean verbose = ++diagnosticTicker >= 100;
+        if (verbose) {
+            diagnosticTicker = 0;
+            if (accel.isEmpty()) {
+                LOGGER.info("[AREA-ACCEL] 缓存 {} 条记录，其中范围加速 0 条", cache.size());
+            }
+        }
         for (SwordPlacementRegistry.Entry entry : accel) {
             if (!(server.getLevel(entry.dimension()) instanceof ServerLevel serverLevel)) {
+                if (verbose) {
+                    LOGGER.info("[AREA-ACCEL] 维度取不到 ServerLevel：{}", entry.dimension().location());
+                }
                 continue;
             }
             AcceleratorBlockEntity.accelerateArea(serverLevel, entry.pos(), entry.radius(), entry.multiplier(), null);
+            if (verbose) {
+                LOGGER.info("[AREA-ACCEL] 施加于 pos={} radius={} multiplier={} 可加速={}",
+                        entry.pos(), entry.radius(), entry.multiplier(),
+                        AcceleratorBlockEntity.isAcceleratable(serverLevel, entry.pos()));
+            }
         }
     }
+
+    /** 【诊断用】节流计数，定位完随诊断日志一起删。 */
+    private static int diagnosticTicker;
 }
