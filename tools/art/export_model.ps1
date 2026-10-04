@@ -13,7 +13,7 @@ param(
 )
 
 # ---- 整体缩放 ----
-$K = 0.80
+$K = 0.92
 $CX = 8.0; $CY = 0.0; $CZ = 8.0
 function S($v,$c){ [math]::Round($c + ($v-$c)*$K, 3) }
 
@@ -61,13 +61,13 @@ function Build-Elements($list) {
   return ,$els
 }
 $display = [ordered]@{
-  thirdperson_righthand = [ordered]@{ rotation=@(0,-90,55);  translation=@(0,3.4,0.5);    scale=@(1.35,1.35,1.35) }
-  thirdperson_lefthand  = [ordered]@{ rotation=@(0,90,-55);  translation=@(0,3.4,0.5);    scale=@(1.35,1.35,1.35) }
-  firstperson_righthand = [ordered]@{ rotation=@(0,-90,25);  translation=@(1.13,3.2,1.13); scale=@(0.60,0.60,0.60) }
-  firstperson_lefthand  = [ordered]@{ rotation=@(0,90,-25);  translation=@(1.13,3.2,1.13); scale=@(0.60,0.60,0.60) }
-  gui                   = [ordered]@{ rotation=@(30,225,0);  translation=@(0,0,0);        scale=@(0.72,0.72,0.72) }
-  ground                = [ordered]@{ rotation=@(0,0,0);     translation=@(0,2.0,0);      scale=@(0.58,0.58,0.58) }
-  fixed                 = [ordered]@{ rotation=@(0,180,0);   translation=@(0,0,0);        scale=@(0.58,0.58,0.58) }
+  thirdperson_righthand = [ordered]@{ rotation=@(0,-90,55);  translation=@(0,4.0,0.5);    scale=@(1.25,1.25,1.25) }
+  thirdperson_lefthand  = [ordered]@{ rotation=@(0,90,-55);  translation=@(0,4.0,0.5);    scale=@(1.25,1.25,1.25) }
+  firstperson_righthand = [ordered]@{ rotation=@(0,-90,25);  translation=@(1.13,3.2,1.13); scale=@(0.85,0.85,0.85) }
+  firstperson_lefthand  = [ordered]@{ rotation=@(0,90,-25);  translation=@(1.13,3.2,1.13); scale=@(0.85,0.85,0.85) }
+  gui                   = [ordered]@{ rotation=@(30,225,0);  translation=@(0,0,0);        scale=@(1.00,1.00,1.00) }
+  ground                = [ordered]@{ rotation=@(0,0,0);     translation=@(0,2.0,0);      scale=@(0.75,0.75,0.75) }
+  fixed                 = [ordered]@{ rotation=@(0,180,0);   translation=@(0,0,0);        scale=@(0.75,0.75,0.75) }
 }
 $textures = [ordered]@{ '0' = 'kunjinkao:item/kun_jin_kao_atlas'; particle = 'kunjinkao:item/kun_jin_kao_atlas' }
 
@@ -75,8 +75,12 @@ $modelDir = Join-Path $Res 'models\item'
 New-Item -ItemType Directory -Path $modelDir -Force | Out-Null
 
 # ---- 主模型 ----
+# ⚠ parent 必须是 minecraft:block/block，不能是 minecraft:item/handheld：
+#   后者的父链根是 builtin/generated，MC 会运行 ItemModelGenerator，
+#   拿 layer0 逐像素生成四边形并把模型自带的 elements 整个丢弃 ——
+#   表现为"整张图集被铺成一块平面"或"手里的剑直接消失"。这段坑本仓库踩过两次。
 $model = [ordered]@{
-  parent = 'minecraft:item/handheld'; ambientocclusion = $false
+  parent = 'minecraft:block/block'; ambientocclusion = $false
   display = $display; textures = $textures; elements = (Build-Elements $parts)
 }
 $out3d = Join-Path $modelDir 'kun_jin_kao_3d.json'
@@ -97,7 +101,7 @@ $stages = @(
 for ($s=0; $s -lt 8; $s++) {
   $subset = @($parts | Where-Object { $stages[$s] -contains $_.n })
   $m = [ordered]@{
-    parent = 'minecraft:item/handheld'; ambientocclusion = $false
+    parent = 'minecraft:block/block'; ambientocclusion = $false
     display = $display; textures = $textures; elements = (Build-Elements $subset)
   }
   [IO.File]::WriteAllText((Join-Path $modelDir "kun_jin_kao_compile_$s.json"),

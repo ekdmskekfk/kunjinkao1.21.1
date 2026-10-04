@@ -185,3 +185,58 @@ jar {
         attributes(['MixinConfigs': 'kunjinkao.mixins.json'])
     }
 }
+// ---------------------------------------------------------------------------
+// 构建完成后部署到测试实例：复制主 jar，并删掉那里旧的 kunjinkao 版本。
+//
+//   gradle build                          构建 + 自动部署
+//   gradle build -PtestInstanceModsDir=.. 换目标目录
+//
+// 只删 kunjinkao*.jar —— 同目录下别人的模组一个都不碰。
+// 目标目录不存在时只打一行日志跳过（比如换机器、或那个实例被删了）。
+// 目标目录在工程之外，且可能含 Gradle 读不动的文件，因此不参与状态跟踪。
+// ---------------------------------------------------------------------------
+def testInstanceModsDir = providers.gradleProperty('testInstanceModsDir')
+        .getOrElse('F:/mcc/mc/.minecraft/versions/1.21.1mod测试/mods')
+
+tasks.register('deployToTestInstance') {
+    group = 'build'
+    description = '把构建出的主 jar 复制到测试实例的 mods 目录，并删除其中的旧 kunjinkao 版本'
+    dependsOn tasks.named('jar')
+    doNotTrackState('目标目录在工程之外，且可能含 Gradle 读不动的文件')
+
+    def jarProvider = tasks.named('jar').flatMap { it.archiveFile }
+    def targetDir = file(testInstanceModsDir)
+
+    onlyIf { jarProvider.get().asFile.exists() }
+
+    doLast {
+        def jar = jarProvider.get().asFile
+        if (!targetDir.exists()) {
+            logger.lifecycle("[deploy] 目标目录不存在，跳过：${targetDir}")
+            return
+        }
+        // 1) 删旧的 kunjinkao（保留本次要部署的同名文件，避免白删一遍）
+        def stale = targetDir.listFiles({ f ->
+            f.isFile() && f.name.startsWith('kunjinkao') && f.name.endsWith('.jar') && f.name != jar.name
+        } as FileFilter)
+        (stale ?: new File[0]).sort { it.name }.each { old ->
+            if (old.delete()) {
+                logger.lifecycle("[deploy] 删除旧版 ${old.name}")
+            } else {
+                logger.warn("[deploy] 删不掉 ${old.name} —— 游戏可能正开着")
+            }
+        }
+        // 2) 复制
+        java.nio.file.Files.copy(jar.toPath(), new File(targetDir, jar.name).toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        logger.lifecycle("[deploy] 已部署 ${jar.name} -> ${targetDir}")
+        def now = targetDir.listFiles({ f ->
+            f.isFile() && f.name.startsWith('kunjinkao') && f.name.endsWith('.jar')
+        } as FileFilter)
+        logger.lifecycle("[deploy] 该目录现有 kunjinkao：${(now ?: new File[0])*.name}")
+    }
+}
+
+tasks.named('build').configure {
+    finalizedBy 'deployToTestInstance'
+}

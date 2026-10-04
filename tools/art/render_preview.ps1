@@ -1,9 +1,11 @@
 ﻿Add-Type -AssemblyName System.Drawing
-$dir = "$env:TEMP\kjk_art"
-$atlas = [System.Drawing.Image]::FromFile((Join-Path $dir 'kun_jin_kao_atlas.png'))
+$dir = Join-Path $PSScriptRoot '..\..\docs\art'
+$atlasPath = Join-Path $PSScriptRoot '..\..\src\main\resources\assets\kunjinkao\textures\item\kun_jin_kao_atlas.png'
+New-Item -ItemType Directory -Path $dir -Force | Out-Null
+$atlas = [System.Drawing.Image]::FromFile($atlasPath)
 
 # ---- 整体缩放：以 (8,0,8) 为中心等比缩小 ----
-$K = 0.80
+$K = 0.92
 $CX = 8.0; $CY = 0.0; $CZ = 8.0
 function S($v, $c) { return $c + ($v - $c) * $K }
 
@@ -89,7 +91,7 @@ function RenderIcon($mode, $size, $file) {
   $xMin=($xs|Measure-Object -Minimum).Minimum; $xMax=($xs|Measure-Object -Maximum).Maximum
   $yMin=($ys|Measure-Object -Minimum).Minimum; $yMax=($ys|Measure-Object -Maximum).Maximum
   $w = $xMax-$xMin; $h = $yMax-$yMin
-  $sc = ($size * 0.76) / [Math]::Max($w,$h)
+  $sc = ($size * 0.95) / [Math]::Max($w,$h)
   $offX = (-$xMin*$sc) + ($size - $w*$sc)/2
   $offY = (-$yMin*$sc) + ($size - $h*$sc)/2
   $faces = BuildFaces $mode $sc $offX $offY
@@ -103,6 +105,7 @@ function RenderIcon($mode, $size, $file) {
   "  $mode ${size}x${size}  内容占比 $([math]::Round(($sc*[Math]::Max($w,$h))/$size*100,0))%  ->  $(Split-Path $file -Leaf)"
 }
 '图标:'
+RenderIcon 'iso'   256 (Join-Path $dir 'icon_iso_256.png')
 RenderIcon 'iso'   128 (Join-Path $dir 'icon_iso_128.png')
 RenderIcon 'iso'   64  (Join-Path $dir 'icon_iso_64.png')
 RenderIcon 'front' 128 (Join-Path $dir 'icon_front_128.png')
