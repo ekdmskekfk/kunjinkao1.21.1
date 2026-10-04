@@ -63,6 +63,8 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
     public static final int PAUSE_SIZE = 23;
     /** 范围加速半边长（1..4，对应 3x3x3 .. 9x9x9）。 */
     public static final int AREA_ACCEL_SIZE = 24;
+    /** 范围加速专用倍率。 */
+    public static final int AREA_ACCEL_MULTIPLIER = 25;
 
     public static final Type<SwordSettingPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "sword_setting"));
@@ -104,6 +106,7 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
             case AREA_MODE -> KunJinKaoColdDataEffectsHandler.handleAreaMode(context.player(), hand, value);
             case PAUSE_SIZE -> KunJinKaoColdDataEffectsHandler.handlePauseSize(context.player(), hand, value);
             case AREA_ACCEL_SIZE -> KunJinKaoColdDataEffectsHandler.handleAreaAccelSize(context.player(), hand, value);
+            case AREA_ACCEL_MULTIPLIER -> KunJinKaoColdDataEffectsHandler.handleAreaAccelMultiplier(context.player(), hand, value);
                 case SILK_TOUCH -> KunJinKaoColdDataEffectsHandler.handleToggleSilkTouch(context.player(), hand, value != 0);
                 case BEHEADING -> KunJinKaoColdDataEffectsHandler.handleToggleBeheading(context.player(), hand, value != 0);
                 case SPAWN_EGG_DROP -> KunJinKaoColdDataEffectsHandler.handleToggleSpawnEggDrop(context.player(), hand, value != 0);

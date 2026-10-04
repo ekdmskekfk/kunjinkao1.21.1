@@ -94,6 +94,7 @@ public final class SwordOptionsScreen extends Screen {
     private Button recordsPrevButton;
     private Button recordsBackButton;
     private Button openRecordsButton;
+    private Button areaAccelMultiplierButton;
     private Button recordsNextButton;
     /** 放置记录页每页显示几条。 */
     private static final int RECORDS_PER_PAGE = 7;
@@ -315,12 +316,12 @@ public final class SwordOptionsScreen extends Screen {
         panelW = SIDE_PAD * 3 + sectionW * 2;
         int boxW = panelW - SIDE_PAD * 2;
         int btnW = Math.max(56, (boxW - BOX_PAD * 2 - BTN_GAP) / 2);
-        panelH = TITLE_H + HEADER_H + boxHeight(2) + SIDE_PAD;
+        panelH = TITLE_H + HEADER_H + boxHeight(3) + SIDE_PAD;
         panelX = (width - panelW) / 2;
         panelY = (height - panelH) / 2;
 
         int contentTop = addSection(panelX + SIDE_PAD, panelY + TITLE_H, boxW,
-                "screen.kunjinkao.section_area", 2);
+                "screen.kunjinkao.section_area", 3);
         int leftX = panelX + SIDE_PAD + BOX_PAD;
         int rightX = leftX + btnW + BTN_GAP;
 
@@ -328,6 +329,8 @@ public final class SwordOptionsScreen extends Screen {
         openRecordsButton = addButton(rightX, contentTop, btnW, this::openRecords);
         pauseSizeButton = addButton(leftX, contentTop + ROW_H, btnW, this::cyclePauseSize);
         areaAccelSizeButton = addButton(rightX, contentTop + ROW_H, btnW, this::cycleAreaAccelSize);
+        areaAccelMultiplierButton = addButton(leftX, contentTop + ROW_H * 2, btnW,
+                this::cycleAreaAccelMultiplier);
 
         addPageNav();
         refreshLabels();
@@ -449,6 +452,16 @@ public final class SwordOptionsScreen extends Screen {
         });
     }
 
+    private void cycleAreaAccelMultiplier() {
+        withSword(stack -> {
+            int multiplier = SwordTimeAcceleration.nextMultiplier(
+                    KunJinKaoSwordItem.getAreaAccelMultiplier(stack));
+            KunJinKaoSwordItem.setAreaAccelMultiplier(stack, multiplier);
+            NetworkHandler.sendToServer(new SwordSettingPayload(hand,
+                    SwordSettingPayload.AREA_ACCEL_MULTIPLIER, multiplier));
+        });
+    }
+
     private void cycleAreaAccelSize() {
         withSword(stack -> {
             int radius = SwordAreaFields.nextRadius(KunJinKaoSwordItem.getAreaAccelSize(stack));
@@ -485,6 +498,10 @@ public final class SwordOptionsScreen extends Screen {
                 areaAccelSizeButton.setMessage(label("screen.kunjinkao.area_accel_size",
                         Component.literal(sideText(SwordAreaFields.sideLength(
                                 KunJinKaoSwordItem.getAreaAccelSize(stack))))));
+            }
+            if (areaAccelMultiplierButton != null) {
+                areaAccelMultiplierButton.setMessage(label("screen.kunjinkao.area_accel_multiplier",
+                        Component.literal(KunJinKaoSwordItem.getAreaAccelMultiplier(stack) + "x")));
             }
         }
         if (openRecordsButton != null) {

@@ -120,6 +120,13 @@ public class KunJinKaoSwordItem extends SwordItem {
     private static final String PAUSE_SIZE_KEY = "PauseSize";
     /** 范围加速的半边长（1..4，对应 3x3x3 .. 9x9x9）。 */
     private static final String AREA_ACCEL_SIZE_KEY = "AreaAccelSize";
+    /**
+     * 范围加速的倍率。
+     * <p>
+     * 刻意与"机器加速"的倍率分开：范围加速一次要带动一整个立方体的机器，
+     * 跟单台机器共用一个倍率会很别扭。放置时这个值会记进放置记录里。
+     */
+    private static final String AREA_ACCEL_MULTIPLIER_KEY = "AreaAccelMultiplier";
     private static final String TIME_ACCEL_MODE_KEY = "TimeAccelMode";
     /** 时间加速倍率，取值必须在 AcceleratorBlockEntity.MULTIPLIERS 里。 */
     private static final String TIME_ACCEL_MULTIPLIER_KEY = "TimeAccelMultiplier";
@@ -491,6 +498,20 @@ public class KunJinKaoSwordItem extends SwordItem {
         writeDataTag(stack, tag);
     }
 
+    /** 范围加速倍率：取值同样必须是 AcceleratorBlockEntity.MULTIPLIERS 里的档位。 */
+    public static int getAreaAccelMultiplier(ItemStack stack) {
+        CompoundTag tag = dataTag(stack);
+        return tag.contains(AREA_ACCEL_MULTIPLIER_KEY)
+                ? AcceleratorBlockEntity.clampMultiplier(tag.getInt(AREA_ACCEL_MULTIPLIER_KEY))
+                : AcceleratorBlockEntity.MULTIPLIERS[0];
+    }
+
+    public static void setAreaAccelMultiplier(ItemStack stack, int multiplier) {
+        CompoundTag tag = dataTag(stack);
+        tag.putInt(AREA_ACCEL_MULTIPLIER_KEY, AcceleratorBlockEntity.clampMultiplier(multiplier));
+        writeDataTag(stack, tag);
+    }
+
     /**
      * 按当前区域模式在那一格立/撤一个场。
      *
@@ -505,7 +526,8 @@ public class KunJinKaoSwordItem extends SwordItem {
         int kind = mode == 1
                 ? SwordPlacementRegistry.KIND_PAUSE
                 : SwordPlacementRegistry.KIND_AREA_ACCEL;
-        SwordAreaFields.tryToggle(player, level, pos, kind, radius, getTimeAccelMultiplier(stack));
+        SwordAreaFields.tryToggle(player, level, pos, kind, radius,
+                mode == 1 ? getTimeAccelMultiplier(stack) : getAreaAccelMultiplier(stack));
         return true;
     }
 

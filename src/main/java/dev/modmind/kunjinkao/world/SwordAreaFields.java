@@ -202,11 +202,15 @@ public final class SwordAreaFields {
             registry.add(new SwordPlacementRegistry.Entry(
                     kind, level.dimension(), immutable, clampRadius(radius),
                     Math.max(1, multiplier), player.getUUID()));
+            // 边长拼成 "3x3x3" 再作为一个参数传进去。
+            // 原来只传了一个数字，而翻译串里有三个 %s，占位符替换不了，
+            // 屏幕上就直接显示出 %sx%sx%s 了。
+            int side = sideLength(radius);
             player.displayClientMessage(Component.translatable(
                     kind == SwordPlacementRegistry.KIND_PAUSE
                             ? "message.kunjinkao.pause_field_started"
                             : "message.kunjinkao.area_accel_started",
-                    sideLength(radius)), true);
+                    side + "x" + side + "x" + side), true);
         } else {
             registry.remove(kind, level.dimension(), immutable);
             player.displayClientMessage(Component.translatable(

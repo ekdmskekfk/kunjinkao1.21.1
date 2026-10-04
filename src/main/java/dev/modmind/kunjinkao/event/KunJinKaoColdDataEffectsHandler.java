@@ -334,6 +334,10 @@ public final class KunJinKaoColdDataEffectsHandler {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setAreaAccelSize(stack, radius));
     }
 
+    public static void handleAreaAccelMultiplier(Player player, InteractionHand hand, int multiplier) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setAreaAccelMultiplier(stack, multiplier));
+    }
+
     /** 时间加速倍率：shift+滚轮 调节，服务端同样夹到合法档位。 */
     public static void handleSetTimeAccelMultiplier(Player player, InteractionHand hand, int multiplier) {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setTimeAccelMultiplier(stack, multiplier));
