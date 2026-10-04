@@ -81,19 +81,13 @@ public final class SwordAreaFieldHandler {
         if (!player.isShiftKeyDown()) {
             return;
         }
-        int mode = KunJinKaoSwordItem.getAreaMode(stack);
-        if (mode == 0) {
+        if (KunJinKaoSwordItem.getAreaMode(stack) == 0) {
             return;
         }
         event.setCanceled(true);
-        int radius = mode == 1
-                ? KunJinKaoSwordItem.getPauseSize(stack)
-                : KunJinKaoSwordItem.getAreaAccelSize(stack);
-        int kind = mode == 1
-                ? SwordPlacementRegistry.KIND_PAUSE
-                : SwordPlacementRegistry.KIND_AREA_ACCEL;
-        SwordAreaFields.tryToggle(player, event.getLevel(), event.getPos(), kind, radius,
-                KunJinKaoSwordItem.getTimeAccelMultiplier(stack));
+        // 建哪种、多大、多少倍一律交给 tryPlaceAreaField 决定，这里不再自己拼一份 ——
+        // 之前就是在这里另抄了一遍，漏改之后写死了机器加速的倍率。
+        KunJinKaoSwordItem.tryPlaceAreaField(player, event.getLevel(), event.getPos(), stack);
     }
 
     /** 服务器停了就清干净，免得状态跨局残留。 */

@@ -514,10 +514,15 @@ public class KunJinKaoSwordItem extends SwordItem {
 
     /**
      * 按当前区域模式在那一格立/撤一个场。
+     * <p>
+     * <b>区域场的"建哪种、多大、多少倍"只在这一处决定。</b>
+     * 之前 {@code SwordAreaFieldHandler.onRightClickBlock} 里另抄了一份，
+     * 结果那边漏改、写死了机器加速的倍率 —— 而那条路才是实际生效的，
+     * 表现就是"范围加速用的倍率是加速分区那个"。两边现在都调这里。
      *
      * @return false 表示区域模式是关的，调用方该继续走原来的加速逻辑
      */
-    private static boolean tryPlaceAreaField(Player player, Level level, BlockPos pos, ItemStack stack) {
+    public static boolean tryPlaceAreaField(Player player, Level level, BlockPos pos, ItemStack stack) {
         int mode = getAreaMode(stack);
         if (mode == 0) {
             return false;
