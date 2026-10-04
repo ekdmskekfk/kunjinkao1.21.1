@@ -278,11 +278,35 @@ public final class SwordAreaFields {
                 }
                 continue;
             }
-            AcceleratorBlockEntity.accelerateArea(serverLevel, entry.pos(), entry.radius(), entry.multiplier(), null);
+            // 【关键】逐格单独调 accelerateArea（半径 0），不要一次覆盖整个立方体。
+            //
+            // accelerateArea 内部有一个每刻 4096 的额外 tick 总预算
+            // （MAX_EXTRA_TICKS_PER_TICK），而且它按 dx/dy/dz 从 -half 开始的顺序消耗。
+            // 倍率 1024 时每台机器一口就吃掉 1023 —— 立方体里第 5 台往后什么都分不到，
+            // 连中心那台都会被前面几格饿死（中心在 27 格里的第 14 格）。
+            //
+            // 这正是"单台加速有用、同一个立方体内的范围加速没用"的原因：
+            // 单台时立方体里只有它自己，独吞 4096，拿满 1023 次额外 tick。
+            //
+            // 一格一格调，每台机器各自拿到完整预算，等价于在这个立方体里摆了 N 个单台加速器 ——
+            // 这也正是"范围加速"该有的语义。
+            int dispatched = 0;
+            int half = entry.radius();
+            for (int dx = -half; dx <= half; dx++) {
+                for (int dy = -half; dy <= half; dy++) {
+                    for (int dz = -half; dz <= half; dz++) {
+                        BlockPos target = entry.pos().offset(dx, dy, dz);
+                        if (!AcceleratorBlockEntity.isAcceleratable(serverLevel, target)) {
+                            continue;
+                        }
+                        AcceleratorBlockEntity.accelerateArea(serverLevel, target, 0, entry.multiplier(), null);
+                        dispatched++;
+                    }
+                }
+            }
             if (verbose) {
-                LOGGER.info("[AREA-ACCEL] 施加于 pos={} radius={} multiplier={} 可加速={}",
-                        entry.pos(), entry.radius(), entry.multiplier(),
-                        AcceleratorBlockEntity.isAcceleratable(serverLevel, entry.pos()));
+                LOGGER.info("[AREA-ACCEL] 中心={} radius={} multiplier={} 覆盖到 {} 台机器",
+                        entry.pos(), entry.radius(), entry.multiplier(), dispatched);
             }
         }
     }
