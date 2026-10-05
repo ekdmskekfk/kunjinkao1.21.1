@@ -272,11 +272,14 @@ public final class KunJinKaoClientSwordVisuals {
         Player holder = Minecraft.getInstance().player;
         ItemStack overlaySword = holder == null ? null : swordForOverlay(holder);
         if (CENTER_COMPILE_USES_3D && compileStageModelsUsable && overlaySword != null) {
-            drawStageModel(graphics, overlaySword, stage, x, y, size, alpha);
+            // 3D 模型按中心点摆；扁平贴图那条路仍按左上角 + size 画，两者落点一致。
+            int centerX = screenWidth / 2;
+            int centerY = screenHeight / 2 + 6;
+            drawStageModel(graphics, overlaySword, stage, centerX, centerY, size, alpha);
             if (blend > 0.0F && stage < 7) {
                 // 把下一级叠上来。两级的模型是包含关系（第 N+1 级 = 第 N 级 + 若干部件），
                 // 所以叠上去就是"又装上了几个部件"，不会出现两把剑重影。
-                drawStageModel(graphics, overlaySword, stage + 1, x, y, size, alpha * blend);
+                drawStageModel(graphics, overlaySword, stage + 1, centerX, centerY, size, alpha * blend);
             }
         } else {
             graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
@@ -315,7 +318,7 @@ public final class KunJinKaoClientSwordVisuals {
      * 改成 {@code block/block} 之后这条路径才成立。
      */
     private static void drawStageModel(GuiGraphics graphics, ItemStack sword, int stage,
-                                       int x, int y, int size, float alpha) {
+                                       int centerX, int centerY, int size, float alpha) {
         ItemStack probe = sword.copy();
         CompoundTag tag = customData(probe);
         tag.putInt("KunJinKaoCompileStage", stage);
@@ -323,12 +326,17 @@ public final class KunJinKaoClientSwordVisuals {
 
         PoseStack pose = graphics.pose();
         pose.pushPose();
-        // GUI 图层的物品渲染习惯在 z=100 那一层，挪进去免得被别的 HUD 盖住。
-        pose.translate(x, y, 100.0F);
+        // 先挪到屏幕中心，再缩放。
+        //
+        // 坐标系是【先平移后缩放】：renderItem 内部会自己 translate(x + 8, y + 8, 150)，
+        // 那个 +8 会被我们的 scale 放大 —— 直接传 (0,0) 的话模型会被推到右下角
+        // （约 8 * scale 像素处）。所以传 (-8, -8) 把内部那 +8 抵消掉，
+        // 模型中心才落在我们平移到的位置上。
+        pose.translate(centerX, centerY, 100.0F);
         float scale = size / 16.0F * CENTER_COMPILE_3D_ZOOM;
         pose.scale(scale, scale, 1.0F);
         graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
-        graphics.renderItem(probe, 0, 0);
+        graphics.renderItem(probe, -8, -8);
         graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
         pose.popPose();
     }
