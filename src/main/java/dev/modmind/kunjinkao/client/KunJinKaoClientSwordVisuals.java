@@ -269,15 +269,22 @@ public final class KunJinKaoClientSwordVisuals {
         //
         // 部件的装配顺序本来就是自下而上（底座 -> 握把 -> 护手 -> 刀身 -> 刀尖），
         // 所以只要把模型裁到扫描线以下，揭示就是连续的，也不再需要分级模型。
-        int cut = y + size - Math.round(size * reveal);
+        //
+        // 裁剪带上下各留一段余量：裁剪的唯一作用是藏住扫描线【以上】的部分，
+        // 绝不该去裁模型本身。模型实际多高取决于 renderItem 与 display.gui 两层缩放，
+        // 按等式推算过一次、算错就把刀尖或底座削掉了 —— 留余量就不必再算准。
+        int pad = Math.max(8, size / 4);
+        int bandTop = y - pad;
+        int bandBottom = y + size + pad;
+        int cut = bandBottom - Math.round((bandBottom - bandTop) * reveal);
 
         Player holder = Minecraft.getInstance().player;
         ItemStack overlaySword = holder == null ? null : swordForOverlay(holder);
         boolean drewModel = false;
-        if (cut < y + size) {
+        if (cut < bandBottom) {
             // 裁剪矩形用的是 GUI 坐标，与上面那套 pose 变换无关 ——
             // drawStageModel 里的 translate/scale 不会被它影响，裁的是最终画面。
-            graphics.enableScissor(x, cut, x + size, y + size);
+            graphics.enableScissor(x - pad, cut, x + size + pad, bandBottom);
             if (CENTER_COMPILE_USES_3D && compileStageModelsUsable && overlaySword != null) {
                 // 3D：第 7 级就是整把剑，按屏幕中心摆。
                 drawStageModel(graphics, overlaySword, 7, screenWidth / 2, screenHeight / 2 + 6, size, alpha);
