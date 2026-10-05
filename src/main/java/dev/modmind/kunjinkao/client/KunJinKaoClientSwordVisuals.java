@@ -49,6 +49,26 @@ public final class KunJinKaoClientSwordVisuals {
     private static final int GRAB_SWORD_TtCKS = 14;
 
     /**
+     * 屏幕中央的编译展示是否用 3D 模型（而不是八张扁平贴图）。
+     * <p>
+     * 早先这里写死走扁平贴图，注释里记着理由是"renderItem 在这套阶段模型上始终画不出东西"。
+     * 真正的原因是那时阶段模型挂在 {@code builtin/generated} 下、元素被 ItemModelGenerator
+     * 丢光，模型面数为 0 —— 换成 {@code block/block} 之后这条路才成立。
+     * <p>
+     * 万一在别的环境下仍然画不出来，把这个常量改成 false 就退回扁平贴图，
+     * 不用改别的代码。模型本身为空时也会自动退回（见 {@code compileStageModelsUsable}）。
+     */
+    private static final boolean CENTER_COMPILE_USES_3D = true;
+
+    /**
+     * 3D 展示的额外放大倍数。
+     * <p>
+     * {@code renderItem} 按物品模型 {@code display.gui} 的缩放来画，而剑那份没有写 scale，
+     * 会落到父模型 block/block 的 0.625，直接画会比扁平贴图小一圈。这里补回来。
+     */
+    private static final float CENTER_COMPILE_3D_ZOOM = 1.6F;
+
+    /**
      * 抓取阶段里，屏幕中央那把剑的淡出时长（tick）。
      * <p>
      * 只占抓取阶段的<b>开头</b>一小段：编译一结束就把剑交给手。
@@ -247,17 +267,30 @@ public final class KunJinKaoClientSwordVisuals {
         int stage = Mth.clamp((int) scaled, 0, 7);
         float within = Mth.clamp(scaled - stage, 0.0F, 1.0F);
         float blend = stage < 7 ? Mth.clamp((within - 0.55F) / 0.45F, 0.0F, 1.0F) : 0.0F;
-        graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
-        graphics.blit(ResourceLocation.fromNamespaceAndPath(
-                        KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao_stage_" + stage + ".png"),
-                x, y, 0, 0, size, size, size, size);
-        if (blend > 0.0F) {
-            // 下一级淡入；用普通混合即可 —— 这套图只有内容与透明两态，叠加不会发灰。
-            graphics.setColor(1.0F, 1.0F, 1.0F, alpha * blend);
-            graphics.blit(ResourceLocation.fromNamespaceAndPath(
-                            KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao_stage_" + (stage + 1) + ".png"),
-                    x, y, 0, 0, size, size, size, size);
+        // 3D 优先：把带 KunJinKaoCompileStage 标记的剑副本交给 renderItem，
+        // 由物品模型的 overrides 选出对应那一级 —— 与手里、第三人称用的是同一批烘焙模型。
+        Player holder = Minecraft.getInstance().player;
+        ItemStack overlaySword = holder == null ? null : swordForOverlay(holder);
+        if (CENTER_COMPILE_USES_3D && compileStageModelsUsable && overlaySword != null) {
+            drawStageModel(graphics, overlaySword, stage, x, y, size, alpha);
+            if (blend > 0.0F && stage < 7) {
+                // 把下一级叠上来。两级的模型是包含关系（第 N+1 级 = 第 N 级 + 若干部件），
+                // 所以叠上去就是"又装上了几个部件"，不会出现两把剑重影。
+                drawStageModel(graphics, overlaySword, stage + 1, x, y, size, alpha * blend);
+            }
+        } else {
             graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
+            graphics.blit(ResourceLocation.fromNamespaceAndPath(
+                            KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao_stage_" + stage + ".png"),
+                    x, y, 0, 0, size, size, size, size);
+            if (blend > 0.0F) {
+                // 下一级淡入；用普通混合即可 —— 这套图只有内容与透明两态，叠加不会发灰。
+                graphics.setColor(1.0F, 1.0F, 1.0F, alpha * blend);
+                graphics.blit(ResourceLocation.fromNamespaceAndPath(
+                                KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao_stage_" + (stage + 1) + ".png"),
+                        x, y, 0, 0, size, size, size, size);
+                graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
+            }
         }
         // 扫描亮线跟着连续的 reveal 走，把离散的级切换缝起来。
         int scanAlpha = (int) (alpha * 190.0F);
@@ -267,6 +300,45 @@ public final class KunJinKaoClientSwordVisuals {
         }
         // 复位着色器颜色，避免影响同一图层里后续的绘制
         graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
+    /**
+     * 在 GUI 图层里画某一级的 3D 编译模型。
+     * <p>
+     * 做法是拿一把带 {@code KunJinKaoCompileStage} 标记的剑副本交给 {@code renderItem} ——
+     * 物品模型的 overrides 会据这个标记选出对应那一级的模型，也就是手里与第三人称
+     * 正在用的同一批烘焙模型。标记的判断在 {@code getDrawCompileModelStage} 里排在
+     * 所有可见性检查【之前】，所以副本不需要和玩家手持的那把完全一致。
+     * <p>
+     * 早先这里画不出东西、作者因此退回扁平贴图，真正的原因是那时阶段模型挂在
+     * {@code builtin/generated} 下、元素被 ItemModelGenerator 丢光（面数为 0）。
+     * 改成 {@code block/block} 之后这条路径才成立。
+     */
+    private static void drawStageModel(GuiGraphics graphics, ItemStack sword, int stage,
+                                       int x, int y, int size, float alpha) {
+        ItemStack probe = sword.copy();
+        CompoundTag tag = customData(probe);
+        tag.putInt("KunJinKaoCompileStage", stage);
+        probe.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+
+        PoseStack pose = graphics.pose();
+        pose.pushPose();
+        // GUI 图层的物品渲染习惯在 z=100 那一层，挪进去免得被别的 HUD 盖住。
+        pose.translate(x, y, 100.0F);
+        float scale = size / 16.0F * CENTER_COMPILE_3D_ZOOM;
+        pose.scale(scale, scale, 1.0F);
+        graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
+        graphics.renderItem(probe, 0, 0);
+        graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+        pose.popPose();
+    }
+
+    /** 中央展示要画的那把剑；不是本模组的剑时返回 null，让调用方退回扁平贴图。 */
+    private static ItemStack swordForOverlay(Player holder) {
+        ItemStack stack = compileHand == null
+                ? holder.getMainHandItem()
+                : holder.getItemInHand(compileHand);
+        return stack.getItem() instanceof KunJinKaoSwordItem ? stack : null;
     }
 
     /** 当前编译动画绑定的手；{@code RenderHandEvent} 用它保证一帧只画一次中央展示。 */
