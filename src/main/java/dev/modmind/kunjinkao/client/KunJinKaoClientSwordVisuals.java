@@ -64,9 +64,13 @@ public final class KunJinKaoClientSwordVisuals {
      * 3D 展示的额外放大倍数。
      * <p>
      * {@code renderItem} 按物品模型 {@code display.gui} 的缩放来画，而剑那份没有写 scale，
-     * 会落到父模型 block/block 的 0.625，直接画会比扁平贴图小一圈。这里补回来。
+     * 会落到父模型 block/block 的 0.625。
+     * <p>
+     * 取值让整把剑正好占满 {@code size}：模型高约 18 单位，渲染高度 = 18 × 0.625 ×
+     * (size/16 × ZOOM)，令它等于 size 得 ZOOM ≈ 16/11.25 ≈ 1.42。
+     * 调大就会超出裁剪带（中央揭示是按高度裁的），底部或顶部会被切掉。
      */
-    private static final float CENTER_COMPILE_3D_ZOOM = 1.6F;
+    private static final float CENTER_COMPILE_3D_ZOOM = 1.42F;
 
     /**
      * 抓取阶段里，屏幕中央那把剑的淡出时长（tick）。
@@ -257,48 +261,40 @@ public final class KunJinKaoClientSwordVisuals {
         int x = screenWidth / 2 - size / 2;
         int y = screenHeight / 2 - size / 2 + 6;
 
-        // 八级切换 + 交叉淡入。
+        // 连续揭示：直接画【完整】模型，再用剪刀按扫描线裁掉还没"编译"出来的部分。
         //
-        // 层级仍然是 8 级（整段 DRAW_COMPtLE_TtCKS 均分，每级 6 tick），但切换点不再"啪"地一跳：
-        // 每一级走到后 45% 时，把下一级以递增的 alpha 叠上来，于是两级之间是渐变的。
-        // 最上面再压一条扫描亮线 —— 它跟着【连续】的 reveal 走、而不是卡在级边界，
-        // 所以即使层级是离散的，肉眼看到的推进也是连着的。
-        float scaled = reveal * 8.0F;
-        int stage = Mth.clamp((int) scaled, 0, 7);
-        float within = Mth.clamp(scaled - stage, 0.0F, 1.0F);
-        float blend = stage < 7 ? Mth.clamp((within - 0.55F) / 0.45F, 0.0F, 1.0F) : 0.0F;
-        // 3D 优先：把带 KunJinKaoCompileStage 标记的剑副本交给 renderItem，
-        // 由物品模型的 overrides 选出对应那一级 —— 与手里、第三人称用的是同一批烘焙模型。
+        // 以前是按 reveal 切成 8 级、每级换一个模型，于是每 6 tick 啪地多出一整个部件；
+        // 而且 reveal 经过 smoothstep 之后到 0.875 就进了第 7 级，
+        // 最后三分之一的时间都在显示完整模型 —— 看起来就是"停在那儿不动"。
+        //
+        // 部件的装配顺序本来就是自下而上（底座 -> 握把 -> 护手 -> 刀身 -> 刀尖），
+        // 所以只要把模型裁到扫描线以下，揭示就是连续的，也不再需要分级模型。
+        int cut = y + size - Math.round(size * reveal);
+
         Player holder = Minecraft.getInstance().player;
         ItemStack overlaySword = holder == null ? null : swordForOverlay(holder);
-        if (CENTER_COMPILE_USES_3D && compileStageModelsUsable && overlaySword != null) {
-            // 3D 模型按中心点摆；扁平贴图那条路仍按左上角 + size 画，两者落点一致。
-            int centerX = screenWidth / 2;
-            int centerY = screenHeight / 2 + 6;
-            drawStageModel(graphics, overlaySword, stage, centerX, centerY, size, alpha);
-            if (blend > 0.0F && stage < 7) {
-                // 把下一级叠上来。两级的模型是包含关系（第 N+1 级 = 第 N 级 + 若干部件），
-                // 所以叠上去就是"又装上了几个部件"，不会出现两把剑重影。
-                drawStageModel(graphics, overlaySword, stage + 1, centerX, centerY, size, alpha * blend);
-            }
-        } else {
-            graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
-            graphics.blit(ResourceLocation.fromNamespaceAndPath(
-                            KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao_stage_" + stage + ".png"),
-                    x, y, 0, 0, size, size, size, size);
-            if (blend > 0.0F) {
-                // 下一级淡入；用普通混合即可 —— 这套图只有内容与透明两态，叠加不会发灰。
-                graphics.setColor(1.0F, 1.0F, 1.0F, alpha * blend);
-                graphics.blit(ResourceLocation.fromNamespaceAndPath(
-                                KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao_stage_" + (stage + 1) + ".png"),
-                        x, y, 0, 0, size, size, size, size);
+        boolean drewModel = false;
+        if (cut < y + size) {
+            // 裁剪矩形用的是 GUI 坐标，与上面那套 pose 变换无关 ——
+            // drawStageModel 里的 translate/scale 不会被它影响，裁的是最终画面。
+            graphics.enableScissor(x, cut, x + size, y + size);
+            if (CENTER_COMPILE_USES_3D && compileStageModelsUsable && overlaySword != null) {
+                // 3D：第 7 级就是整把剑，按屏幕中心摆。
+                drawStageModel(graphics, overlaySword, 7, screenWidth / 2, screenHeight / 2 + 6, size, alpha);
+            } else {
+                // 退回扁平贴图：同样只用最后一张完整图，靠裁剪揭示。
                 graphics.setColor(1.0F, 1.0F, 1.0F, alpha);
+                graphics.blit(ResourceLocation.fromNamespaceAndPath(
+                                KunJinKaoEntry.MOD_ID, "textures/item/kun_jin_kao_stage_7.png"),
+                        x, y, 0, 0, size, size, size, size);
+                graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
             }
+            drewModel = true;
+            graphics.disableScissor();
         }
-        // 扫描亮线跟着连续的 reveal 走，把离散的级切换缝起来。
+        // 扫描亮线正好画在裁剪边界上 —— 它就是"编译到哪儿了"的那条线。
         int scanAlpha = (int) (alpha * 190.0F);
-        if (scanAlpha > 4) {
-            int cut = y + Math.round(size * reveal);
+        if (drewModel && scanAlpha > 4) {
             graphics.fill(x, cut - 1, x + size, cut + 1, (scanAlpha << 24) | 0xBFF6FF);
         }
         // 复位着色器颜色，避免影响同一图层里后续的绘制
