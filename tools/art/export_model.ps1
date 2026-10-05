@@ -1,7 +1,10 @@
-﻿<#
-  从几何参数导出模型 JSON：
+<#
+  从几何参数导出主模型 JSON：
     - models/item/kun_jin_kao_3d.json        主模型（17 个部件）
-    - models/item/kun_jin_kao_compile_0..7.json  编译分级模型（按部件递进，手里会看着它自己装起来）
+
+  ⚠ 主模型现在以 Blockbench 导出的那份为准。跑本脚本会【覆盖】它，
+    你在 Blockbench 里的改动会丢。只有在确实想从 $raw 重造主模型时才跑。
+    八级编译模型不在这里生成 —— 见文件末尾的说明，跑 make_compile_stages.ps1。
 
   几何坐标沿用原模型约定：刀身 +Y、Z 居中 8。
   坐标先按 $K 以 ($CX,$CY,$CZ) 为中心等比缩放，这样"整体多大"是一个数字的事。
@@ -87,24 +90,16 @@ $out3d = Join-Path $modelDir 'kun_jin_kao_3d.json'
 [IO.File]::WriteAllText($out3d, ($model | ConvertTo-Json -Depth 12), [Text.UTF8Encoding]::new($false))
 "主模型 -> kun_jin_kao_3d.json （$($parts.Count) 个部件）"
 
-# ---- 8 级编译模型：按部件递进，手里会看着剑自己装起来 ----
-$stages = @(
-  @('pommel'),
-  @('pommel','grip'),
-  @('pommel','grip','guardBody'),
-  @('pommel','grip','guardBody','finL','finR','screenF','promptF','screenB','promptB'),
-  @('pommel','grip','guardBody','finL','finR','screenF','promptF','screenB','promptB','collar','blade1'),
-  @('pommel','grip','guardBody','finL','finR','screenF','promptF','screenB','promptB','collar','blade1','blade2'),
-  @('pommel','grip','guardBody','finL','finR','screenF','promptF','screenB','promptB','collar','blade1','blade2','blade3'),
-  @('pommel','grip','guardBody','finL','finR','screenF','promptF','screenB','promptB','collar','blade1','blade2','blade3','cursorTip','dash1','dash2','dash3')
-)
-for ($s=0; $s -lt 8; $s++) {
-  $subset = @($parts | Where-Object { $stages[$s] -contains $_.n })
-  $m = [ordered]@{
-    parent = 'minecraft:block/block'; ambientocclusion = $false
-    display = $display; textures = $textures; elements = (Build-Elements $subset)
-  }
-  [IO.File]::WriteAllText((Join-Path $modelDir "kun_jin_kao_compile_$s.json"),
-    ($m | ConvertTo-Json -Depth 12), [Text.UTF8Encoding]::new($false))
-  "  compile_$s -> $($subset.Count) 个部件"
-}
+# ---- 八级编译模型不在这里生成 ----
+#
+# 以前这段是按上面的 $stages 从 $parts 里挑子集，另写一套 compile_N.json。
+# 主模型改用 Blockbench 编辑之后，那套几何就与主模型脱节了 ——
+# 手里八级拼出来的形状和成品不是同一把剑。
+#
+# 现在分级由 make_compile_stages.ps1 直接从 kun_jin_kao_3d.json 取元素前缀生成，
+# 主模型是唯一真源。跑完本脚本后请接着跑那一个：
+#
+#     .\export_model.ps1          # 只产出主模型
+#     .\make_compile_stages.ps1   # 再从主模型切出八级
+#
+"提示：八级编译模型请接着跑 make_compile_stages.ps1（它从主模型切）"
