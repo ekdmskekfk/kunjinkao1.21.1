@@ -101,7 +101,11 @@ public record PlacementSyncPayload(List<Entry> entries) implements CustomPacketP
 
     public static void handle(PlacementSyncPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
+            // 先留一份旧的，交给世界效果层比对出"这次新立起来的那几个场"，
+            // 好在它们脚下放一圈扫描环。收回的不放 —— 否则分不清立还是撤。
+            List<Entry> before = clientCache;
             clientCache = List.copyOf(payload.entries());
+            dev.modmind.kunjinkao.client.render.SwordWorldEffects.onPlacementSync(before, clientCache);
             net.minecraft.client.Minecraft.getInstance().execute(() -> {
                 // 菜单开着就立刻重画，免得看到的是上一次的表。
                 if (net.minecraft.client.Minecraft.getInstance().screen
