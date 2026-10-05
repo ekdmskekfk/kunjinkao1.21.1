@@ -1,6 +1,7 @@
 package dev.modmind.kunjinkao.client.render;
 
 import dev.modmind.kunjinkao.KunJinKaoEntry;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.ItemOverrides;
@@ -49,7 +50,20 @@ import java.util.Map;
  * 所以拼不了"加载时组合两个模型"，但烘焙完之后替换是允许的。
  * <p>
  * 发光那一遍用 {@code entityTranslucentEmissive}：它就是不采样光照贴图的着色器
- * （原版蜘蛛眼睛发光靠的也是它），因此 {@code RenderType.eyes} 那种"暗处仍亮"的效果成立。
+ * （原版蜘蛛眼睛发光靠的也是它），因此"暗处仍亮"的效果成立。
+ * <p>
+ * ## 0.9.1 当初为什么把资源重载搞崩了
+ *
+ * {@code RegisterAdditional.register()} <b>只接受 standalone 变体</b>，传 inventory 会抛
+ * {@code IllegalArgumentException: Side-loaded models must use the 'standalone' variant}，
+ * 而异常发生在 ModelBakery 构造期间 —— 直接表现为"资源重载失败"。
+ * <p>
+ * 它的 javadoc 写得很明白：<i>传入的 MRL 必须用同一个来取回被加载的模型</i>。
+ * 所以这里注册与取回都走 {@code standalone}。
+ * <p>
+ * 取回还特意做成<b>懒解析</b>：side-loaded 模型的烘焙时机与 {@code ModifyBakingResult}
+ * 的先后顺序没有保证，放在构造期去查会拿到空值；推迟到第一次渲染时再取，
+ * 那时 ModelManager 早就装好了。
  */
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.MOD)
 public final class KunJinKaoGlowModels {
@@ -59,29 +73,31 @@ public final class KunJinKaoGlowModels {
     private static final ResourceLocation GLOW_ID =
             ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "item/kun_jin_kao_3d_glow");
     /** 两个模型都用这一张图集，所以发光那一遍的渲染类型也指向它。 */
-    public static final ResourceLocation ATLAS =
+    private static final ResourceLocation ATLAS =
             ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "item/kun_jin_kao_atlas");
+
+    /** side-loaded 模型的身份：RegisterAdditional 与取回都必须用 standalone。 */
+    private static final ModelResourceLocation GLOW_KEY = ModelResourceLocation.standalone(GLOW_ID);
 
     private KunJinKaoGlowModels() {
     }
 
     @SubscribeEvent
     public static void onRegisterAdditional(ModelEvent.RegisterAdditional event) {
-        // 发光模型没有任何东西引用它，不注册就不会被烘焙，后面也就取不到。
-        event.register(ModelResourceLocation.inventory(GLOW_ID));
+        // 发光模型没有任何东西引用它，不注册就不会被烘焙。
+        // 这里【必须】是 standalone —— 传 inventory 会让整个资源重载失败。
+        event.register(GLOW_KEY);
     }
 
     @SubscribeEvent
     public static void onModifyBakingResult(ModelEvent.ModifyBakingResult event) {
         Map<ModelResourceLocation, BakedModel> models = event.getModels();
         ModelResourceLocation baseKey = ModelResourceLocation.inventory(BASE_ID);
-        ModelResourceLocation glowKey = ModelResourceLocation.inventory(GLOW_ID);
         BakedModel base = models.get(baseKey);
-        BakedModel glow = models.get(glowKey);
-        if (base == null || glow == null || base instanceof GlowBakedModel) {
+        if (base == null || base instanceof GlowBakedModel) {
             return;
         }
-        models.put(baseKey, new GlowBakedModel(base, glow));
+        models.put(baseKey, new GlowBakedModel(base));
     }
 
     /**
@@ -90,16 +106,46 @@ public final class KunJinKaoGlowModels {
      * 除多通道相关的两个方法外，其余全部转交给本体 ——
      * 显示变换、overrides、粒子图标都必须来自本体，否则物品的
      * display 与八级编译的 overrides 会失效。
+     * <p>
+     * 不用 record：发光层要可变（懒解析后缓存）。
      */
-    private record GlowBakedModel(BakedModel base, BakedModel glow) implements BakedModel {
+    private static final class GlowBakedModel implements BakedModel {
+
+        private final BakedModel base;
+        private BakedModel glow;
+        private boolean glowResolved;
+
+        private GlowBakedModel(BakedModel base) {
+            this.base = base;
+        }
+
+        /** 第一次需要时才去 ModelManager 取，取不到就退化成只有本体一层。 */
+        private BakedModel glow() {
+            if (!glowResolved) {
+                glowResolved = true;
+                Minecraft minecraft = Minecraft.getInstance();
+                if (minecraft != null) {
+                    BakedModel resolved = minecraft.getModelManager().getModel(GLOW_KEY);
+                    if (resolved != null && resolved != minecraft.getModelManager().getMissingModel()) {
+                        glow = resolved;
+                    }
+                }
+            }
+            return glow;
+        }
 
         @Override
         public List<BakedModel> getRenderPasses(ItemStack stack, boolean fabulous) {
-            return List.of(base, glow);
+            BakedModel layer = glow();
+            return layer == null ? List.of(base) : List.of(base, layer);
         }
 
         @Override
         public List<RenderType> getRenderTypes(ItemStack stack, boolean fabulous) {
+            // 必须与 getRenderPasses 的长度一致，否则原版取渲染类型时会越界
+            if (glow() == null) {
+                return List.of(RenderTypeHelper.getFallbackItemRenderType(stack, base, fabulous));
+            }
             return List.of(
                     // 本体沿用 NeoForge 的默认判定，避免自己写死 cutout 改变透明度处理
                     RenderTypeHelper.getFallbackItemRenderType(stack, base, fabulous),
