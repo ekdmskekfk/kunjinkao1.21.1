@@ -209,6 +209,9 @@ public final class KunJinKaoClientSwordVisuals {
                     SoundSource.PLAYERS, 0.9F, 1.0F);
         }
 
+        // 命中的爆点：冲击波 + 屏幕故障。打出去要有回应，这是"爽"的全部来源。
+        dev.modmind.kunjinkao.client.render.SwordHitFeedback.trigger(minecraft.player, target);
+
         attackHudTicks = 18;
         attackHudPhase = (attackHudPhase + 1) % 3;
     }
