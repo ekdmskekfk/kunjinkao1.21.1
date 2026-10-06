@@ -164,6 +164,14 @@ public final class KunJinKaoClientSwordVisuals {
             drawCompileTicks--;
             if (drawCompileTicks == 0) {
                 grabSwordTicks = GRAB_SWORD_TtCKS;
+                // 编译收束音：这一刻剑刚拼完、手正要伸过来，是整段动画唯一的"完成"瞬间。
+                // 没有声音的话这段只有画面在动，拼完也没有交代。
+                if (minecraft.level != null && minecraft.player != null) {
+                    minecraft.level.playSound(minecraft.player, minecraft.player.getX(),
+                            minecraft.player.getY(), minecraft.player.getZ(),
+                            dev.modmind.kunjinkao.sound.KunJinKaoSounds.COMPILE_DONE.get(),
+                            SoundSource.PLAYERS, 0.7F, 1.0F);
+                }
             }
         } else if (grabSwordTicks > 0) {
             grabSwordTicks--;
@@ -187,6 +195,20 @@ public final class KunJinKaoClientSwordVisuals {
 
         Entity target = event.getTarget();
         emitStructuredAfterimage(minecraft.player, target);
+
+        // 挥砍与命中两声叠在一起，读作"whoosh-thunk"。
+        // 破空声刻意压低：让它当引子，金属冲击声当主角。
+        // 反过来（破空大声、命中小声）听上去像在挥塑料。
+        if (minecraft.level != null) {
+            minecraft.level.playSound(minecraft.player, minecraft.player.getX(),
+                    minecraft.player.getY(), minecraft.player.getZ(),
+                    dev.modmind.kunjinkao.sound.KunJinKaoSounds.SWING.get(),
+                    SoundSource.PLAYERS, 0.45F, 1.0F);
+            minecraft.level.playSound(minecraft.player, target.getX(), target.getY(), target.getZ(),
+                    dev.modmind.kunjinkao.sound.KunJinKaoSounds.HIT.get(),
+                    SoundSource.PLAYERS, 0.9F, 1.0F);
+        }
+
         attackHudTicks = 18;
         attackHudPhase = (attackHudPhase + 1) % 3;
     }

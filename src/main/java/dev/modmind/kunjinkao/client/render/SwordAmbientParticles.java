@@ -56,8 +56,14 @@ public final class SwordAmbientParticles {
     /** 待机粒子间隔（tick）。3 刻约每秒 6~7 粒：够有存在感，又不刷屏。 */
     private static final int IDLE_INTERVAL = 3;
 
+    /** 待机嗡鸣的重播间隔（tick）。比 hum.ogg 的 2 秒略短，形成轻微交叠。 */
+    private static final int HUM_INTERVAL = 39;
+    /** 底噪要很轻 —— 它该是"感觉到"而不是"听到"。 */
+    private static final float HUM_VOLUME = 0.22F;
+
     private static final Random RANDOM = new Random();
     private static int idleTicker;
+    private static int humTicker;
 
     private SwordAmbientParticles() {
     }
@@ -78,7 +84,20 @@ public final class SwordAmbientParticles {
         ItemStack stack = heldVisibleSword(player);
         if (stack == null) {
             idleTicker = 0;
+            humTicker = 0;
             return;
+        }
+
+        // 待机嗡鸣：hum.ogg 是 2 秒整周期的整数谐波，本身无缝。
+        // 每 39 刻（1.95 秒）叠一次，比 2 秒略短，形成轻微交叠 ——
+        // 正好补掉调度抖动造成的缝隙，听上去是连续的底噪而不是一段段重复。
+        // 音高加一点随机，免得像坏掉的循环。
+        if (++humTicker >= HUM_INTERVAL) {
+            humTicker = 0;
+            player.level().playLocalSound(player.getX(), player.getY(), player.getZ(),
+                    dev.modmind.kunjinkao.sound.KunJinKaoSounds.HUM.get(),
+                    net.minecraft.sounds.SoundSource.AMBIENT,
+                    HUM_VOLUME, 0.97F + RANDOM.nextFloat() * 0.06F, false);
         }
 
         // ================= 挥砍轨迹 =================

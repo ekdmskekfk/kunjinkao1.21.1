@@ -41,6 +41,7 @@ public final class KunJinKaoEntry {
         SwordRegistry.register(modEventBus);
         AcceleratorRegistry.register(modEventBus);
         WorldGateRegistry.register(modEventBus);
+        dev.modmind.kunjinkao.sound.KunJinKaoSounds.register(modEventBus);
         container.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON,
                 AdminToolConfig.COMMON_SPEC, "kunjinkao-admin.toml");
 

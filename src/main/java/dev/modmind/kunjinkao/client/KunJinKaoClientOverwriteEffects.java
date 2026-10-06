@@ -280,7 +280,11 @@ public final class KunJinKaoClientOverwriteEffects {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc.level != null && mc.player != null) {
-                mc.level.playSound(null, mc.player.getX(), mc.player.getY(), mc.player.getZ(), SoundEvents.GENERIC_HURT, SoundSource.AMBIENT, 0.3F, 1.5F);
+                // 原来是 SoundEvents.GENERIC_HURT —— 玩家受伤的呻吟声，明显是占位，
+                // 而且是"人"的音色，跟覆写要表达的数据损坏完全不是一回事。
+                mc.level.playSound(null, mc.player.getX(), mc.player.getY(), mc.player.getZ(),
+                        dev.modmind.kunjinkao.sound.KunJinKaoSounds.CORRUPT.get(),
+                        SoundSource.AMBIENT, 0.42F, 1.0F);
             }
         } catch (Exception ignored) {
         }
