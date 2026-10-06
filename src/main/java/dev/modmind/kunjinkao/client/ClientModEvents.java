@@ -19,7 +19,6 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
-import dev.modmind.kunjinkao.client.render.SwordHitFeedback;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -100,7 +99,6 @@ public class ClientModEvents {
                     KunJinKaoOverwriteHudOverlay.render(guiGraphics, partialTick, screenWidth, screenHeight);
                     KunJinKaoClientSwordVisuals.renderCompileModel(guiGraphics, screenWidth, screenHeight, partialTick);
                     KunJinKaoClientSwordVisuals.renderAttackData(guiGraphics, screenWidth, screenHeight);
-                    SwordHitFeedback.renderOverlay(guiGraphics, screenWidth, screenHeight);
                 });
         event.registerAboveAll(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "tactical_eye_hud"),
                 (guiGraphics, deltaTracker) -> {
