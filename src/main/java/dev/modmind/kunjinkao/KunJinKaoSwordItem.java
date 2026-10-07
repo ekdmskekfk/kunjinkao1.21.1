@@ -109,6 +109,8 @@ public class KunJinKaoSwordItem extends SwordItem {
     private static final String BEHEADING_KEY = "BeheadingEnabled";
     /** 精准采集：开启后剑上会真的挂上原版精准采集附魔。 */
     private static final String SILK_TOUCH_KEY = "SilkTouchEnabled";
+    /** 挖掘熔炼：挖到的掉落自动过一遍熔炉（熔炼）配方。 */
+    private static final String AUTO_SMELT_KEY = "AutoSmeltEnabled";
     /** 刷怪蛋掉落：击杀生物时额外掉落它的刷怪蛋。 */
     private static final String SPAWN_EGG_DROP_KEY = "SpawnEggDropEnabled";
     /** 扳手：给剑带上扳手标记。同时剑在 c:tools/wrench 标签里，模组会直接把它当扳手。 */
@@ -433,6 +435,22 @@ public class KunJinKaoSwordItem extends SwordItem {
             mutable.removeIf(holder -> holder.is(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH));
         }
         stack.set(net.minecraft.core.component.DataComponents.ENCHANTMENTS, mutable.toImmutable());
+    }
+
+    /**
+     * 挖掘熔炼：挖到的掉落自动过一遍熔炉（熔炼）配方 —— 原矿出锅成锭、沙子成玻璃、圆石成石头。
+     * <p>
+     * 这里只存取开关，不在这查配方：物品类在客户端也会加载，而配方表只在服务端拿得到。
+     * 真正的替换在 {@link dev.modmind.kunjinkao.event.KunJinKaoAutoSmeltHandler} 里。
+     */
+    public static boolean isAutoSmeltEnabled(ItemStack stack) {
+        return dataTag(stack).getBoolean(AUTO_SMELT_KEY);
+    }
+
+    public static void setAutoSmeltEnabled(ItemStack stack, boolean enabled) {
+        CompoundTag tag = dataTag(stack);
+        tag.putBoolean(AUTO_SMELT_KEY, enabled);
+        writeDataTag(stack, tag);
     }
 
     /** 刷怪蛋掉落：击杀生物时额外掉落它的刷怪蛋。 */

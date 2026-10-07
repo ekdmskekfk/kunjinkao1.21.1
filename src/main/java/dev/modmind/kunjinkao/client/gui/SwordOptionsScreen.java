@@ -81,6 +81,7 @@ public final class SwordOptionsScreen extends Screen {
     private Button beheadingToggle;
     private Button spawnEggDropToggle;
     private Button silkTouchToggle;
+    private Button autoSmeltToggle;
 
     // ===== 分页 =====
     /** 0 = 设置页，1 = 放置记录页。 */
@@ -213,6 +214,9 @@ public final class SwordOptionsScreen extends Screen {
         spawnEggDropToggle = addButton(leftX + BOX_PAD + btnW + BTN_GAP, contentTop + ROW_H * 2, btnW,
                 this::toggleSpawnEggDrop);
         silkTouchToggle = addButton(leftX + BOX_PAD, contentTop + ROW_H * 3, btnW, this::toggleSilkTouch);
+        // 第 4 行右半边本来就空着（当初加精准采集只占了左半），挖掘熔炼正好补上，面板高度不变。
+        autoSmeltToggle = addButton(leftX + BOX_PAD + btnW + BTN_GAP, contentTop + ROW_H * 3, btnW,
+                this::toggleAutoSmelt);
 
         // ---------- 左列 · 处决 ----------
         int execTitleY = contentTop + ROW_H * 3 + BTN_H + BOX_PAD + SECTION_GAP;
@@ -777,6 +781,13 @@ public final class SwordOptionsScreen extends Screen {
                     Component.translatable(silk
                             ? "screen.kunjinkao.switch_on" : "screen.kunjinkao.switch_off")));
         }
+        if (autoSmeltToggle != null) {
+            boolean autoSmelt = player != null
+                    && KunJinKaoSwordItem.isAutoSmeltEnabled(player.getItemInHand(hand));
+            autoSmeltToggle.setMessage(label("screen.kunjinkao.auto_smelt",
+                    Component.translatable(autoSmelt
+                            ? "screen.kunjinkao.switch_on" : "screen.kunjinkao.switch_off")));
+        }
         if (accelModeButton != null) {
             int accelMode = player == null ? SwordTimeAcceleration.MODE_OFF
                     : KunJinKaoSwordItem.getTimeAccelMode(player.getItemInHand(hand));
@@ -963,6 +974,29 @@ public final class SwordOptionsScreen extends Screen {
         // 本地先改，按钮反馈才跟得上；服务端那份由下面的包同步。
         KunJinKaoSwordItem.setSilkTouchEnabled(stack, enabled, player.level());
         NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.SILK_TOUCH,
+                enabled ? 1 : 0));
+        refreshLabels();
+    }
+
+    /**
+     * 挖掘熔炼。
+     * <p>
+     * 掉落替换完全在服务端的 {@code KunJinKaoAutoSmeltHandler} 里做（要查配方表），
+     * 这里和精准采集一样只翻开关并同步。
+     * <p>
+     * 与精准采集互斥：精准采集开着时熔炼不生效。这里不拦着不让点 ——
+     * 两个开关各自独立、状态看得见，比"点了没反应"清楚。
+     */
+    private void toggleAutoSmelt() {
+        Player player = Minecraft.getInstance().player;
+        ItemStack stack = player == null ? ItemStack.EMPTY : player.getItemInHand(hand);
+        if (!(stack.getItem() instanceof KunJinKaoSwordItem)) {
+            onClose();
+            return;
+        }
+        boolean enabled = !KunJinKaoSwordItem.isAutoSmeltEnabled(stack);
+        KunJinKaoSwordItem.setAutoSmeltEnabled(stack, enabled);
+        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.AUTO_SMELT,
                 enabled ? 1 : 0));
         refreshLabels();
     }

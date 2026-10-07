@@ -45,10 +45,14 @@ public final class KunJinKaoOreDropHandler {
 
         BlockPos pos = event.getPos().immutable();
         BlockEntity blockEntity = level.getBlockEntity(pos);
-        List<ItemStack> baseDrops = Block.getDrops(state, level, pos, blockEntity, player, tool);
-        if (baseDrops.isEmpty()) {
+        List<ItemStack> rawDrops = Block.getDrops(state, level, pos, blockEntity, player, tool);
+        if (rawDrops.isEmpty()) {
             return;
         }
+        // 开了挖掘熔炼时，补发的这一份也必须是熔炼产物。
+        // 正常那一路（BlockDropsEvent）已经烧过了，这里不跟着烧的话，
+        // 同一个开关会挖出"一半是锭、一半是原矿"，看起来像随机 bug。
+        final List<ItemStack> baseDrops = KunJinKaoAutoSmeltHandler.smeltList(level, tool, rawDrops);
 
         // BreakEvent 在原版放出掉落前触发；排到同一服务器任务队列中，
         // 仅当该方块确实已被破坏时再补足 multiplier - 1 份掉落。

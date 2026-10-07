@@ -78,6 +78,10 @@ public final class KunJinKaoUnbreakableBlockHandler {
             drops.add(fallback);
         }
 
+        // 挖掘熔炼：这条路径自己算掉落、自己 popResource，绕开了 BlockDropsEvent，
+        // 所以要在这里补一次，否则"挖基岩/屏障"和"挖普通方块"的表现对不上。
+        drops = KunJinKaoAutoSmeltHandler.smeltList(level, stack, drops);
+
         state.getBlock().playerWillDestroy(level, pos, state, player);
 
         // 刻意不用 Level.destroyBlock：它的返回值就是 setBlock 的结果，

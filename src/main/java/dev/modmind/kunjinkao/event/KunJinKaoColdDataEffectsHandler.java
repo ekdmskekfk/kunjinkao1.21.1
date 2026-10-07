@@ -317,6 +317,11 @@ public final class KunJinKaoColdDataEffectsHandler {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setSilkTouchEnabled(stack, enabled, player.level()));
     }
 
+    /** 挖掘熔炼：挖到的掉落自动过一遍熔炉配方。替换逻辑在 KunJinKaoAutoSmeltHandler。 */
+    public static void handleToggleAutoSmelt(Player player, InteractionHand hand, boolean enabled) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setAutoSmeltEnabled(stack, enabled));
+    }
+
     /** 扳手标记：给剑带上/取下扳手 NBT。 */
     public static void handleToggleWrench(Player player, InteractionHand hand, boolean enabled) {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setWrenchEnabled(stack, enabled));

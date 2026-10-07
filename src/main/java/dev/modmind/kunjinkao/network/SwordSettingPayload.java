@@ -65,6 +65,8 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
     public static final int AREA_ACCEL_SIZE = 24;
     /** 范围加速专用倍率。 */
     public static final int AREA_ACCEL_MULTIPLIER = 25;
+    /** 挖掘熔炼：挖到的掉落自动过一遍熔炉配方。 */
+    public static final int AUTO_SMELT = 26;
 
     public static final Type<SwordSettingPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "sword_setting"));
@@ -108,6 +110,7 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
             case AREA_ACCEL_SIZE -> KunJinKaoColdDataEffectsHandler.handleAreaAccelSize(context.player(), hand, value);
             case AREA_ACCEL_MULTIPLIER -> KunJinKaoColdDataEffectsHandler.handleAreaAccelMultiplier(context.player(), hand, value);
                 case SILK_TOUCH -> KunJinKaoColdDataEffectsHandler.handleToggleSilkTouch(context.player(), hand, value != 0);
+                case AUTO_SMELT -> KunJinKaoColdDataEffectsHandler.handleToggleAutoSmelt(context.player(), hand, value != 0);
                 case BEHEADING -> KunJinKaoColdDataEffectsHandler.handleToggleBeheading(context.player(), hand, value != 0);
                 case SPAWN_EGG_DROP -> KunJinKaoColdDataEffectsHandler.handleToggleSpawnEggDrop(context.player(), hand, value != 0);
                 default -> {
