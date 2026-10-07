@@ -89,6 +89,17 @@ dependencies {
     // （neoecoae$insertIntoCpuForJob(UUID, AEKey, long, Actionable)），
     // 方法签名必须逐字一致才织得进去。
     // libs/ 已加进 .gitignore —— 这两个 jar 不进仓库，克隆后需自行放入。
+// 缺 jar 时给出明确的报错。少了这段，缺 jar 的机器上 compileJava 会抛一堆
+// "package appeng.api.config does not exist"，报错完全指不到真正的原因。
+// CI 由 .github/workflows/build-and-prerelease.yml 的 Fetch compile-time mod jars 步骤下载。
+def requiredJars = ['libs/appliedenergistics2-19.2.17.jar', 'libs/neoecoae-21.2.0.jar']
+def missingJars = requiredJars.findAll { !file(it).exists() }
+if (!missingJars.isEmpty()) {
+    throw new GradleException("缺少编译期依赖: " + missingJars.join(', ') + "\n" +
+            "这两个 jar 不在仓库里（.gitignore 排除了 libs/）。\n" +
+            "请在 Modrinth 下载 AE2 19.2.17 与 Neo ECO AE Extension 21.2.0 放进 libs/，\n" +
+            "或参照 CI 工作流里的 Fetch compile-time mod jars 步骤。")
+}
     compileOnly files(
             "libs/appliedenergistics2-19.2.17.jar",
             "libs/neoecoae-21.2.0.jar"

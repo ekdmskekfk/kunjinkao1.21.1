@@ -36,9 +36,33 @@ jobs:
         with:
           gradle-version: '8.14.3'
 
+      # libs/ 在 .gitignore 里（第三方模组 jar，本仓库不再分发），
+      # 但 ECO 输出路由那个 mixin 需要这两个 jar 在编译类路径上，
+      # 少了它们 compileJava 会因为找不到 appeng.* / cn.dancingsnow.neoecoae.* 而失败。
+      #
+      # 从 Modrinth 的不可变 CDN 取锁定版本并校验 sha1 ——
+      # 上游若悄悄换包，这里会直接报错，而不是拿一份不同的代码去编译。
+      - name: Fetch compile-time mod jars
+        run: |
+          set -euo pipefail
+          mkdir -p libs
+          fetch() {
+            url="$1"; out="$2"; want="$3"
+            curl -fsSL --retry 3 --retry-delay 2 -o "$out" "$url"
+            got=$(sha1sum "$out" | cut -d' ' -f1)
+            if [ "$got" != "$want" ]; then
+              echo "::error::$out sha1 mismatch: expected $want, got $got"
+              exit 1
+            fi
+            echo "  $out  $(stat -c%s "$out") bytes  sha1 ok"
+          }
+          fetch "https://cdn.modrinth.com/data/XxWD5pD3/versions/kfyIqgJ6/appliedenergistics2-19.2.17.jar" \
+                "libs/appliedenergistics2-19.2.17.jar" "49c18d6a4af487957d7e5a6ad5dcbf71090b8e14"
+          fetch "https://cdn.modrinth.com/data/udZtKfzP/versions/cyNfBT7v/neoecoae-21.2.0.jar" \
+                "libs/neoecoae-21.2.0.jar" "0ef70240eb667ecf85b1630855bdb20e4e68f4a0"
+
       - name: Build
         run: gradle build --stacktrace
-
       # build.gradle also emits a -sources.jar next to the mod jar; release only the mod jar.
       - name: Collect release jar
         run: |
