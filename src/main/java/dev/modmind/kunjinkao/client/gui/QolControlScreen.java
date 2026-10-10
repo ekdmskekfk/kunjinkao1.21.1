@@ -249,7 +249,9 @@ public final class QolControlScreen extends Screen {
         String needle = query.trim().toLowerCase(Locale.ROOT);
         if (needle.isEmpty()) {
             for (QolSetting setting : QolSetting.values()) {
-                if (setting.category() == selectedCategory) {
+                // 用 inCategory 而不是 category() 直接比：服务器级那个标签是汇总视图，
+                // 要把它自己分类下的服务器级项也捞进来（见 QolSetting#inCategory）。
+                if (QolSetting.inCategory(setting, selectedCategory)) {
                     visible.add(setting);
                 }
             }

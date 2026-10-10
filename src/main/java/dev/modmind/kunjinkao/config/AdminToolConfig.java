@@ -8,8 +8,11 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.common.ModConfigSpec;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
+import dev.modmind.kunjinkao.qol.QolSetting;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.EnumMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,6 +44,13 @@ public final class AdminToolConfig {
      */
     private static final ModConfigSpec.IntValue QOL_VILLAGE_HERO_MAX_LEVEL;
     private static final ModConfigSpec.IntValue QOL_REACH_MAX_BLOCKS;
+    /**
+     * 服务器级设定项在 toml 里的值。
+     * <p>
+     * 用 Map 而不是给每项写一个字段：这些项的值、范围、默认值都已经在 {@link QolSetting} 里了，
+     * 在这里再抄一遍字段就是三处维护同一件事。以后加服务器级功能只要往枚举里加一项。
+     */
+    private static final Map<QolSetting, ModConfigSpec.IntValue> QOL_SERVER = new EnumMap<>(QolSetting.class);
 
     private static final Logger LOGGER = LogManager.getLogger("KunJinKao");
 
@@ -82,8 +92,35 @@ public final class AdminToolConfig {
                         " 同时作用于方块交互距离与实体交互距离。",
                         " 设为 0 等于全服禁用这一项。")
                 .defineInRange("reachMaxBlocks", 8, 0, 64);
+        // 服务器级设定项：本项自己就是"值"，同时只有 OP 能在面板里改。
+        // 键名与取值范围都从 QolSetting 取，免得这里和枚举各写一份范围、改一处漏一处。
+        for (QolSetting setting : QolSetting.values()) {
+            if (setting.scope() != QolSetting.Scope.SERVER) {
+                continue;
+            }
+            QOL_SERVER.put(setting, builder
+                    .comment(serverSettingComment(setting))
+                    .defineInRange(setting.configKey(), setting.defaultValue(),
+                            setting.min(), setting.hardMax()));
+        }
         builder.pop();
         COMMON_SPEC = builder.build();
+    }
+
+    /** 服务器级项在 toml 里的说明。写中文是因为服主看到的就是这个文件。 */
+    private static String[] serverSettingComment(QolSetting setting) {
+        return switch (setting) {
+            case XP_BOOST -> new String[]{
+                    " 经验飞涨（72）：击杀获得的经验乘这个倍率。1 = 原版，最大 101。",
+                    " 面板里由 OP 调整；直接编辑本文件效果相同。"};
+            case ANVIL_UNBREAKABLE -> new String[]{
+                    " 不朽铭文（77）：铁砧里放两个相同物品，合出【无法破坏】的成品。",
+                    " 1 = 开启，0 = 关闭。"};
+            case ANVIL_XP_COST -> new String[]{
+                    " 不朽铭文（77）的经验成本：上面那个开关生效时，铁砧收多少级经验。",
+                    " 设得再低也不会是 0 —— 白送的经验成本会让创造模式以外也用不出代价。"};
+            default -> new String[]{" 功能面板的服务器级设定项：" + setting.name()};
+        };
     }
 
     /** 万民敬仰的服务器上限等级。配置未加载时回落到 0（等于禁用），不放开权限。 */
@@ -94,6 +131,37 @@ public final class AdminToolConfig {
     /** 长臂善舞的服务器上限格数。配置未加载时回落到 0（等于禁用），不放开权限。 */
     public static int qolReachMaxBlocks() {
         return intOrDefault(QOL_REACH_MAX_BLOCKS, 0);
+    }
+
+    /**
+     * 读一个服务器级设定项的当前值。
+     * <p>
+     * 非服务器级项、或配置还没加载时，回落到枚举里的默认值 —— 那是这一项最保守的取值，
+     * 不会因为"读不到配置"就意外开启某个功能。
+     */
+    public static int qolServerValue(QolSetting setting) {
+        ModConfigSpec.IntValue value = QOL_SERVER.get(setting);
+        return value == null ? setting.defaultValue() : intOrDefault(value, setting.defaultValue());
+    }
+
+    /**
+     * 写一个服务器级设定项并落盘。
+     * <p>
+     * 面板改这一项走的就是这里，所以 toml 与面板永远一致：服主手改文件、面板读到的就是手改后的值；
+     * 面板改完，服主打开文件看到的也是新值。写盘失败只记日志不抛异常 ——
+     * 内存里的值已经生效，没必要因为磁盘问题把玩家的操作整个打断。
+     */
+    public static void setQolServerValue(QolSetting setting, int newValue) {
+        ModConfigSpec.IntValue value = QOL_SERVER.get(setting);
+        if (value == null) {
+            return;
+        }
+        value.set(newValue);
+        try {
+            COMMON_SPEC.save();
+        } catch (Exception saveFailed) {
+            LOGGER.warn("[Kunjinkao] 功能面板的服务器级设置写盘失败（内存中已生效）：{}", saveFailed.toString());
+        }
     }
 
     /**

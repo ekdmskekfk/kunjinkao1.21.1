@@ -10,6 +10,7 @@ import dev.modmind.kunjinkao.qol.QolSettings;
 import net.minecraft.core.Holder;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
@@ -21,6 +22,7 @@ import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -70,6 +72,8 @@ public final class KunJinKaoQolHandler {
     private static final int RECONCILE_INTERVAL = 20;
     /** 夜视续期周期：比 {@link #RECONCILE_INTERVAL} 慢一档，因为它的续期窗口本来就很长。 */
     private static final int NIGHT_VISION_INTERVAL = 100;
+    /** 改服务器级设置所需的最低权限等级。2 = 原版 OP，与"能用命令方块"同一档。 */
+    private static final int SERVER_SETTING_PERMISSION_LEVEL = 2;
 
     // ===================== 网络入口 =====================
 
@@ -89,10 +93,17 @@ public final class KunJinKaoQolHandler {
         }
 
         if (setting.scope() == QolSetting.Scope.SERVER) {
-            // M1 里还没有服务器级项（72/77/96/119/127 在 M2/M3）。
-            // 真正接上时，这里要改成校验 OP 等级并写回 AdminToolConfig 的 [qol] 分节 + SPEC.save()，
-            // 而不是写进 QolStateSavedData —— 服务器级值必须和 toml 保持一致。
-            LOGGER.warn("[Kunjinkao] 收到服务器级设置改动，但该作用域尚未实现：{}", setting);
+            // 服务器级：只有 OP（权限等级 2）能改，值直接写回 toml。
+            // 注意这里不是"个人设置的另一种存法" —— 它影响全服，所以既不进玩家存档，也不做全量广播之外的事。
+            if (!player.hasPermissions(SERVER_SETTING_PERMISSION_LEVEL)) {
+                player.displayClientMessage(Component.translatable("message.kunjinkao.qol_denied_op"), true);
+                sendState(player, setting, false);
+                return;
+            }
+            int clamped = QolSettings.clamp(setting, value);
+            AdminToolConfig.setQolServerValue(setting, clamped);
+            // 服务器级值所有人看到的都一样，改完要广播：别人开着的面板上那一行也得跟着变。
+            broadcastState(setting);
             return;
         }
 
@@ -137,9 +148,31 @@ public final class KunJinKaoQolHandler {
                 setting, value > 0, value, setting.min(), QolSettings.maxOf(setting), authorized));
     }
 
-    /** 按 UUID 读当前值；没写过就是该项默认值。 */
+    /** 按 UUID 读当前值；没写过就是该项默认值。服务器级项读的是 toml。 */
     public static int valueOf(ServerPlayer player, QolSetting setting) {
+        if (setting.scope() == QolSetting.Scope.SERVER) {
+            // 服务器级与玩家无关，每个人看到的都该是同一个值。
+            return AdminToolConfig.qolServerValue(setting);
+        }
         return QolStateSavedData.get(player.server).getValue(player.getUUID(), setting);
+    }
+
+    /**
+     * 把某一行的新状态广播给所有在线玩家。
+     * <p>
+     * 只有服务器级项需要：它的值是全服共享的，一个人改了别人面板上的数字就旧了。
+     * 个人级项不广播 —— 那是别人的隐私设置，而且广播一遍纯属浪费。
+     */
+    private static void broadcastState(QolSetting setting) {
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null) {
+            return;
+        }
+        for (ServerPlayer online : server.getPlayerList().getPlayers()) {
+            sendState(online, setting, setting.scope() == QolSetting.Scope.SERVER
+                    ? online.hasPermissions(SERVER_SETTING_PERMISSION_LEVEL)
+                    : AdminToolConfig.isAuthorized(online.getUUID()));
+        }
     }
 
     public static boolean isOn(ServerPlayer player, QolSetting setting) {
@@ -219,8 +252,16 @@ public final class KunJinKaoQolHandler {
             case WATER_BREATH -> applyWaterBreath(player);
             case VILLAGE_HERO -> applyVillageHero(player);
             case REACH -> reconcileReach(player);
-            case FLY_MINING -> {
-                // 查询型：没有需要挂上去的状态，由 SwordMiningPenaltyHandler 现查现用。
+            // 下面这些没有"挂到玩家身上"的动作：
+            //   83 凌空采掘 由 SwordMiningPenaltyHandler 现查现用；
+            //   84 烈焰不侵 由 EntityFireImmuneMixin 现查现用；
+            //   70 万载不磨 由 ItemStackDurabilityMixin 现查现用；
+            //   94/95 只在交易发生的那一刻判定；
+            //   72/77 是服务器级，值在 toml 里，消费方各自去读。
+            // 保留这些分支而不是删掉，是为了让"新增一项时该不该写生效逻辑"这个问题
+            // 在编译期就逼着人想一遍 —— 枚举加了项而这里没加，switch 会报错。
+            case FLY_MINING, FIRE_IMMUNE, UNLIMITED_TRADES, VILLAGER_MASTER,
+                 XP_BOOST, ANVIL_UNBREAKABLE, ANVIL_XP_COST, DURABILITY_PROTECTION -> {
             }
         }
     }

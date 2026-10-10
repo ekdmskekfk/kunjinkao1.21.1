@@ -4,6 +4,7 @@ import dev.modmind.kunjinkao.AcceleratorRegistry;
 import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.SwordRegistry;
 import dev.modmind.kunjinkao.clientbridge.ClientHooks;
+import dev.modmind.kunjinkao.client.qol.QolClientState;
 import dev.modmind.kunjinkao.client.function.HudFunctionManager;
 import dev.modmind.kunjinkao.client.render.AcceleratorBlockEntityRenderer;
 import dev.modmind.kunjinkao.client.render.EyeHudLayer;
@@ -31,6 +32,8 @@ public class ClientModEvents {
 
     static {
         ClientHooks.registerClientHandlers(ClientPayloadHandlers::handle, ClientBlockScreens::openAcceleratorScreen);
+        // 给 common 侧的 mixin 提供"客户端这一项开着吗"的查询（见 ClientHooks 里的说明）。
+        ClientHooks.registerQolStateQuery(QolClientState::isOn);
         // 显式注册，而不是依赖 @EventBusSubscriber 对"嵌套类"的扫描：
         // 这个订阅负责客户端静态状态的生命周期清理，万一没被扫到就会静默失效（状态永不清理）。
         NeoForge.EVENT_BUS.register(ClientStateCleanup.class);

@@ -5,7 +5,9 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "ECOLargeIntegratedWorkingStationOutputRouterMixin",
-    "LevelPauseMixin"
+    "LevelPauseMixin",
+    "ItemStackDurabilityMixin",
+    "EntityFireImmuneMixin"
   ],
   "injectors": {
     "defaultRequire": 1
