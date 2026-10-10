@@ -353,6 +353,11 @@ public final class KunJinKaoColdDataEffectsHandler {
         if (!(player instanceof ServerPlayer serverPlayer)) {
             return;
         }
+        // 先试选区挖掘：它是"一次性改变大片地形"的操作，撤销的优先级明显高于一步放置。
+        // 两边共用一个撤销键（K），玩家不需要记住"刚才那次该用哪个键撤"。
+        if (dev.modmind.kunjinkao.world.ZoneExcavationJob.undoLast(serverPlayer) > 0) {
+            return;
+        }
         if (!KunJinKaoSwordItem.isPlacementUndoEnabledInEitherHand(serverPlayer)) {
             return;
         }

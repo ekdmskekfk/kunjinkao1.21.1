@@ -13,7 +13,8 @@ public final class NetworkHandler {
     // 从 20 提到 21：本次把 18 个包合并成 3 个（判别 id 线格式），注册表与线格式都变了，
     // 必须让版本号跟着变，否则新旧端会在握手时被当成兼容，然后在解码时错位。
     // 22 提到 23：新增功能面板两条包（QolSettingPayload C2S / QolStatePayload S2C），注册表又变了。
-    public static final String PROTOCOL_VERSION = "23";
+    // 23 提到 24：新增选区挖掘两条包（ZoneSelectPayload C2S / ZoneStatusPayload S2C）。
+    public static final String PROTOCOL_VERSION = "24";
 
     private NetworkHandler() {
     }
@@ -66,6 +67,9 @@ public final class NetworkHandler {
         // 功能面板（QoL）：改动请求（C2S）与逐行状态回执（S2C）。
         reg.playToServer(QolSettingPayload.TYPE, QolSettingPayload.STREAM_CODEC, QolSettingPayload::handle);
         reg.playToClient(QolStatePayload.TYPE, QolStatePayload.STREAM_CODEC, QolStatePayload::handle);
+        // 选区挖掘（127）：设置角点（C2S）与选区/进度回执（S2C）。
+        reg.playToServer(ZoneSelectPayload.TYPE, ZoneSelectPayload.STREAM_CODEC, ZoneSelectPayload::handle);
+        reg.playToClient(ZoneStatusPayload.TYPE, ZoneStatusPayload.STREAM_CODEC, ZoneStatusPayload::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {

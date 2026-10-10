@@ -36,6 +36,10 @@ public record SimpleActionPayload(int actionId) implements CustomPacketPayload {
     public static final int UNDO_PLACEMENT = 5;
     /** 功能面板：请求一次全量状态（打开面板时发）。 */
     public static final int REQUEST_QOL_STATE = 6;
+    /** 选区挖掘（127）：确认执行当前选区。 */
+    public static final int ZONE_EXECUTE = 7;
+    /** 选区挖掘（127）：取消正在跑的作业，或清空当前选区。 */
+    public static final int ZONE_CANCEL = 8;
 
     public static final Type<SimpleActionPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "simple_action"));
@@ -58,6 +62,8 @@ public record SimpleActionPayload(int actionId) implements CustomPacketPayload {
                 case TOGGLE_HUD_MAGNET -> KunJinKaoColdDataEffectsHandler.handleToggleHudMagnet(server, context.player());
                 case UNDO_PLACEMENT -> KunJinKaoColdDataEffectsHandler.handleUndoPlacement(context.player());
                 case REQUEST_QOL_STATE -> KunJinKaoQolHandler.handleRequestFullState(context.player());
+                case ZONE_EXECUTE -> KunJinKaoQolHandler.handleZoneExecute(context.player());
+                case ZONE_CANCEL -> KunJinKaoQolHandler.handleZoneCancel(context.player());
                 default -> {
                     // 未知 actionId：忽略，等价于原来收到一个不认识的空载荷包。
                 }

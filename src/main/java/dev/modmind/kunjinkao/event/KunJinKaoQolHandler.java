@@ -5,8 +5,12 @@ import dev.modmind.kunjinkao.config.AdminToolConfig;
 import dev.modmind.kunjinkao.config.QolStateSavedData;
 import dev.modmind.kunjinkao.network.NetworkHandler;
 import dev.modmind.kunjinkao.network.QolStatePayload;
+import dev.modmind.kunjinkao.network.ZoneStatusPayload;
 import dev.modmind.kunjinkao.qol.QolSetting;
 import dev.modmind.kunjinkao.qol.QolSettings;
+import dev.modmind.kunjinkao.world.ZoneExcavationJob;
+import dev.modmind.kunjinkao.world.ZoneSelection;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -19,12 +23,17 @@ import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 功能面板（QoL）的服务端权威实现：接收改动、校验、落库、生效、回执。
@@ -75,6 +84,21 @@ public final class KunJinKaoQolHandler {
     /** 改服务器级设置所需的最低权限等级。2 = 原版 OP，与"能用命令方块"同一档。 */
     private static final int SERVER_SETTING_PERMISSION_LEVEL = 2;
 
+    // ===== 选区挖掘（127）=====
+    /**
+     * 两次按键之间的确认窗口（毫秒）。
+     * <p>
+     * 二次确认做成"再按一次同一个键"而不是弹一个界面：这个操作本来就是键盘操作，
+     * 中间插一个 GUI 反而会让人下意识地点"确定"。窗口给 10 秒 —— 够读一遍提示，
+     * 又短到不会在他已经忘了这回事的时候突然开始挖。
+     */
+    private static final long ZONE_CONFIRM_WINDOW_MS = 10_000L;
+    /** 角点最远能设多远（格）。防止改过的客户端把角点设到天边，框出一整片地形。 */
+    private static final double ZONE_MAX_CORNER_DISTANCE = 128.0D;
+
+    /** 待确认的执行请求：玩家 UUID -> 第一次按键的时刻。 */
+    private static final Map<UUID, Long> ZONE_PENDING_CONFIRM = new ConcurrentHashMap<>();
+
     // ===================== 网络入口 =====================
 
     /**
@@ -121,8 +145,125 @@ public final class KunJinKaoQolHandler {
         sendState(player, setting, true);
     }
 
-    /** 打开面板时把每一行都发一遍。 */
-    public static void sendFullState(ServerPlayer player) {
+    // ===================== 选区挖掘（127）=====================
+
+    /**
+     * 设置一个角点。
+     * <p>
+     * 坐标不信任客户端：改过的客户端可以把角点设到任意远处，框出一整片地形再执行。
+     * 这里按玩家眼睛到目标方块的距离卡一道，和原版交互距离同一个量级但宽得多
+     * （框选本来就要点远处的方块）。
+     */
+    public static void handleZoneCorner(Player source, int cornerIndex, BlockPos pos) {
+        if (!(source instanceof ServerPlayer player) || !canUseZoneExcavation(player)) {
+            return;
+        }
+        if (ZoneExcavationJob.isRunning(player)) {
+            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_busy"), true);
+            return;
+        }
+        if (player.getEyePosition().distanceToSqr(Vec3.atCenterOf(pos))
+                > ZONE_MAX_CORNER_DISTANCE * ZONE_MAX_CORNER_DISTANCE) {
+            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_too_far"), true);
+            return;
+        }
+        ZoneSelection.setCorner(player, cornerIndex, pos.immutable());
+        // 改了选区就作废上一次的待确认 —— 否则"框 A 按一次、改成框 B 再按一次"
+        // 会在玩家以为只是改了选区的时候直接开挖。
+        ZONE_PENDING_CONFIRM.remove(player.getUUID());
+        sendZoneStatus(player);
+    }
+
+    /**
+     * 请求执行。
+     * <p>
+     * 第一次按只给一句确认提示，窗口内再按一次才真的开始。地形是不可逆的，
+     * 所以这里宁可让玩家多按一次，也不做"按了就挖"。
+     */
+    public static void handleZoneExecute(Player source) {
+        if (!(source instanceof ServerPlayer player) || !canUseZoneExcavation(player)) {
+            return;
+        }
+        if (ZoneExcavationJob.isRunning(player)) {
+            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_busy"), true);
+            return;
+        }
+        ZoneSelection.Corners corners = currentCorners(player);
+        if (corners == null || corners.a() == null || corners.b() == null) {
+            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_need_corners"), true);
+            return;
+        }
+        long now = System.currentTimeMillis();
+        Long firstPress = ZONE_PENDING_CONFIRM.get(player.getUUID());
+        if (firstPress == null || now - firstPress > ZONE_CONFIRM_WINDOW_MS) {
+            ZONE_PENDING_CONFIRM.put(player.getUUID(), now);
+            int sizeX = Math.abs(corners.a().getX() - corners.b().getX()) + 1;
+            int sizeY = Math.abs(corners.a().getY() - corners.b().getY()) + 1;
+            int sizeZ = Math.abs(corners.a().getZ() - corners.b().getZ()) + 1;
+            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_confirm",
+                    sizeX, sizeY, sizeZ, sizeX * sizeY * sizeZ), false);
+            return;
+        }
+        ZONE_PENDING_CONFIRM.remove(player.getUUID());
+        if (ZoneExcavationJob.start(player, corners.a(), corners.b())) {
+            ZoneSelection.clear(player);
+            sendZoneStatus(player);
+        }
+    }
+
+    /** 取消：正在跑就停作业，否则清掉当前选区。 */
+    public static void handleZoneCancel(Player source) {
+        if (!(source instanceof ServerPlayer player)) {
+            return;
+        }
+        ZONE_PENDING_CONFIRM.remove(player.getUUID());
+        if (ZoneExcavationJob.cancel(player)) {
+            sendZoneStatus(player);
+            return;
+        }
+        if (currentCorners(player) != null) {
+            ZoneSelection.clear(player);
+            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_cleared"), true);
+            sendZoneStatus(player);
+        }
+    }
+
+    /** 权限与总闸。两道都过了才谈得上框选。 */
+    private static boolean canUseZoneExcavation(ServerPlayer player) {
+        if (AdminToolConfig.qolServerValue(QolSetting.ZONE_EXCAVATE_SERVER) <= 0) {
+            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_disabled"), true);
+            return false;
+        }
+        if (!AdminToolConfig.isAuthorized(player.getUUID())) {
+            player.displayClientMessage(Component.translatable("message.kunjinkao.qol_denied"), true);
+            return false;
+        }
+        return true;
+    }
+
+    /** 取当前维度下的选区；选区绑在别的维度时视为没有（坐标没有可比性）。 */
+    private static ZoneSelection.Corners currentCorners(ServerPlayer player) {
+        ZoneSelection.Corners corners = ZoneSelection.get(player);
+        if (corners == null || !corners.dimension().equals(player.level().dimension().location())) {
+            return null;
+        }
+        return corners;
+    }
+
+    /** 把选区与进度推给本人。别人不需要知道他框了哪块地。 */
+    public static void sendZoneStatus(ServerPlayer player) {
+        ZoneSelection.Corners corners = currentCorners(player);
+        boolean hasA = corners != null && corners.a() != null;
+        boolean hasB = corners != null && corners.b() != null;
+        int[] progress = ZoneExcavationJob.progress(player);
+        NetworkHandler.sendToPlayer(player, new ZoneStatusPayload(
+                hasA, hasA ? corners.a() : BlockPos.ZERO,
+                hasB, hasB ? corners.b() : BlockPos.ZERO,
+                progress != null, progress == null ? 0 : progress[0], progress == null ? 0 : progress[1],
+                player.level().dimension().location()));
+    }
+
+    /** 打开面板时把每一行都发一遍。 */    public static void sendFullState(ServerPlayer player) {
         boolean authorized = AdminToolConfig.isAuthorized(player.getUUID());
         for (QolSetting setting : QolSetting.values()) {
             sendState(player, setting, authorized);
@@ -211,6 +352,28 @@ public final class KunJinKaoQolHandler {
         if (tick % NIGHT_VISION_INTERVAL == 0) {
             renewNightVision(player);
         }
+        // 选区挖掘的作业由拥有者自己的 tick 驱动（见 ZoneExcavationJob#tick 的说明）。
+        boolean wasRunning = ZoneExcavationJob.isRunning(player);
+        if (wasRunning) {
+            ZoneExcavationJob.tick(player);
+            if (!ZoneExcavationJob.isRunning(player)) {
+                // 刚好这一 tick 挖完了：补一条状态让客户端的进度条归位。
+                sendZoneStatus(player);
+            } else if (tick % RECONCILE_INTERVAL == 0) {
+                // 进度每 20 tick 回一次就够看了，每 tick 发纯属刷包。
+                sendZoneStatus(player);
+            }
+        }
+    }
+
+    /** 玩家退出时清掉他的选区、作业与撤销记录。 */
+    @SubscribeEvent
+    public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            ZONE_PENDING_CONFIRM.remove(player.getUUID());
+            ZoneSelection.forget(player.getUUID());
+            ZoneExcavationJob.forget(player.getUUID());
+        }
     }
 
     @SubscribeEvent
@@ -263,7 +426,8 @@ public final class KunJinKaoQolHandler {
             case FLY_MINING, FIRE_IMMUNE, UNLIMITED_TRADES, VILLAGER_MASTER,
                  XP_BOOST, ANVIL_UNBREAKABLE, ANVIL_XP_COST, DURABILITY_PROTECTION,
                  MACHINE_LOOT, FOG_VISION, TREASURE_HUNTER_SERVER, TREASURE_HUNTER_RADIUS,
-                 TREASURE_HUNTER -> {
+                 TREASURE_HUNTER, ZONE_EXCAVATE_SERVER, ZONE_MAX_SIDE, ZONE_DROP_POLICY,
+                 ZONE_TICK_BUDGET, ZONE_BATCH_SIDE, ZONE_UNDO_MAX -> {
             }
         }
     }

@@ -74,7 +74,34 @@ public enum QolSetting {
     /** 96 的扫描半径（格）。服务器级：半径直接决定性能开销与"能看到多远"，不该由玩家自己定。 */
     TREASURE_HUNTER_RADIUS(15, 96, Category.INCOME, Scope.SERVER, Kind.NUMBER, 8, 64, 64, "treasureHunterRadius"),
     /** 96 的个人开关：只有它还要求服务端总闸开着才生效。 */
-    TREASURE_HUNTER(16, 96, Category.INCOME, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, "");
+    TREASURE_HUNTER(16, 96, Category.INCOME, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, ""),
+    /**
+     * 127 机关拆解·选区挖掘的服务器总闸。
+     * <p>
+     * 这一项会<b>不可逆地改变地形</b>，所以总闸默认关闭，而且所有参数都是服务器级 ——
+     * 由服主决定这台服务器上允许挖多大、挖出来的东西去哪，而不是让玩家自己放开上限。
+     */
+    ZONE_EXCAVATE_SERVER(17, 127, Category.ENGINEERING, Scope.SERVER, Kind.TOGGLE, 0, 1, 0, "zoneExcavateEnabled"),
+    /** 127 的单边上限（格）。计划里参考实现实际做到 512，本工程按 64 做。 */
+    ZONE_MAX_SIDE(18, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 1, 64, 64, "zoneMaxSide"),
+    /**
+     * 127 的掉落策略：0 = 进玩家背包、1 = 生成掉落物、2 = 直接销毁。
+     * <p>
+     * 默认进背包：本工程没有"绑定容器"那套系统，掉一地的东西在 64×64 的作业量下
+     * 既卡服又难捡，直接进背包最省事。想留下"挖矿感"的服主可以改成 1。
+     */
+    ZONE_DROP_POLICY(19, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 0, 2, 0, "zoneDropPolicy"),
+    /** 127 每 tick 的时间预算（毫秒）。作业按它分批，保证 MSPT 不被一次挖穿地形拉爆。 */
+    ZONE_TICK_BUDGET(20, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 10, 48, 45, "zoneTickBudgetMs"),
+    /** 127 单批处理的目标方块数。调大能更快挖完，但单 tick 的尖峰更高。 */
+    ZONE_BATCH_SIDE(21, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 32, 512, 256, "zoneBatchSide"),
+    /**
+     * 127 允许记录的撤销方块数上限；0 = 完全禁用撤销。
+     * <p>
+     * 超过这个数就不记快照，并在开始时明确告诉玩家"这次挖完撤不回来"。
+     * 与其记一半导致撤销出一个残缺地形，不如一开始就说清。
+     */
+    ZONE_UNDO_MAX(22, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 0, 100000, 20000, "zoneUndoMaxBlocks");
 
     /**
      * 面板顶部的分类标签。

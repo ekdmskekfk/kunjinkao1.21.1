@@ -5,6 +5,7 @@ import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.SwordRegistry;
 import dev.modmind.kunjinkao.clientbridge.ClientHooks;
 import dev.modmind.kunjinkao.client.qol.QolClientState;
+import dev.modmind.kunjinkao.client.qol.ZoneClientState;
 import dev.modmind.kunjinkao.client.function.HudFunctionManager;
 import dev.modmind.kunjinkao.client.render.AcceleratorBlockEntityRenderer;
 import dev.modmind.kunjinkao.client.render.EyeHudLayer;
@@ -91,6 +92,8 @@ public class ClientModEvents {
         event.register(KunJinKaoKeyBindings.TOGGLE_WRENCH);
         event.register(KunJinKaoKeyBindings.COLLECT_BLOCK);
         event.register(KunJinKaoKeyBindings.OPEN_QOL_PANEL);
+        event.register(KunJinKaoKeyBindings.ZONE_CORNER);
+        event.register(KunJinKaoKeyBindings.ZONE_EXCAVATE);
     }
 
     @SubscribeEvent
@@ -147,6 +150,8 @@ public class ClientModEvents {
             KunJinKaoClientOverwriteEffects.reset();
             KunJinKaoClientSwordVisuals.clear();
             HudFunctionManager.resetAll();
+            // 选区挖掘的框：不清的话换个世界进来，只要还是主世界就会在原地继续画上一局的框。
+            ZoneClientState.clear();
         }
     }
 }

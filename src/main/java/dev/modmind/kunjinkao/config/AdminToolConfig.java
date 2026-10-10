@@ -128,6 +128,24 @@ public final class AdminToolConfig {
             case TREASURE_HUNTER_RADIUS -> new String[]{
                     " 寻宝大师（96）的扫描半径（格，8~64）。",
                     " 半径直接决定客户端每 20 tick 的扫描开销，别设得比实际视野大太多。"};
+            case ZONE_EXCAVATE_SERVER -> new String[]{
+                    " 选区挖掘（127）服务器总闸：0 = 全服禁用，1 = 允许。",
+                    " 这一项会让授权玩家框选一块区域一次性挖空，地形不可逆，默认关闭。"};
+            case ZONE_MAX_SIDE -> new String[]{
+                    " 选区挖掘（127）的单边上限（格，1~64）。",
+                    " 参考实现实际做到 512，本工程按 64 做 —— 单边翻倍，方块数是立方级增长。"};
+            case ZONE_DROP_POLICY -> new String[]{
+                    " 选区挖掘（127）的掉落策略：0 = 进玩家背包、1 = 生成掉落物、2 = 直接销毁。",
+                    " 默认 0：本工程没有容器绑定系统，几十万方块掉一地既卡服又难捡。"};
+            case ZONE_TICK_BUDGET -> new String[]{
+                    " 选区挖掘（127）每 tick 的时间预算（毫秒，10~48）。",
+                    " 作业按它分批执行，是这一项不掉 TPS 的唯一保证；调大只是挖得更快，不会更省。"};
+            case ZONE_BATCH_SIDE -> new String[]{
+                    " 选区挖掘（127）单批处理的目标方块数（32~512）。",
+                    " 配合上面的时间预算一起生效：预算先到就以预算为准。"};
+            case ZONE_UNDO_MAX -> new String[]{
+                    " 选区挖掘（127）最多记录多少方块的撤销快照；0 = 禁用撤销。",
+                    " 超过上限时不会记一半，而是明确提示「这次挖完撤不回来」—— 半个撤销比没有更危险。"};
             default -> new String[]{" 功能面板的服务器级设定项：" + setting.name()};
         };
     }

@@ -2,6 +2,7 @@ package dev.modmind.kunjinkao.client;
 
 import dev.modmind.kunjinkao.client.gui.AdminPasswordScreen;
 import dev.modmind.kunjinkao.client.qol.QolClientState;
+import dev.modmind.kunjinkao.client.qol.ZoneClientState;
 import dev.modmind.kunjinkao.network.AdminEyeStatePayload;
 import dev.modmind.kunjinkao.network.AdminPasswordResultPayload;
 import dev.modmind.kunjinkao.network.ExcludedPlayersPayload;
@@ -15,6 +16,7 @@ import dev.modmind.kunjinkao.network.OverwriteEffectPayload;
 import dev.modmind.kunjinkao.network.QolStatePayload;
 import dev.modmind.kunjinkao.network.SwordDrawAnimationPayload;
 import dev.modmind.kunjinkao.network.TimeAccelStatusPayload;
+import dev.modmind.kunjinkao.network.ZoneStatusPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -73,6 +75,9 @@ public final class ClientPayloadHandlers {
             } else if (payload instanceof QolStatePayload state) {
                 // 功能面板的一行状态：存进客户端镜像，打开着的面板每帧自己读。
                 QolClientState.accept(state);
+            } else if (payload instanceof ZoneStatusPayload status) {
+                // 选区挖掘（127）的选区与进度：存进客户端镜像，由 ZoneSelectionRenderer 每帧自己读。
+                ZoneClientState.accept(status);
             }
         });
     }
