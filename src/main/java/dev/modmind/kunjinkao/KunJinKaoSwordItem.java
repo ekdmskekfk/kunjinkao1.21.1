@@ -47,7 +47,18 @@ import net.neoforged.neoforge.common.ItemAbility;
 
 public class KunJinKaoSwordItem extends SwordItem {
 
-    private static final String LOOTING_MODE_KEY = "LootingMode";
+    /**
+     * 抢夺等级。取值范围 1..1000，含义是「增强等级 + 1」——
+     * 也就是 1 = 原版掉落（不加任何东西），和 {@link #ORE_DROP_MULTIPLIER_KEY} 的 1 = 无加成同一套约定。
+     * <p>
+     * 旧版本这里是 0/1/2 三档的「抢夺模式」（0 关、1 = 25 级、2 = 50 级）。
+     * 档位换成连续值之后键名也换了（{@code LootingMode} → {@code LootingLevel}），
+     * 正是为了能把老存档里的 0/1/2 认出来做一次迁移 —— 沿用旧键名的话，
+     * 新值 1 和 2 与旧的 "25 级 / 50 级" 会撞在一起，没法区分。
+     */
+    private static final String LOOTING_LEVEL_KEY = "LootingLevel";
+    /** 旧键：只在读取时用来迁移，迁移后不再写入。 */
+    private static final String LEGACY_LOOTING_MODE_KEY = "LootingMode";
     private static final String OVERWRITE_KEY = "OverwriteEnabled";
     private static final String THEME_KEY = "OverwriteTheme";
     private static final String BLUE_SCREEN_ATTACK_KEY = "BlueScreenAttackEnabled";
@@ -146,6 +157,10 @@ public class KunJinKaoSwordItem extends SwordItem {
     public static final int MIN_ORE_DROP_MULTIPLIER = 1;
     public static final int MAX_ORE_DROP_MULTIPLIER = 1000;
     public static final int DEFAULT_ORE_DROP_MULTIPLIER = 1;
+    /** 抢夺设置值范围。取值 = 增强等级 + 1，所以 1 是"无抢夺"，与挖矿倍数同一套约定。 */
+    public static final int MIN_LOOTING_LEVEL = 1;
+    public static final int MAX_LOOTING_LEVEL = 1000;
+    public static final int DEFAULT_LOOTING_LEVEL = 1;
     public static final int MAX_ATTACK_DAMAGE_LIMIT = 1000;
     public static final int DEFAULT_ATTACK_DAMAGE_LIMIT = MAX_ATTACK_DAMAGE_LIMIT;
 
@@ -585,10 +600,48 @@ public class KunJinKaoSwordItem extends SwordItem {
         writeDataTag(stack, tag);
     }
 
-    public static void setLootingMode(ItemStack stack, int mode) {
+    public static void setLootingLevel(ItemStack stack, int level) {
         CompoundTag tag = dataTag(stack);
-        tag.putInt(LOOTING_MODE_KEY, Math.max(0, Math.min(2, mode)));
+        tag.putInt(LOOTING_LEVEL_KEY, clampLootingLevel(level));
+        // 迁移完成，旧键留着没意义；不清掉的话以后改名会再撞一次。
+        tag.remove(LEGACY_LOOTING_MODE_KEY);
         writeDataTag(stack, tag);
+    }
+
+    /**
+     * 抢夺设置值（1..1000）。1 表示不加任何额外掉落。
+     * <p>
+     * 老存档迁移在这里做、且<b>只读不写</b>：只有"新键不存在"的剑才会走到迁移分支，
+     * 而新键一旦被菜单写过就永远存在，所以同一个旧值不会在别的含义下被再解释一次。
+     * 顺带也避免了在读取路径（每次命中都会调）里写物品 NBT。
+     */
+    public static int getLootingLevelSetting(ItemStack stack) {
+        CompoundTag tag = dataTag(stack);
+        if (tag.contains(LOOTING_LEVEL_KEY)) {
+            return clampLootingLevel(tag.getInt(LOOTING_LEVEL_KEY));
+        }
+        return migrateLegacyLootingMode(tag.getInt(LEGACY_LOOTING_MODE_KEY));
+    }
+
+    /**
+     * 真正参与掉落计算的抢夺等级（0..999）。
+     * 设置值 1 对应等级 0 —— 也就是"无抢夺"，与旧版 {@code mode == 0} 的行为对齐。
+     */
+    public static int getLootingLevel(ItemStack stack) {
+        return getLootingLevelSetting(stack) - 1;
+    }
+
+    /** 旧版三档 → 新值：0（关）→ 1、1（25 级）→ 26、2（50 级）→ 51。 */
+    private static int migrateLegacyLootingMode(int legacyMode) {
+        return switch (legacyMode) {
+            case 1 -> 26;
+            case 2 -> 51;
+            default -> DEFAULT_LOOTING_LEVEL;
+        };
+    }
+
+    private static int clampLootingLevel(int level) {
+        return Math.max(MIN_LOOTING_LEVEL, Math.min(MAX_LOOTING_LEVEL, level));
     }
 
     /**
@@ -694,7 +747,7 @@ public class KunJinKaoSwordItem extends SwordItem {
             // 加速模式关着时，shift+右键 什么都不做。
             // 这里原本是 cycleMode()（切换抢夺模式）—— 对着方块按 shift+右键 时 useOn 返回 PASS
             // 会落回 use()，于是"点一下方块"就顺手把抢夺模式换了，屏幕下方还弹一句
-            // 看起来毫不相干的提示。抢夺模式改由 . 菜单里的按钮切换。
+            // 看起来毫不相干的提示。抢夺等级改由 . 菜单里的滑条（LootingLevelSlider）调节。
             return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
         }
         // 天使核心：对着空气右键可以在半空放置方块（方块取自副手）。
@@ -1026,25 +1079,6 @@ public class KunJinKaoSwordItem extends SwordItem {
         stack.setCount(0);
     }
 
-    private InteractionResultHolder<ItemStack> cycleMode(Level level, Player player, InteractionHand hand) {
-        ItemStack stack = player.getItemInHand(hand);
-        if (level.isClientSide()) {
-            return InteractionResultHolder.success(stack);
-        }
-        CompoundTag tag = dataTag(stack);
-        int currentMode = tag.getInt(LOOTING_MODE_KEY);
-        int newMode = (currentMode + 1) % 3;
-        setLootingMode(stack, newMode);
-
-        Component modeText = switch (newMode) {
-            case 1 -> Component.translatable("message.kunjinkao.looting_mode_25");
-            case 2 -> Component.translatable("message.kunjinkao.looting_mode_50");
-            default -> Component.translatable("message.kunjinkao.looting_mode_none");
-        };
-        player.displayClientMessage(Component.translatable("message.kunjinkao.looting_mode_current", modeText), true);
-        return InteractionResultHolder.consume(stack);
-    }
-
     /**
      * 在受害者身上记下击杀者。
      * <p>
@@ -1073,9 +1107,9 @@ public class KunJinKaoSwordItem extends SwordItem {
     public static void applyKunJinKaoMark(LivingEntity target, ItemStack stack) {
         CompoundTag data = target.getPersistentData();
         data.putBoolean(KunJinKaoDeathEventHandler.MARK_KEY, true);
-        data.putInt(KunJinKaoDeathEventHandler.LOOTING_MODE_ENTITY_KEY, getLootingMode(stack));
+        data.putInt(KunJinKaoDeathEventHandler.LOOTING_MODE_ENTITY_KEY, getLootingLevelSetting(stack));
         // 同时记下写入时刻：这次伤害可能被无敌帧整段丢弃，Entity 会带着标记继续活着，
-        // 死亡处理器只认可 MARK_VALID_TICKS 内的标记，这样之后的无关死亡不会也吃到 25/50 倍掉落。
+        // 死亡处理器只认可 MARK_VALID_TICKS 内的标记，这样之后的无关死亡不会也按同样等级复制掉落。
         data.putLong(KunJinKaoDeathEventHandler.MARK_TICK_KEY, target.level().getGameTime());
         data.putBoolean(KunJinKaoProtectionHandler.KILL_BY_OVERWRITE_KEY, true);
         data.putBoolean(ULTIMATE_DEATH_MARK, isUltimateDeathEnabled(stack));
@@ -1086,7 +1120,7 @@ public class KunJinKaoSwordItem extends SwordItem {
      * 处决标记：只写"这次击杀已获授权"与两个处决开关，不写掉落增强标记。
      * <p>
      * 玩家目标必须用这个而不是 {@link #applyKunJinKaoMark}：
-     * 后者会带上抢夺模式，而掉落增强是按抢夺等级把掉落物复制 25/50 份，
+     * 后者会带上抢夺等级，而掉落增强是按该等级把掉落物复制对应份数，
      * 用在玩家身上等于把对方整个背包复制几十份。
      */
     public static void applyExecutionMark(LivingEntity target, ItemStack stack) {
@@ -1097,11 +1131,6 @@ public class KunJinKaoSwordItem extends SwordItem {
         data.putLong(KunJinKaoDeathEventHandler.MARK_TICK_KEY, target.level().getGameTime());
         data.putBoolean(ULTIMATE_DEATH_MARK, isUltimateDeathEnabled(stack));
         data.putBoolean(QUIT_STRIKE_MARK, isQuitStrikeEnabled(stack));
-    }
-
-    public static int getLootingMode(ItemStack stack) {
-        int mode = dataTag(stack).getInt(LOOTING_MODE_KEY);
-        return Math.max(0, Math.min(2, mode));
     }
 
     public enum AreaClearTargetMode {

@@ -65,7 +65,7 @@ public final class SwordOptionsScreen extends Screen {
     private Button unbreakableBlockToggle;
     private MiningSpeedSlider miningSpeedSlider;
     private OreDropMultiplierSlider oreDropMultiplierSlider;
-    private Button lootingModeButton;
+    private LootingLevelSlider lootingLevelSlider;
     private Button ultimateDeathToggle;
     private Button quitStrikeToggle;
     private Button constructionWandToggle;
@@ -199,8 +199,10 @@ public final class SwordOptionsScreen extends Screen {
         int contentTop = addSection(leftX, panelY + TITLE_H, sectionW, "screen.kunjinkao.section_mining_loot", 4);
         unbreakableBlockToggle = addButton(leftX + BOX_PAD, contentTop, btnW,
                 this::toggleUnbreakableBlockBreaking);
-        lootingModeButton = addButton(leftX + BOX_PAD + btnW + BTN_GAP, contentTop, btnW,
-                this::cycleLootingMode);
+        int lootingValue = player == null ? KunJinKaoSwordItem.DEFAULT_LOOTING_LEVEL
+                : KunJinKaoSwordItem.getLootingLevelSetting(player.getItemInHand(hand));
+        lootingLevelSlider = addRenderableWidget(new LootingLevelSlider(
+                leftX + BOX_PAD + btnW + BTN_GAP, contentTop, btnW, BTN_H, lootingValue, this::setLootingLevel));
         int miningSpeed = player == null ? KunJinKaoSwordItem.DEFAULT_MINING_SPEED
                 : KunJinKaoSwordItem.getMiningSpeed(player.getItemInHand(hand));
         miningSpeedSlider = addRenderableWidget(new MiningSpeedSlider(
@@ -825,15 +827,7 @@ public final class SwordOptionsScreen extends Screen {
             areaClearModeButton.setMessage(label("screen.kunjinkao.area_clear_targets",
                     Component.translatable(mode.translationKey())));
         }
-        if (lootingModeButton != null) {
-            int mode = player == null ? 0 : KunJinKaoSwordItem.getLootingMode(player.getItemInHand(hand));
-            String modeText = switch (mode) {
-                case 1 -> "抢夺 25 级";
-                case 2 -> "抢夺 50 级";
-                default -> "无抢夺";
-            };
-            lootingModeButton.setMessage(label("screen.kunjinkao.looting_mode", Component.literal(modeText)));
-        }
+        // 抢夺滑条自己维护按钮文字（updateMessage 里带等级），这里不用管。
     }
 
     private void toggleUnbreakableBlockBreaking() {
@@ -1223,7 +1217,8 @@ public final class SwordOptionsScreen extends Screen {
         refreshLabels();
     }
 
-    private void cycleLootingMode() {
+    /** 抢夺等级：设置值 1..1000（1 = 无抢夺），和挖矿倍数一样走节流滑条。 */
+    private void setLootingLevel(int settingValue) {
         Player player = Minecraft.getInstance().player;
         if (player == null) {
             onClose();
@@ -1234,10 +1229,8 @@ public final class SwordOptionsScreen extends Screen {
             onClose();
             return;
         }
-        int nextMode = (KunJinKaoSwordItem.getLootingMode(stack) + 1) % 3;
-        KunJinKaoSwordItem.setLootingMode(stack, nextMode);
-        NetworkHandler.sendToServer(new SwordSettingPayload(hand, SwordSettingPayload.LOOTING_MODE, nextMode));
-        refreshLabels();
+        KunJinKaoSwordItem.setLootingLevel(stack, settingValue);
+        sendSettingValue(SwordSettingPayload.LOOTING_MODE, settingValue);
     }
 
     /** 滑条专用：带节流地发送剑设置（离散开关不走这里）。 */
@@ -1298,6 +1291,9 @@ public final class SwordOptionsScreen extends Screen {
         } else if (settingId == SwordSettingPayload.ATTACK_DAMAGE_LIMIT) {
             min = 0;
             max = KunJinKaoSwordItem.MAX_ATTACK_DAMAGE_LIMIT;
+        } else if (settingId == SwordSettingPayload.LOOTING_MODE) {
+            min = KunJinKaoSwordItem.MIN_LOOTING_LEVEL;
+            max = KunJinKaoSwordItem.MAX_LOOTING_LEVEL;
         }
         return Math.max(1, (max - min) / TIER_COUNT);
     }
@@ -1385,6 +1381,57 @@ public final class SwordOptionsScreen extends Screen {
             return KunJinKaoSwordItem.MIN_ORE_DROP_MULTIPLIER + (int) Math.round(value
                     * (KunJinKaoSwordItem.MAX_ORE_DROP_MULTIPLIER
                     - KunJinKaoSwordItem.MIN_ORE_DROP_MULTIPLIER));
+        }
+    }
+
+    /**
+     * 抢夺等级滑条，取值 1..1000。
+     * <p>
+     * 显示的是<b>增强等级</b>（设置值 − 1），所以 1 显示成「0 级」也就是无抢夺 ——
+     * 与挖矿倍数滑条"1 = 无加成"是同一套读法，两个滑条并排放在一起才不会一个 1 是关、
+     * 另一个 1 是满级。
+     */
+    private static final class LootingLevelSlider extends AbstractSliderButton {
+
+        private final IntConsumer onLevelChanged;
+        private int currentSetting;
+
+        private LootingLevelSlider(int x, int y, int width, int height, int setting,
+                                   IntConsumer onLevelChanged) {
+            super(x, y, width, height, Component.empty(), toSliderValue(setting));
+            this.currentSetting = setting;
+            this.onLevelChanged = onLevelChanged;
+            updateMessage();
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(label("screen.kunjinkao.looting_mode",
+                    Component.literal(Integer.toString(currentSetting - 1))));
+        }
+
+        @Override
+        protected void applyValue() {
+            int setting = fromSliderValue(value);
+            if (setting != currentSetting) {
+                currentSetting = setting;
+                onLevelChanged.accept(setting);
+            }
+            updateMessage();
+        }
+
+        private static double toSliderValue(int setting) {
+            int clamped = Math.max(KunJinKaoSwordItem.MIN_LOOTING_LEVEL,
+                    Math.min(KunJinKaoSwordItem.MAX_LOOTING_LEVEL, setting));
+            return (clamped - KunJinKaoSwordItem.MIN_LOOTING_LEVEL)
+                    / (double) (KunJinKaoSwordItem.MAX_LOOTING_LEVEL
+                    - KunJinKaoSwordItem.MIN_LOOTING_LEVEL);
+        }
+
+        private static int fromSliderValue(double value) {
+            return KunJinKaoSwordItem.MIN_LOOTING_LEVEL + (int) Math.round(value
+                    * (KunJinKaoSwordItem.MAX_LOOTING_LEVEL
+                    - KunJinKaoSwordItem.MIN_LOOTING_LEVEL));
         }
     }
 

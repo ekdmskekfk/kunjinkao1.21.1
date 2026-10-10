@@ -30,6 +30,11 @@ public record SwordSettingPayload(InteractionHand hand, int settingId, int value
     public static final int MINING_SPEED = 0;
     public static final int ATTACK_DAMAGE_LIMIT = 1;
     public static final int ORE_DROP_MULTIPLIER = 2;
+    /**
+     * 抢夺等级设置值，1..1000（1 = 无抢夺）。
+     * 名字里的 MODE 是历史遗留：早期这里是 0/1/2 三档"模式"，改成连续值后 id 保持不变
+     * （线格式里的数值不能改），只换了载荷的含义。
+     */
     public static final int LOOTING_MODE = 3;
     public static final int AREA_CLEAR_TARGET_MODE = 4;
     public static final int BLUE_SCREEN_ATTACK = 5;

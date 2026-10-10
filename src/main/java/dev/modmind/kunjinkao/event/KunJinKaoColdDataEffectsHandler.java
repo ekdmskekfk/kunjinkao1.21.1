@@ -235,8 +235,9 @@ public final class KunJinKaoColdDataEffectsHandler {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setOreDropMultiplier(stack, multiplier));
     }
 
-    public static void handleSetSwordLootingMode(Player player, InteractionHand hand, int mode) {
-        withSword(player, hand, stack -> KunJinKaoSwordItem.setLootingMode(stack, mode));
+    /** 抢夺设置值 1..1000（1 = 无抢夺）。服务端同样夹一次范围，不信任客户端来的数值。 */
+    public static void handleSetSwordLootingMode(Player player, InteractionHand hand, int settingValue) {
+        withSword(player, hand, stack -> KunJinKaoSwordItem.setLootingLevel(stack, settingValue));
     }
 
     public static void handleToggleUltimateDeath(Player player, InteractionHand hand, boolean enabled) {

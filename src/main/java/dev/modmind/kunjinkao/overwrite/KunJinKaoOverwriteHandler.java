@@ -100,7 +100,8 @@ public class KunJinKaoOverwriteHandler {
         final ServerPlayer attacker;
         final ServerBossEvent bossEvent;
         final ItemStack backupMainHand;
-        final int lootingMode;
+        /** 剑上的抢夺设置值 1..1000（1 = 无抢夺）；覆写期间先存下来，处决时写回目标身上。 */
+        final int lootingLevelSetting;
         final double armorValue;
         final int theme;
         final boolean freezeAi;
@@ -113,12 +114,12 @@ public class KunJinKaoOverwriteHandler {
         boolean decisionSent;
 
         OverwriteState(LivingEntity target, ServerPlayer attacker, ServerBossEvent bossEvent,
-                       ItemStack backupMainHand, int lootingMode, double armorValue, int theme) {
+                       ItemStack backupMainHand, int lootingLevelSetting, double armorValue, int theme) {
             this.target = target;
             this.attacker = attacker;
             this.bossEvent = bossEvent;
             this.backupMainHand = backupMainHand;
-            this.lootingMode = lootingMode;
+            this.lootingLevelSetting = lootingLevelSetting;
             this.armorValue = armorValue;
             this.theme = theme;
             // 主题 1 / 4 在覆写期间额外冻结 AI：这是有意设计（这两个主题表现"完全停机"），不要当成 bug 去掉
@@ -189,7 +190,7 @@ public class KunJinKaoOverwriteHandler {
                 playerAttacker,
                 bossEvent,
                 target.getMainHandItem().copy(),
-                KunJinKaoSwordItem.getLootingMode(sword),
+                KunJinKaoSwordItem.getLootingLevelSetting(sword),
                 target.getArmorValue(),
                 KunJinKaoSwordItem.getTheme(sword)
         );
@@ -339,7 +340,7 @@ public class KunJinKaoOverwriteHandler {
 
         // 写入掉落/经验增强标记与断未赐死标记（绕过持剑保护）
         target.getPersistentData().putBoolean(KunJinKaoDeathEventHandler.MARK_KEY, true);
-        target.getPersistentData().putInt(KunJinKaoDeathEventHandler.LOOTING_MODE_ENTITY_KEY, state.lootingMode);
+        target.getPersistentData().putInt(KunJinKaoDeathEventHandler.LOOTING_MODE_ENTITY_KEY, state.lootingLevelSetting);
         target.getPersistentData().putBoolean(KunJinKaoProtectionHandler.KILL_BY_OVERWRITE_KEY, true);
 
         if (state.bossEvent != null) {
