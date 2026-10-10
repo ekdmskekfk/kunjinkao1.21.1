@@ -3,6 +3,7 @@ package dev.modmind.kunjinkao.client.qol;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
+import dev.modmind.kunjinkao.qol.QolSetting;
 import net.neoforged.fml.loading.FMLPaths;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -11,6 +12,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * 功能面板的界面状态：选中哪个分类、滚到哪、缩放多少。存在
@@ -39,6 +43,15 @@ public final class QolPanelConfig {
         public int guiScaleOffset;
         /** 是否跟着分辨率自适应缩放；关掉则只用手动偏移。 */
         public boolean adaptive = true;
+        /**
+         * 开关类设定项的快捷键：键 = 枚举名小写，值 = GLFW key code。
+         * <p>
+         * 用枚举名而不是枚举序号：以后往 {@link QolSetting} 中间插一项，序号全部错位，
+         * 玩家的按键会静悄悄地跑到别的功能上；名字至少读得懂，加项也不受影响。
+         * <p>
+         * 没绑的项干脆不写进这个表，而不是写一个 0 —— 手改文件的人一眼能看出哪些绑了。
+         */
+        public Map<String, Integer> toggleBinds = new LinkedHashMap<>();
     }
 
     private static Data data;
@@ -75,6 +88,36 @@ public final class QolPanelConfig {
         }
     }
 
+    /**
+     * 取某项的开关快捷键，没绑过返回 0。
+     * <p>
+     * 拿 0 当"未绑定"是安全的：GLFW 的键值从 32 起，0 不可能是一个真按键，
+     * 所以调用方不需要额外判空。
+     */
+    public static int toggleKey(QolSetting setting) {
+        Integer code = get().toggleBinds.get(bindKey(setting));
+        return code == null ? 0 : code;
+    }
+
+    /**
+     * 重绑或解绑某项的开关快捷键，{@code code} 传 0 表示解绑（直接把条目删掉）。
+     * <p>
+     * 这里不落盘：调用方按自己的时机 {@link #save()} —— 面板是改一次存一次，
+     * 别的地方将来可能想攒着一起存。
+     */
+    public static void setToggleKey(QolSetting setting, int code) {
+        Data data = get();
+        if (code == 0) {
+            data.toggleBinds.remove(bindKey(setting));
+        } else {
+            data.toggleBinds.put(bindKey(setting), code);
+        }
+    }
+
+    private static String bindKey(QolSetting setting) {
+        return setting.name().toLowerCase(Locale.ROOT);
+    }
+
     private static Data load() {
         Path path = path();
         if (!Files.isRegularFile(path)) {
@@ -103,6 +146,14 @@ public final class QolPanelConfig {
         if (fixed.selectedCategory == null) {
             fixed.selectedCategory = "";
         }
+        // 手改过的文件里可能根本没有这个字段（老文件），也可能被写成 null；
+        // 不兜住的话，进游戏第一次读快捷键就是一次空指针。
+        if (fixed.toggleBinds == null) {
+            fixed.toggleBinds = new LinkedHashMap<>();
+        }
+        // 只认正整数：0 在语义上是"未绑定"，负数和 null 都不是合法的 GLFW 键值，
+        // 留着它们只会让按键格画出一串问号。
+        fixed.toggleBinds.values().removeIf(code -> code == null || code <= 0);
         return fixed;
     }
 

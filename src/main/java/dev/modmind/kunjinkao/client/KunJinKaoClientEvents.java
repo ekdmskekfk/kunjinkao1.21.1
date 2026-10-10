@@ -53,6 +53,10 @@ public class KunJinKaoClientEvents {
         handleToggleTacticalHud();
         handleOpenSwordOptions();
         handleOpenQolPanel();
+        // 面板里绑的开关快捷键：按键格只在面板里改，实际触发在游戏里，
+        // 所以放在这一串 tick 处理里，与其它界面开关同一时机。边界检测在 QolKeybinds 里做。
+        // 用全限定名而不是加 import：本文件只允许在 onClientTick 里动一行。
+        dev.modmind.kunjinkao.client.qol.QolKeybinds.tick(Minecraft.getInstance());
         handleOpenAdminPassword();
         handleUndoPlacement();
         handleCycleAreaMode();

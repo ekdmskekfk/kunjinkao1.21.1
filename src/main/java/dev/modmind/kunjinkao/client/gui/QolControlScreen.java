@@ -2,16 +2,19 @@ package dev.modmind.kunjinkao.client.gui;
 
 import dev.modmind.kunjinkao.KunJinKaoPalette;
 import dev.modmind.kunjinkao.client.qol.QolClientState;
+import dev.modmind.kunjinkao.client.qol.QolKeybinds;
 import dev.modmind.kunjinkao.client.qol.QolPanelConfig;
 import dev.modmind.kunjinkao.network.NetworkHandler;
 import dev.modmind.kunjinkao.network.QolSettingPayload;
 import dev.modmind.kunjinkao.network.QolStatePayload;
 import dev.modmind.kunjinkao.network.SimpleActionPayload;
 import dev.modmind.kunjinkao.qol.QolSetting;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -49,6 +52,19 @@ public final class QolControlScreen extends Screen {
     private static final int TAB_GAP = 4;
     /** 权限徽章的最大宽度：够放「需要管理员权限」，也不至于把名字列挤没。 */
     private static final int BADGE_MAX_W = 140;
+    /** 行尾快捷键格的常态宽度：放得下 F5 这种两三个字符的键名。 */
+    private static final int BIND_W = 34;
+    /** 快捷键格与权限徽章之间的间距，免得两个框贴在一起看起来像一个控件。 */
+    private static final int BIND_GAP = 4;
+    /**
+     * 快捷键格的上限宽度。
+     * <p>
+     * 等待按键时格子里要放提示文案，各语言长短差很多，宽度得跟着文案算；
+     * 但不能真的无限长 —— 格子在行尾，它一长就是从功能名那里抢地方。
+     */
+    private static final int BIND_MAX_W = 96;
+    /** 未绑定时的占位符。不写「无」是为了不跟「已关闭」的文案撞脸。 */
+    private static final String BIND_PLACEHOLDER = "\u2014";
 
     // ===== 配色 =====
     /** 面板底色：深蓝。用带 alpha 的值而不是不透明色，底下的世界还透得出来一点。 */
@@ -100,6 +116,14 @@ public final class QolControlScreen extends Screen {
     private final int[] pendingValue = new int[QolSetting.COUNT];
     private final long[] pendingAt = new long[QolSetting.COUNT];
     private final boolean[] pendingValid = new boolean[QolSetting.COUNT];
+
+    /**
+     * 正在等玩家按一个键来绑定的那一项，null 表示没在等。
+     * <p>
+     * 只存在这一个"正在改哪一行"，同一时刻不可能绑两行 —— 键盘没有"正在按哪个键"的归属感，
+     * 同时等两个键只能靠玩家自己记住顺序，那是给自己找麻烦。
+     */
+    private QolSetting listening;
 
     public QolControlScreen() {
         super(Component.translatable("screen.kunjinkao.qol.title"));
@@ -283,6 +307,8 @@ public final class QolControlScreen extends Screen {
         drawCloseButton(graphics, mouseX, mouseY);
         drawTabStrip(graphics, mouseX, mouseY);
         drawRows(graphics, mouseX, mouseY);
+        // 提示画在最后：它是压在内容上面的一层，先画就会被后面的行盖掉。
+        drawBindTooltip(graphics, mouseX, mouseY);
     }
 
     /**
@@ -394,7 +420,12 @@ public final class QolControlScreen extends Screen {
             stateColor = KunJinKaoPalette.ACCEL;
         }
 
-        int badgeX = rowX + rowW - 4 - badgeW;
+        // 快捷键格钉在行尾，权限徽章与状态列整体左移让位 —— 键是行上最不需要读的东西，
+        // 放最右边既好找又不打断"序号 → 名字 → 状态 → 权限"这条阅读顺序。
+        // 宽度交给 bindCellWidth：画和点用同一个函数，不会出现"看着能点、点上去没反应"。
+        int bindW = bindCellWidth(setting, listening == setting);
+        int bindX = rowX + rowW - 4 - bindW;
+        int badgeX = bindX - BIND_GAP - badgeW;
         Component badgeText;
         int badgeColor;
         if (syncing) {
@@ -433,6 +464,125 @@ public final class QolControlScreen extends Screen {
         drawBorder(graphics, badgeX, badgeY, badgeW, BADGE_H, badgeColor);
         graphics.drawCenteredString(font, badgeText, badgeX + badgeW / 2, badgeY + (BADGE_H - 8) / 2,
                 badgeColor);
+
+        drawBindCell(graphics, setting, bindX, badgeY, bindW, authorized || syncing);
+    }
+
+    /**
+     * 行尾的快捷键格。
+     * <p>
+     * 数值类也画格子，但画成禁用态：这一版只做开关的快捷键。干脆不画的话，
+     * 玩家分不清"这个功能不支持快捷键"和"面板里就是不能绑"，留个灰格子至少说明前者。
+     * <p>
+     * 未授权时跟着整行一起降饱和度，但<b>仍然可以点</b>：绑定是本机偏好，
+     * 跟服务端授不授权无关；真按下去时 {@link QolKeybinds} 会挡住不发包，
+     * 不需要在这一层提前禁止，否则权限恢复后玩家还得重新绑一遍。
+     */
+    private void drawBindCell(GuiGraphics graphics, QolSetting setting, int x, int y, int w, boolean bright) {
+        boolean listeningHere = listening == setting;
+        Component text;
+        int color;
+        if (listeningHere) {
+            color = KunJinKaoPalette.ACCEL;
+            text = Component.translatable("screen.kunjinkao.qol.bind_listening");
+        } else if (setting.kind() != QolSetting.Kind.TOGGLE) {
+            color = COLOR_OFF;
+            text = Component.literal(BIND_PLACEHOLDER);
+        } else {
+            int code = QolPanelConfig.toggleKey(setting);
+            if (code == 0) {
+                color = COLOR_DIM;
+                text = Component.literal(BIND_PLACEHOLDER);
+            } else {
+                color = KunJinKaoPalette.NORMAL;
+                text = Component.literal(keyName(code));
+            }
+        }
+        if (!bright) {
+            color = desaturate(color);
+        }
+        graphics.fill(x, y, x + w, y + BADGE_H,
+                listeningHere ? KunJinKaoPalette.alpha(KunJinKaoPalette.ACCEL, 0.30F)
+                        : KunJinKaoPalette.alpha(color, 0.14F));
+        drawBorder(graphics, x, y, w, BADGE_H, color);
+        // 键名和提示文案都可能比格子宽（长键名、长句子），裁一下总比让它画出格子外好。
+        graphics.drawCenteredString(font,
+                Component.literal(font.plainSubstrByWidth(text.getString(), w - 6)),
+                x + w / 2, y + (BADGE_H - 8) / 2, color);
+    }
+
+    /**
+     * 从 GLFW key code 取显示用的键名。
+     * <p>
+     * 交给原版翻而不是自己拼：这样 F5、G、方向键在各语言下都是同一套说法，
+     * 跟原版按键设置界面里显示的也一致。
+     */
+    private static String keyName(int code) {
+        return InputConstants.getKey(code, 0).getDisplayName().getString();
+    }
+
+    /**
+     * 快捷键格这一帧该有多宽。
+     * <p>
+     * 只有"等按键"这一种状态需要变宽：格子里那一刻放的是提示文案，写死宽度会把
+     * 一句话截成半句；其余状态是键名，最长也就 F5 那种，固定宽度反而让各行对齐。
+     */
+    private int bindCellWidth(QolSetting setting, boolean listeningHere) {
+        if (!listeningHere) {
+            return BIND_W;
+        }
+        return Math.min(BIND_MAX_W, Math.max(BIND_W,
+                font.width(Component.translatable("screen.kunjinkao.qol.bind_listening")) + 8));
+    }
+
+    /**
+     * 快捷键格的矩形，与 {@link #drawRow} 里那套算式逐项对应。
+     * <p>
+     * 行高用 {@code ROW_H - 2}（行与行之间留了一条分隔线的位置），
+     * 所以命中测试必须用同一个值，否则会点到上一行的格子上。
+     */
+    private int[] bindCellBox(int index) {
+        QolSetting setting = visible.get(index);
+        int rowX = panelX + SIDE;
+        int rowW = panelW - SIDE * 2;
+        int rowY = listTop + (index - scroll) * ROW_H;
+        int w = bindCellWidth(setting, listening == setting);
+        return new int[]{rowX + rowW - 4 - w, rowY + (ROW_H - 2 - BADGE_H) / 2, w, BADGE_H};
+    }
+
+    /** 鼠标指在哪个快捷键格上；不在任何格子上返回 null。 */
+    private QolSetting bindCellAt(double mouseX, double mouseY) {
+        int index = rowIndexAt(mouseX, mouseY);
+        if (index < 0) {
+            return null;
+        }
+        int[] box = bindCellBox(index);
+        return inside(mouseX, mouseY, box[0], box[1], box[2], box[3]) ? visible.get(index) : null;
+    }
+
+    /**
+     * 快捷键格上的悬停提示。
+     * <p>
+     * 只在这两种"看不出来"的情况下提示：数值类的格子为什么是灰的、空格子是什么。
+     * 已经绑好的格子不用提示 —— 键名就写在格子里，再说一遍只会挡住下面那行的内容。
+     */
+    private void drawBindTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (listening != null) {
+            return;
+        }
+        QolSetting cell = bindCellAt(mouseX, mouseY);
+        if (cell == null) {
+            return;
+        }
+        Component hint;
+        if (cell.kind() != QolSetting.Kind.TOGGLE) {
+            hint = Component.translatable("screen.kunjinkao.qol.bind_toggle_only");
+        } else if (QolPanelConfig.toggleKey(cell) == 0) {
+            hint = Component.translatable("screen.kunjinkao.qol.bind_unbound");
+        } else {
+            return;
+        }
+        graphics.renderTooltip(font, hint, mouseX, mouseY);
     }
 
     /**
@@ -457,6 +607,32 @@ public final class QolControlScreen extends Screen {
         // 先让控件（搜索框）处理：点进搜索框要能聚焦、能拖选，
         // 自定义区域与搜索框不重叠，所以先给控件不会漏掉任何点击。
         if (super.mouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
+        // 正在等按键时点别处 = 放弃这次改键。顺手把这一下吃掉：
+        // 玩家本来就还想按键、只是点歪了，不该顺手把某一行开关翻过来。
+        // 点回自己那个格子（左键重进、右键清除）不算"点别处"，继续往下走。
+        if (listening != null && !(button <= 1 && bindCellAt(mouseX, mouseY) == listening)) {
+            listening = null;
+            return true;
+        }
+        // 快捷键格要用到右键（清除绑定），所以它排在下面那句 "只认左键" 之前。
+        QolSetting cell = button <= 1 ? bindCellAt(mouseX, mouseY) : null;
+        if (cell != null) {
+            if (cell.kind() != QolSetting.Kind.TOGGLE) {
+                // 数值类的格子是禁用态，点了什么都不该发生（提示由悬停给）。
+                return true;
+            }
+            if (button == 0) {
+                listening = cell;
+                // 把焦点从搜索框拿走：不然光标还在那里闪，看着像输入法要收字符。
+                // 按键本来就会被下面的 keyPressed 拦下，这一步纯粹是为了画面不矛盾。
+                setFocused(null);
+            } else {
+                listening = null;
+                QolPanelConfig.setToggleKey(cell, 0);
+                QolPanelConfig.save();
+            }
             return true;
         }
         if (button != 0) {
@@ -487,6 +663,36 @@ public final class QolControlScreen extends Screen {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 等按键时接管整个键盘。
+     * <p>
+     * 必须在最前面把这一下吃掉：{@link Screen#keyPressed} 认得 Esc，会让整个面板关掉 ——
+     * 玩家想取消改键，结果面板没了，之前滚到的位置也白滚了（界面状态虽然存了，但他的意图落空）。
+     * Delete 与 Backspace 跟 Esc 同义（"把这个键去掉"），玩家按哪个都符合直觉，
+     * 不用先记住"取消是 Esc、清除是 Delete"。
+     * <p>
+     * 除了这三个键，按什么都算绑定 —— 包括 Shift 这类修饰键。听起来怪，但"按住 Shift 触发"
+     * 在游戏里本来就有先例（潜行、快速调值），强行禁掉反而要多解释一句"为什么这个键不行"。
+     */
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (listening == null) {
+            return super.keyPressed(keyCode, scanCode, modifiers);
+        }
+        QolSetting setting = listening;
+        listening = null;
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_DELETE
+                || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+            QolPanelConfig.setToggleKey(setting, 0);
+        } else {
+            QolPanelConfig.setToggleKey(setting, keyCode);
+        }
+        // 改一次就落盘，不等关面板：快捷键是"配好就不想再想起"的东西，
+        // 攒着一起存的话，改完立刻崩一次或者被踢出服务器就白配了。
+        QolPanelConfig.save();
+        return true;
     }
 
     @Override

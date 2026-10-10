@@ -175,6 +175,9 @@
   "screen.kunjinkao.qol.scope_server": "服务器级",
   "screen.kunjinkao.qol.close": "关闭",
   "screen.kunjinkao.qol.empty": "这个分类里还没有功能",
+  "screen.kunjinkao.qol.bind_listening": "按下要绑定的键…",
+  "screen.kunjinkao.qol.bind_toggle_only": "只有开关类功能可以绑快捷键",
+  "screen.kunjinkao.qol.bind_unbound": "未绑定",
   "screen.kunjinkao.qol.open_from_sword": "功能控制台",
   "message.kunjinkao.qol_denied": "§c需要管理员权限才能修改这项设置",
   "key.kunjinkao.open_qol_panel": "打开功能控制台",
@@ -212,6 +215,5 @@
   "screen.kunjinkao.section_area": "区域",
   "screen.kunjinkao.open_records": "放置记录",
   "screen.kunjinkao.records_back": "返回",
-"screen.kunjinkao.records_prev": "▲ 上一页",
 "screen.kunjinkao.area_accel_multiplier": "范围加速倍率"
 }
