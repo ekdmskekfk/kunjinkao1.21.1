@@ -56,14 +56,24 @@ public final class KunJinKaoQolHandler {
 
     // ===== 星瞳夜视（80）=====
     /**
-     * 我们自己施加的夜视时长。
+     * 我们自己施加的夜视时长（tick）。
      * <p>
      * 这个数值同时是"这条夜视是不是我们放的"的判据：剩余时长比它长，
      * 就说明是玩家自己喝的药水或别的模组给的，我们只续期不覆盖、关闭时也不摘。
+     * <p>
+     * <b>它和 {@link #NIGHT_VISION_RENEW_BELOW}、{@link #NIGHT_VISION_INTERVAL} 三者必须满足
+     * 「续期阈值 − 检查间隔 &gt; 0」且留足余量。</b> 这里 1200 − 100 = 1100 的余量下，
+     * 效果最低也有 700 tick，永远不会掉到 0。
      */
-    private static final int NIGHT_VISION_DURATION = 300;
-    /** 剩余时长低于这个值就补一次，避免每 tick 都在重加效果。 */
-    private static final int NIGHT_VISION_RENEW_BELOW = 100;
+    private static final int NIGHT_VISION_DURATION = 1200;
+    /**
+     * 剩余时长低于这个值就补一次。
+     * <p>
+     * <b>必须显著大于检查间隔</b>：早先这两个值都是 100，于是每次检查时剩余时长刚好等于阈值、
+     * 判定不成立，下一次检查时它已经掉到 0 —— 表现就是夜视每隔一会儿真的消失一下再被加上，
+     * 客户端看到「移除 + 重新施加」两个包，图标闪一下。这不是显示问题，是效果真的断过。
+     */
+    private static final int NIGHT_VISION_RENEW_BELOW = 800;
 
     // ===== 万民敬仰（88）=====
     private static final int HERO_DURATION = 300;

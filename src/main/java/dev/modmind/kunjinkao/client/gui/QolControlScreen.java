@@ -311,6 +311,29 @@ public final class QolControlScreen extends Screen {
         drawRows(graphics, mouseX, mouseY);
         // 提示画在最后：它是压在内容上面的一层，先画就会被后面的行盖掉。
         drawBindTooltip(graphics, mouseX, mouseY);
+        drawRowTooltip(graphics, mouseX, mouseY);
+    }
+
+    /**
+     * 鼠标停在某一行上时给出这一项到底干什么。
+     * <p>
+     * 行里只有名字和当前值，「万民敬仰 0 / 5」这种写法不查资料是猜不出效果的。
+     * 说明做成悬停提示而不是塞进行内，是因为行高只有 26 像素，
+     * 塞进去要么把行撑成两行、要么把字缩到看不清。
+     * <p>
+     * 悬停在行尾快捷键格上时不弹它 —— 那一刻玩家要的是「这个键怎么绑」，不是功能说明。
+     */
+    private void drawRowTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (bindCellAt(mouseX, mouseY) != null) {
+            return;
+        }
+        int index = rowIndexAt(mouseX, mouseY);
+        if (index < 0 || index >= visible.size()) {
+            return;
+        }
+        QolSetting setting = visible.get(index);
+        graphics.renderTooltip(font,
+                Component.translatable(setting.translationKey() + ".desc"), mouseX, mouseY);
     }
 
     /**
@@ -394,15 +417,11 @@ public final class QolControlScreen extends Screen {
         }
         graphics.fill(rowX, rowY + ROW_H - 1, rowX + rowW, rowY + ROW_H, COLOR_SEPARATOR);
 
-        // 序号徽章：用给人看的 code（80/83/…）而不是线格式 id —— 玩家和文档都用前者说话。
-        int codeX = rowX + 4;
-        int codeY = rowY + (rowH - BADGE_H) / 2;
-        graphics.fill(codeX, codeY, codeX + CODE_BADGE_W, codeY + BADGE_H, COLOR_TINT);
-        drawBorder(graphics, codeX, codeY, CODE_BADGE_W, BADGE_H,
-                authorized ? KunJinKaoPalette.NORMAL : COLOR_OFF);
-        graphics.drawCenteredString(font, Component.literal(Integer.toString(setting.code())),
-                codeX + CODE_BADGE_W / 2, codeY + (BADGE_H - 8) / 2,
-                authorized ? KunJinKaoPalette.NORMAL : COLOR_OFF);
+        // 名字列从行首开始，不再留序号徽章的位置。
+        // 那个 80/83/85 是开发计划内部的功能编号（对应参考模组的技能 id），对玩家没有任何意义，
+        // 面板上摆一排四位数字只会占地方。它唯一的实际用处 —— 按序号搜索 ——
+        // 保留在 matches() 里：输入 89 仍然能定位到「长臂善舞」。
+        int nameX = rowX + 4;
 
         // 状态列：先算出文案与颜色，好把名字列裁到不撞上它。
         Component stateText;
@@ -453,7 +472,6 @@ public final class QolControlScreen extends Screen {
         int stateX = badgeX - 8 - font.width(stateText);
         graphics.drawString(font, stateText, stateX, textY, shownStateColor, false);
 
-        int nameX = codeX + CODE_BADGE_W + 6;
         int nameMax = Math.max(20, stateX - 8 - nameX);
         graphics.drawString(font,
                 font.plainSubstrByWidth(
