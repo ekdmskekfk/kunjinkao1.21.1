@@ -261,7 +261,9 @@ public final class KunJinKaoQolHandler {
             // 保留这些分支而不是删掉，是为了让"新增一项时该不该写生效逻辑"这个问题
             // 在编译期就逼着人想一遍 —— 枚举加了项而这里没加，switch 会报错。
             case FLY_MINING, FIRE_IMMUNE, UNLIMITED_TRADES, VILLAGER_MASTER,
-                 XP_BOOST, ANVIL_UNBREAKABLE, ANVIL_XP_COST, DURABILITY_PROTECTION -> {
+                 XP_BOOST, ANVIL_UNBREAKABLE, ANVIL_XP_COST, DURABILITY_PROTECTION,
+                 MACHINE_LOOT, FOG_VISION, TREASURE_HUNTER_SERVER, TREASURE_HUNTER_RADIUS,
+                 TREASURE_HUNTER -> {
             }
         }
     }

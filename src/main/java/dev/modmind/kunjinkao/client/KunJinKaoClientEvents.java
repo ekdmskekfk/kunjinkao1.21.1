@@ -57,6 +57,9 @@ public class KunJinKaoClientEvents {
         // 所以放在这一串 tick 处理里，与其它界面开关同一时机。边界检测在 QolKeybinds 里做。
         // 用全限定名而不是加 import：本文件只允许在 onClientTick 里动一行。
         dev.modmind.kunjinkao.client.qol.QolKeybinds.tick(Minecraft.getInstance());
+        // 寻宝大师（96）的扫描：每 client tick 调一次，内部自己按 tick 计数决定何时真扫，
+        // 并且把区块分批摊到多次扫描里，避免单帧卡顿。
+        dev.modmind.kunjinkao.client.qol.QolTreasureScanner.tick(Minecraft.getInstance());
         handleOpenAdminPassword();
         handleUndoPlacement();
         handleCycleAreaMode();

@@ -44,7 +44,37 @@ public enum QolSetting {
      * 不是"手上那把剑的能力" —— 按持剑判定会让玩家一换主手就时灵时不灵。
      * 83 凌空采掘在 M1 已经按同样的理由放进了面板，两项保持一致。
      */
-    DURABILITY_PROTECTION(11, 70, Category.CONVENIENCE, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, "");
+    DURABILITY_PROTECTION(11, 70, Category.CONVENIENCE, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, ""),
+    /**
+     * 119 战利品大爆发·机器共鸣：假玩家（模拟玩家机器）击杀时也吃掉落倍率。
+     * <p>
+     * <b>只有服务器级，没有个人开关。</b> 开发计划 5.9 写了"服务器倍率（OP）+ 个人开关"，
+     * 但假玩家身上没有可靠的"属于哪个玩家"的凭据 —— 各模组机器的实现方式差异很大，
+     * 有的用固定 GameProfile、有的每台机器一个。做一个绑不上人的个人开关，
+     * 只会变成"点了没反应"的按钮。等真的遇到需要按玩家区分的场景再说。
+     * <p>
+     * <b>弱兼容</b>：只认 NeoForge 的 {@code FakePlayer}，自己实现假玩家类的机器不受影响。
+     */
+    MACHINE_LOOT(12, 119, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 1, 100, 1, "machineLootMultiplier"),
+    /**
+     * 87 碧波清眸：水下与岩浆里把雾推开。
+     * <p>
+     * 纯客户端表现，服务端只负责存开关。默认关闭：它与光影（Iris/Oculus）大概率冲突，
+     * 而画面类的问题最容易被误当成"模组坏了"，所以让玩家自己决定要不要开。
+     */
+    FOG_VISION(13, 87, Category.SURVIVAL, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, ""),
+    /**
+     * 96 寻宝大师·服务器总闸。
+     * <p>
+     * 这一项存在的意义是<b>让服主能一票否决</b>：透视类功能在服务器上很容易被当成作弊，
+     * 没有总闸的话，只要玩家自己开了个人开关就能用，服主只能去删模组。
+     * 总闸关闭时客户端不会扫描，个人开关点了也不会有任何反应。
+     */
+    TREASURE_HUNTER_SERVER(14, 96, Category.INCOME, Scope.SERVER, Kind.TOGGLE, 0, 1, 0, "treasureHunterEnabled"),
+    /** 96 的扫描半径（格）。服务器级：半径直接决定性能开销与"能看到多远"，不该由玩家自己定。 */
+    TREASURE_HUNTER_RADIUS(15, 96, Category.INCOME, Scope.SERVER, Kind.NUMBER, 8, 64, 64, "treasureHunterRadius"),
+    /** 96 的个人开关：只有它还要求服务端总闸开着才生效。 */
+    TREASURE_HUNTER(16, 96, Category.INCOME, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, "");
 
     /**
      * 面板顶部的分类标签。

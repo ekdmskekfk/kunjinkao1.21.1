@@ -1,6 +1,8 @@
 package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
+import dev.modmind.kunjinkao.config.AdminToolConfig;
+import dev.modmind.kunjinkao.qol.QolSetting;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -12,8 +14,11 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.SpawnEggItem;
 import net.minecraft.world.level.Level;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -54,6 +59,16 @@ public final class KunJinKaoExtraLootHandler {
         if (killer == null) {
             return;
         }
+
+        // 机器共鸣（119）单独一条分支，且<b>先判假玩家</b>。
+        // 假玩家手里通常没有本模组的剑，所以它必须排在"手持剑"那个判定之前，
+        // 否则这一项永远不会触发；而真人那一套（斩首/刷怪蛋）也一概不参与 ——
+        // 计划里写明"真人掉落逻辑一律不动"，就是怕在这里顺手改变真人的掉落。
+        if (killer instanceof FakePlayer) {
+            applyMachineLootMultiplier(event);
+            return;
+        }
+
         ItemStack sword = killer.getMainHandItem();
         if (!(sword.getItem() instanceof KunJinKaoSwordItem)) {
             return;
@@ -71,6 +86,43 @@ public final class KunJinKaoExtraLootHandler {
                 addDrop(victim, event, new ItemStack(egg));
             }
         }
+    }
+
+    /**
+     * 机器共鸣：把已有的掉落按服务器倍率补足。
+     * <p>
+     * 做法与矿物掉落倍数一致 —— 倍率 N 表示"总数为原来的 N 倍"，也就是给每个已有掉落
+     * 再补 N-1 份，而不是把 N 当成"额外几份"。两个倍率用同一种读法，
+     * 玩家才不会在菜单里看到两个含义不同的数字。
+     * <p>
+     * 倍率来自 {@code AdminToolConfig [qol] machineLootMultiplier}，1 表示关闭。
+     */
+    private static void applyMachineLootMultiplier(LivingDropsEvent event) {
+        int multiplier = AdminToolConfig.qolServerValue(QolSetting.MACHINE_LOOT);
+        if (multiplier <= 1) {
+            return;
+        }
+        List<ItemEntity> extra = new ArrayList<>();
+        for (ItemEntity drop : event.getDrops()) {
+            ItemStack stack = drop.getItem();
+            if (stack.isEmpty()) {
+                continue;
+            }
+            int remaining = stack.getCount() * (multiplier - 1);
+            int maxSize = stack.getMaxStackSize();
+            while (remaining > 0) {
+                int count = Math.min(remaining, maxSize);
+                ItemStack copy = stack.copy();
+                copy.setCount(count);
+                ItemEntity item = new ItemEntity(drop.level(), drop.getX(), drop.getY(), drop.getZ(), copy);
+                item.setDefaultPickUpDelay();
+                extra.add(item);
+                remaining -= count;
+            }
+        }
+        // 先攒完再一次性加：直接边遍历 event.getDrops() 边 add 会抛
+        // ConcurrentModificationException（LivingDropsEvent 给的是可变的 ArrayList）。
+        event.getDrops().addAll(extra);
     }
 
     /**

@@ -119,6 +119,15 @@ public final class AdminToolConfig {
             case ANVIL_XP_COST -> new String[]{
                     " 不朽铭文（77）的经验成本：上面那个开关生效时，铁砧收多少级经验。",
                     " 设得再低也不会是 0 —— 白送的经验成本会让创造模式以外也用不出代价。"};
+            case MACHINE_LOOT -> new String[]{
+                    " 机器共鸣（119）：假玩家（模拟玩家机器）击杀生物时的掉落倍率。1 = 原版。",
+                    " 弱兼容：只认 NeoForge 的 FakePlayer，自己实现假玩家类的机器不受影响。"};
+            case TREASURE_HUNTER_SERVER -> new String[]{
+                    " 寻宝大师（96）服务器总闸：0 = 全服禁用（个人开关也会失效），1 = 允许。",
+                    " 它会给玩家画出周围容器的高亮框，很容易被当成透视，默认关闭。"};
+            case TREASURE_HUNTER_RADIUS -> new String[]{
+                    " 寻宝大师（96）的扫描半径（格，8~64）。",
+                    " 半径直接决定客户端每 20 tick 的扫描开销，别设得比实际视野大太多。"};
             default -> new String[]{" 功能面板的服务器级设定项：" + setting.name()};
         };
     }
