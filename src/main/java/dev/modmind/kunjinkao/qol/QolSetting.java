@@ -101,7 +101,18 @@ public enum QolSetting {
      * 超过这个数就不记快照，并在开始时明确告诉玩家"这次挖完撤不回来"。
      * 与其记一半导致撤销出一个残缺地形，不如一开始就说清。
      */
-    ZONE_UNDO_MAX(22, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 0, 100000, 20000, "zoneUndoMaxBlocks");
+    ZONE_UNDO_MAX(22, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 0, 100000, 20000, "zoneUndoMaxBlocks"),
+    /**
+     * 127 选区作业的模式：0 = 破坏、1 = 放置。
+     * <p>
+     * <b>个人级，不是服务器级。</b> 它是"这一次我想让作业干什么"的选择，只影响自己，
+     * 也不改变这一功能被允许做到什么：单边上限、掉落策略、每 tick 预算那些仍然是服主定死的。
+     * 把模式做成服务器级会让同服的人互相抢这个开关，而它本来就是个一次性意图。
+     * <p>
+     * 破坏模式<b>不给主手物品扣耐久</b>，见 {@code ZoneExcavationJob} 里的说明：
+     * 一次作业可能几十万方块，按格扣耐久等于必然毁掉工具。
+     */
+    ZONE_MODE(23, 127, Category.ENGINEERING, Scope.PERSONAL, Kind.CHOICE, 0, 1, 0, "");
 
     /**
      * 面板顶部的分类标签。
@@ -134,10 +145,27 @@ public enum QolSetting {
         SERVER
     }
 
-    /** 交互形态：开关只有 0/1，数值项是一个区间。 */
+    /**
+     * 交互形态：开关只有 0/1，数值项是一个区间，选项项是少数几个有名字的取值。
+     * <p>
+     * CHOICE 的<b>取值范围、校验、上限</b>与 NUMBER 完全共用同一套（见 {@link QolSettings#maxOf}）——
+     * 区别只在面板怎么呈现：NUMBER 画"当前值 / 上限"，CHOICE 画选项名并让滚轮与点击循环取值。
+     * 这样"模式"这类项不需要再造一种新的校验路径，服务端也照旧只认一个 int。
+     */
     public enum Kind {
         TOGGLE,
-        NUMBER
+        NUMBER,
+        CHOICE;
+
+        /**
+         * 是不是"有取值范围"的项。
+         * <p>
+         * 抽成一个判断而不是各处写 {@code kind == NUMBER || kind == CHOICE}：
+         * 将来再加一种带范围的形态时，只改这里一处，不会漏掉某个面板分支。
+         */
+        public boolean hasRange() {
+            return this != TOGGLE;
+        }
     }
 
     /** 设定项总数，用于遍历与数组定长。 */
@@ -224,6 +252,27 @@ public enum QolSetting {
     /** 名称的翻译键。按枚举名生成，加一项就自动多一个键，不用回来改这里。 */
     public String translationKey() {
         return "screen.kunjinkao.qol." + name().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * 这一项在面板上是否还带一个「执行键」格（按一下对当前选区开工）。
+     * <p>
+     * 写成一个方法、而不是在面板与快捷键里各写一次 {@code setting == ZONE_MODE}：
+     * 将来再出现"一次性动作"类的项时只改这一处，也不会出现
+     * "面板画了格子、按键却不响应"这种两边各判一次才会有的不一致。
+     */
+    public boolean hasExecuteAction() {
+        return this == ZONE_MODE;
+    }
+
+    /**
+     * 选项类项的取值名翻译键，例如 {@code screen.kunjinkao.qol.zone_mode.value0}。
+     * <p>
+     * 拼在名称键后面而不是另起一套前缀：选项名与这一项强绑定，
+     * 换个前缀就要在两处地方同时改，而语言文件里的漏项在编译期是发现不了的。
+     */
+    public String choiceKey(int value) {
+        return translationKey() + ".value" + value;
     }
 
     /**

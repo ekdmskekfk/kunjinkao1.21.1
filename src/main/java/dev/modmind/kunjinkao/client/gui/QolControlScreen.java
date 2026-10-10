@@ -19,6 +19,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * 功能控制台：把模组的所有 QoL 功能集中到一页里开关与调值。
@@ -124,6 +125,29 @@ public final class QolControlScreen extends Screen {
      * 同时等两个键只能靠玩家自己记住顺序，那是给自己找麻烦。
      */
     private QolSetting listening;
+    /**
+     * 正在等按键的是哪一格。
+     * <p>
+     * 与 {@link #listening} 必须同进同出：只记设定项的话，带执行键的那一行就没法区分
+     * "玩家点的是开关键格还是执行键格"，改出来的键会写进另一张表 —— 而且是静悄悄地写错。
+     */
+    private Cell listeningCell = Cell.TOGGLE;
+
+    /**
+     * 行尾按键格的种类。
+     * <p>
+     * 两种格子的行为完全不同：开关键按一下等于点这一行的开关（只有开关类项能绑），
+     * 执行键按一下等于对当前选区开工（只有带执行动作的项才画这一格）。
+     * 它们各自有独立的绑定表，所以命中测试也必须回答"是哪一种"，不能只回答"哪一行"。
+     */
+    private enum Cell {
+        TOGGLE,
+        ACTION
+    }
+
+    /** 命中结果：哪一行的哪一种格子。 */
+    private record CellHit(QolSetting setting, Cell cell) {
+    }
 
     public QolControlScreen() {
         super(Component.translatable("screen.kunjinkao.qol.title"));
@@ -435,6 +459,11 @@ public final class QolControlScreen extends Screen {
             stateText = Component.translatable(on
                     ? "screen.kunjinkao.qol.state_on" : "screen.kunjinkao.qol.state_off");
             stateColor = on ? KunJinKaoPalette.NORMAL : COLOR_OFF;
+        } else if (setting.kind() == QolSetting.Kind.CHOICE) {
+            // 选项类画选项名而不是数字：玩家要的是"破坏还是放置"，不是"0 还是 1"。
+            // 数字只留给真正的区间项 —— 那里除了数字没有别的说法。
+            stateText = choiceName(setting, QolClientState.value(setting));
+            stateColor = KunJinKaoPalette.ACCEL;
         } else {
             // 上限取服务端下发的那个（含服务器配置），不是本项硬上限。
             stateText = Component.literal(QolClientState.value(setting) + " / " + QolClientState.max(setting));
@@ -444,9 +473,17 @@ public final class QolControlScreen extends Screen {
         // 快捷键格钉在行尾，权限徽章与状态列整体左移让位 —— 键是行上最不需要读的东西，
         // 放最右边既好找又不打断"序号 → 名字 → 状态 → 权限"这条阅读顺序。
         // 宽度交给 bindCellWidth：画和点用同一个函数，不会出现"看着能点、点上去没反应"。
-        int bindW = bindCellWidth(setting, listening == setting);
+        int bindW = bindCellWidth(setting, listening == setting && listeningCell == Cell.TOGGLE);
         int bindX = rowX + rowW - 4 - bindW;
-        int badgeX = bindX - BIND_GAP - badgeW;
+        // 执行键格往左排，而不是把开关键格挤开：开关键格各行的位置必须对齐在同一列上，
+        // 否则一眼扫下去会以为"这一行的键和别人不一样"。多出来的格子只能往左长。
+        int actionW = 0;
+        int actionX = bindX;
+        if (setting.hasExecuteAction()) {
+            actionW = bindCellWidth(setting, listening == setting && listeningCell == Cell.ACTION);
+            actionX = bindX - BIND_GAP - actionW;
+        }
+        int badgeX = actionX - BIND_GAP - badgeW;
         Component badgeText;
         int badgeColor;
         if (syncing) {
@@ -485,31 +522,52 @@ public final class QolControlScreen extends Screen {
         graphics.drawCenteredString(font, badgeText, badgeX + badgeW / 2, badgeY + (BADGE_H - 8) / 2,
                 badgeColor);
 
-        drawBindCell(graphics, setting, bindX, badgeY, bindW, authorized || syncing);
+        drawBindCell(graphics, setting, Cell.TOGGLE, bindX, badgeY, bindW, authorized || syncing);
+        if (setting.hasExecuteAction()) {
+            // 先画开关键格、再画执行键格：两格的位置算式是同一个来源，先后不影响结果，
+            // 这里只是与 drawRow 里"从左到右"的读法保持一致。
+            drawBindCell(graphics, setting, Cell.ACTION, actionX, badgeY, actionW, authorized || syncing);
+        }
     }
 
     /**
-     * 行尾的快捷键格。
+     * 选项类项当前值对应的选项名。
      * <p>
-     * 数值类也画格子，但画成禁用态：这一版只做开关的快捷键。干脆不画的话，
-     * 玩家分不清"这个功能不支持快捷键"和"面板里就是不能绑"，留个灰格子至少说明前者。
+     * 夹一次范围再拼键：值是服务端下发的，理论上越不了界，但真越界时拼出来的是一个
+     * 不存在的语言键（画面上显示键名本身），而不是抛异常 —— 面板不该因为一个坏值整个画不出来。
+     */
+    private static Component choiceName(QolSetting setting, int value) {
+        int min = setting.min();
+        int max = Math.max(min, QolClientState.max(setting));
+        return Component.translatable(setting.choiceKey(Math.max(min, Math.min(max, value))));
+    }
+
+    /**
+     * 行尾的按键格。
+     * <p>
+     * 两种格子的内容来源不同（{@link QolPanelConfig#toggleKey} 与
+     * {@link QolPanelConfig#actionKey}），但画法完全一样，所以共用这一个方法。
+     * <p>
+     * 开关类的格子对非开关项画成禁用态：干脆不画的话，玩家分不清"这个功能不支持开关快捷键"
+     * 和"面板里就是不能绑"，留个灰格子至少说明前者。
      * <p>
      * 未授权时跟着整行一起降饱和度，但<b>仍然可以点</b>：绑定是本机偏好，
      * 跟服务端授不授权无关；真按下去时 {@link QolKeybinds} 会挡住不发包，
      * 不需要在这一层提前禁止，否则权限恢复后玩家还得重新绑一遍。
      */
-    private void drawBindCell(GuiGraphics graphics, QolSetting setting, int x, int y, int w, boolean bright) {
-        boolean listeningHere = listening == setting;
+    private void drawBindCell(GuiGraphics graphics, QolSetting setting, Cell cell,
+                              int x, int y, int w, boolean bright) {
+        boolean listeningHere = listening == setting && listeningCell == cell;
         Component text;
         int color;
         if (listeningHere) {
             color = KunJinKaoPalette.ACCEL;
             text = Component.translatable("screen.kunjinkao.qol.bind_listening");
-        } else if (setting.kind() != QolSetting.Kind.TOGGLE) {
+        } else if (cell == Cell.TOGGLE && setting.kind() != QolSetting.Kind.TOGGLE) {
             color = COLOR_OFF;
             text = Component.literal(BIND_PLACEHOLDER);
         } else {
-            int code = QolPanelConfig.toggleKey(setting);
+            int code = cell == Cell.ACTION ? QolPanelConfig.actionKey(setting) : QolPanelConfig.toggleKey(setting);
             if (code == 0) {
                 color = COLOR_DIM;
                 text = Component.literal(BIND_PLACEHOLDER);
@@ -556,53 +614,82 @@ public final class QolControlScreen extends Screen {
     }
 
     /**
-     * 快捷键格的矩形，与 {@link #drawRow} 里那套算式逐项对应。
+     * 某一行的某个按键格的矩形，与 {@link #drawRow} 里那套算式逐项对应。
      * <p>
      * 行高用 {@code ROW_H - 2}（行与行之间留了一条分隔线的位置），
      * 所以命中测试必须用同一个值，否则会点到上一行的格子上。
+     *
+     * @return 该格子不存在（这一行没有执行键格）时返回 null
      */
-    private int[] bindCellBox(int index) {
+    private int[] bindCellBox(int index, Cell cell) {
         QolSetting setting = visible.get(index);
         int rowX = panelX + SIDE;
         int rowW = panelW - SIDE * 2;
         int rowY = listTop + (index - scroll) * ROW_H;
-        int w = bindCellWidth(setting, listening == setting);
-        return new int[]{rowX + rowW - 4 - w, rowY + (ROW_H - 2 - BADGE_H) / 2, w, BADGE_H};
+        int y = rowY + (ROW_H - 2 - BADGE_H) / 2;
+        int toggleW = bindCellWidth(setting, listening == setting && listeningCell == Cell.TOGGLE);
+        int toggleX = rowX + rowW - 4 - toggleW;
+        if (cell == Cell.TOGGLE) {
+            return new int[]{toggleX, y, toggleW, BADGE_H};
+        }
+        if (!setting.hasExecuteAction()) {
+            return null;
+        }
+        int actionW = bindCellWidth(setting, listening == setting && listeningCell == Cell.ACTION);
+        return new int[]{toggleX - BIND_GAP - actionW, y, actionW, BADGE_H};
     }
 
-    /** 鼠标指在哪个快捷键格上；不在任何格子上返回 null。 */
-    private QolSetting bindCellAt(double mouseX, double mouseY) {
+    /** 鼠标指在哪个按键格上；不在任何格子上返回 null。 */
+    private CellHit bindCellAt(double mouseX, double mouseY) {
         int index = rowIndexAt(mouseX, mouseY);
         if (index < 0) {
             return null;
         }
-        int[] box = bindCellBox(index);
-        return inside(mouseX, mouseY, box[0], box[1], box[2], box[3]) ? visible.get(index) : null;
+        // 两格互不重叠，先判哪个都不影响结果；这里按"先看多出来的执行键格"的读法写。
+        for (Cell cell : new Cell[]{Cell.ACTION, Cell.TOGGLE}) {
+            int[] box = bindCellBox(index, cell);
+            if (box != null && inside(mouseX, mouseY, box[0], box[1], box[2], box[3])) {
+                return new CellHit(visible.get(index), cell);
+            }
+        }
+        return null;
     }
 
     /**
-     * 快捷键格上的悬停提示。
+     * 按键格上的悬停提示。
      * <p>
-     * 只在这两种"看不出来"的情况下提示：数值类的格子为什么是灰的、空格子是什么。
-     * 已经绑好的格子不用提示 —— 键名就写在格子里，再说一遍只会挡住下面那行的内容。
+     * 第一行永远说明"这一格是干什么的"：带执行键的行上有两个格子，光看格子本身
+     * 分不出哪个是开关键、哪个是执行键（都是一个方框加一个键名）。第二行只在
+     * "空格子是什么"或"灰格子为什么不能绑"时才补 —— 已经绑好的格子不必再念一遍键名。
      */
     private void drawBindTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
         if (listening != null) {
             return;
         }
-        QolSetting cell = bindCellAt(mouseX, mouseY);
-        if (cell == null) {
+        CellHit hit = bindCellAt(mouseX, mouseY);
+        if (hit == null) {
             return;
         }
-        Component hint;
-        if (cell.kind() != QolSetting.Kind.TOGGLE) {
-            hint = Component.translatable("screen.kunjinkao.qol.bind_toggle_only");
-        } else if (QolPanelConfig.toggleKey(cell) == 0) {
-            hint = Component.translatable("screen.kunjinkao.qol.bind_unbound");
+        QolSetting setting = hit.setting();
+        List<Component> lines = new ArrayList<>(2);
+        if (hit.cell() == Cell.ACTION) {
+            lines.add(Component.translatable("screen.kunjinkao.qol.bind_action_cell"));
+            if (QolPanelConfig.actionKey(setting) == 0) {
+                lines.add(Component.translatable("screen.kunjinkao.qol.bind_unbound"));
+            }
         } else {
-            return;
+            lines.add(Component.translatable("screen.kunjinkao.qol.bind_toggle_cell"));
+            if (setting.kind() != QolSetting.Kind.TOGGLE) {
+                lines.add(Component.translatable("screen.kunjinkao.qol.bind_toggle_only"));
+            } else if (QolPanelConfig.toggleKey(setting) == 0) {
+                lines.add(Component.translatable("screen.kunjinkao.qol.bind_unbound"));
+            }
         }
-        graphics.renderTooltip(font, hint, mouseX, mouseY);
+        if (lines.size() == 1) {
+            graphics.renderTooltip(font, lines.get(0), mouseX, mouseY);
+        } else {
+            graphics.renderTooltip(font, lines, Optional.empty(), mouseX, mouseY);
+        }
     }
 
     /**
@@ -629,28 +716,32 @@ public final class QolControlScreen extends Screen {
         if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
+        // 按键格要用到右键（清除绑定），所以它排在下面那句 "只认左键" 之前。
+        // 命中结果只算一次：下面"点别处"的判定与"点在格子上"的处理必须看同一个答案，
+        // 各算一次的话，两次之间改了 listening 就会得出不同的结论。
+        CellHit hit = button <= 1 ? bindCellAt(mouseX, mouseY) : null;
         // 正在等按键时点别处 = 放弃这次改键。顺手把这一下吃掉：
         // 玩家本来就还想按键、只是点歪了，不该顺手把某一行开关翻过来。
         // 点回自己那个格子（左键重进、右键清除）不算"点别处"，继续往下走。
-        if (listening != null && !(button <= 1 && bindCellAt(mouseX, mouseY) == listening)) {
+        if (listening != null
+                && !(hit != null && hit.setting() == listening && hit.cell() == listeningCell)) {
             listening = null;
             return true;
         }
-        // 快捷键格要用到右键（清除绑定），所以它排在下面那句 "只认左键" 之前。
-        QolSetting cell = button <= 1 ? bindCellAt(mouseX, mouseY) : null;
-        if (cell != null) {
-            if (cell.kind() != QolSetting.Kind.TOGGLE) {
-                // 数值类的格子是禁用态，点了什么都不该发生（提示由悬停给）。
+        if (hit != null) {
+            if (hit.cell() == Cell.TOGGLE && hit.setting().kind() != QolSetting.Kind.TOGGLE) {
+                // 非开关项的开关键格是禁用态，点了什么都不该发生（提示由悬停给）。
                 return true;
             }
             if (button == 0) {
-                listening = cell;
+                listening = hit.setting();
+                listeningCell = hit.cell();
                 // 把焦点从搜索框拿走：不然光标还在那里闪，看着像输入法要收字符。
                 // 按键本来就会被下面的 keyPressed 拦下，这一步纯粹是为了画面不矛盾。
                 setFocused(null);
             } else {
                 listening = null;
-                QolPanelConfig.setToggleKey(cell, 0);
+                writeBind(hit.setting(), hit.cell(), 0);
                 QolPanelConfig.save();
             }
             return true;
@@ -676,9 +767,12 @@ public final class QolControlScreen extends Screen {
         int index = rowIndexAt(mouseX, mouseY);
         if (index >= 0) {
             QolSetting setting = visible.get(index);
-            // 数值行点一下不改值：那会让"点空白处不小心改了数字"，滚轮才有明确的方向感。
+            // 区间项点一下不改值：那会让"点空白处不小心改了数字"，滚轮才有明确的方向感。
+            // 选项项只有两三档，点一下往后换一个与滚轮同向，比要求玩家必须滚轮更顺手。
             if (setting.kind() == QolSetting.Kind.TOGGLE) {
                 toggle(setting);
+            } else if (setting.kind() == QolSetting.Kind.CHOICE) {
+                cycleChoice(setting, 1);
             }
             return true;
         }
@@ -702,17 +796,25 @@ public final class QolControlScreen extends Screen {
             return super.keyPressed(keyCode, scanCode, modifiers);
         }
         QolSetting setting = listening;
+        Cell cell = listeningCell;
         listening = null;
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_DELETE
-                || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
-            QolPanelConfig.setToggleKey(setting, 0);
-        } else {
-            QolPanelConfig.setToggleKey(setting, keyCode);
-        }
+        // Esc / Delete / Backspace 都是"把这个键去掉"：玩家按哪个都符合直觉，
+        // 不用先记住"取消是 Esc、清除是 Delete"。
+        writeBind(setting, cell, keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_DELETE
+                || keyCode == GLFW.GLFW_KEY_BACKSPACE ? 0 : keyCode);
         // 改一次就落盘，不等关面板：快捷键是"配好就不想再想起"的东西，
         // 攒着一起存的话，改完立刻崩一次或者被踢出服务器就白配了。
         QolPanelConfig.save();
         return true;
+    }
+
+    /** 把一次改键写进对应的那张表：开关键与执行键各存一份，格子的种类决定写哪一张。 */
+    private static void writeBind(QolSetting setting, Cell cell, int keyCode) {
+        if (cell == Cell.ACTION) {
+            QolPanelConfig.setActionKey(setting, keyCode);
+        } else {
+            QolPanelConfig.setToggleKey(setting, keyCode);
+        }
     }
 
     @Override
@@ -724,12 +826,17 @@ public final class QolControlScreen extends Screen {
         if (index >= 0) {
             QolSetting setting = visible.get(index);
             QolStatePayload row = QolClientState.row(setting);
+            if (setting.kind() == QolSetting.Kind.CHOICE && row != null && row.authorized()) {
+                // 选项类到头绕回另一端：只有两三档，"顶住了不动"会让人以为滚轮坏了。
+                cycleChoice(setting, scrollY > 0.0D ? 1 : -1);
+                return true;
+            }
             if (setting.kind() == QolSetting.Kind.NUMBER && row != null && row.authorized()) {
                 // 向上滚加、向下滚减；Shift 一次 10 格，方便在上百的区间里快速走。
                 stepValue(setting, scrollY > 0.0D ? 1 : -1, Screen.hasShiftDown());
                 return true;
             }
-            // 数值行没同步/没权限时不吃滚轮：否则指针一停在这两行上，列表就滚不动了。
+            // 区间行没同步/没权限时不吃滚轮：否则指针一停在这两行上，列表就滚不动了。
         }
         if (!inside(mouseX, mouseY, panelX + SIDE, listTop, panelW - SIDE * 2, ROW_H * listRows)) {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
@@ -765,11 +872,35 @@ public final class QolControlScreen extends Screen {
             // 已经顶到上下限：停住，不发这种"值没变"的包，免得白占带宽。
             return;
         }
+        requestValue(setting, next);
+    }
+
+    /**
+     * 选项类项：换到相邻的下一个取值，到头绕回另一端。
+     * <p>
+     * 与 {@link #stepValue} 的"夹取"不同，这里刻意是环绕：选项只有两三个，
+     * 到头停住会让玩家以为这个格子的滚轮坏了；而区间项有一百多档，环绕反而是灾难
+     * （从 0 一下跳到 255）。
+     */
+    private void cycleChoice(QolSetting setting, int direction) {
+        QolStatePayload row = QolClientState.row(setting);
+        if (row == null || !row.authorized()) {
+            return;
+        }
+        int min = row.min();
+        int max = Math.max(min, QolClientState.max(setting));
+        int span = max - min + 1;
+        int current = Math.max(min, Math.min(max, stepBase(setting)));
+        requestValue(setting, min + Math.floorMod(current - min + direction, span));
+    }
+
+    /** 把"我要把这一项改成 N"记成在途请求并发出去；在途状态见 {@link #PENDING_TTL_MS}。 */
+    private void requestValue(QolSetting setting, int value) {
         int id = setting.id();
         pendingValid[id] = true;
-        pendingValue[id] = next;
+        pendingValue[id] = value;
         pendingAt[id] = System.currentTimeMillis();
-        NetworkHandler.sendToServer(new QolSettingPayload(id, next));
+        NetworkHandler.sendToServer(new QolSettingPayload(id, value));
     }
 
     /**

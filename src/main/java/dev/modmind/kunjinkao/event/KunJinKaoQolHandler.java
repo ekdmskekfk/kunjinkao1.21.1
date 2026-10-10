@@ -94,7 +94,7 @@ public final class KunJinKaoQolHandler {
     /** 改服务器级设置所需的最低权限等级。2 = 原版 OP，与"能用命令方块"同一档。 */
     private static final int SERVER_SETTING_PERMISSION_LEVEL = 2;
 
-    // ===== 选区挖掘（127）=====
+    // ===== 选区作业（127）=====
     /**
      * 两次按键之间的确认窗口（毫秒）。
      * <p>
@@ -152,36 +152,56 @@ public final class KunJinKaoQolHandler {
         int clamped = QolSettings.clamp(setting, value);
         QolStateSavedData.get(player.server).setValue(player.getUUID(), setting, clamped);
         applyTo(player, setting);
+        if (setting == QolSetting.ZONE_MODE) {
+            // 模式是"下一次按下执行键要干什么"，改完立刻回一句当前是什么：
+            // 选项名写在面板那一行上，可玩家按执行键时通常已经离开面板了。
+            player.displayClientMessage(Component.translatable(
+                    clamped == ZoneExcavationJob.MODE_PLACE
+                            ? "message.kunjinkao.zone_mode_place"
+                            : "message.kunjinkao.zone_mode_break"), true);
+        }
         sendState(player, setting, true);
     }
 
-    // ===================== 选区挖掘（127）=====================
+    // ===================== 选区作业（127）=====================
 
     /**
-     * 设置一个角点。
+     * 设一个角点（木棍右键的唯一入口）。
+     * <p>
+     * 四道判定都在这里：总闸、授权、作业占用、距离。抽成一个入口而不是各处各判一次，
+     * 是因为"改客户端就能框到天边"这种事只要漏掉一处就等于没有防线；
+     * 复制出来的第二份判定迟早会有一边改了另一边没改。
      * <p>
      * 坐标不信任客户端：改过的客户端可以把角点设到任意远处，框出一整片地形再执行。
      * 这里按玩家眼睛到目标方块的距离卡一道，和原版交互距离同一个量级但宽得多
      * （框选本来就要点远处的方块）。
+     *
+     * @return 是否真的设下了角点；被拒绝时原因已经发给玩家
      */
-    public static void handleZoneCorner(Player source, int cornerIndex, BlockPos pos) {
-        if (!(source instanceof ServerPlayer player) || !canUseZoneExcavation(player)) {
-            return;
+    public static boolean trySetZoneCorner(ServerPlayer player, BlockPos pos) {
+        if (!canUseZoneExcavation(player)) {
+            return false;
         }
         if (ZoneExcavationJob.isRunning(player)) {
             player.displayClientMessage(Component.translatable("message.kunjinkao.zone_busy"), true);
-            return;
+            return false;
         }
         if (player.getEyePosition().distanceToSqr(Vec3.atCenterOf(pos))
                 > ZONE_MAX_CORNER_DISTANCE * ZONE_MAX_CORNER_DISTANCE) {
             player.displayClientMessage(Component.translatable("message.kunjinkao.zone_too_far"), true);
-            return;
+            return false;
         }
-        ZoneSelection.setCorner(player, cornerIndex, pos.immutable());
+        int corner = ZoneSelection.setNextCorner(player, pos.immutable());
         // 改了选区就作废上一次的待确认 —— 否则"框 A 按一次、改成框 B 再按一次"
-        // 会在玩家以为只是改了选区的时候直接开挖。
+        // 会在玩家以为只是改了选区的时候直接开工。
         ZONE_PENDING_CONFIRM.remove(player.getUUID());
+        player.displayClientMessage(Component.translatable(
+                corner == ZoneSelection.CORNER_A
+                        ? "message.kunjinkao.zone_set_corner_a"
+                        : "message.kunjinkao.zone_set_corner_b",
+                pos.toShortString()), true);
         sendZoneStatus(player);
+        return true;
     }
 
     /**
@@ -189,6 +209,9 @@ public final class KunJinKaoQolHandler {
      * <p>
      * 第一次按只给一句确认提示，窗口内再按一次才真的开始。地形是不可逆的，
      * 所以这里宁可让玩家多按一次，也不做"按了就挖"。
+     * <p>
+     * 确认文案按当前模式分开：破坏与放置的后果完全不同（一个是地形没了，
+     * 一个是材料没了），用同一句话会让玩家在按第二下之前还想确认一次自己选的是哪个。
      */
     public static void handleZoneExecute(Player source) {
         if (!(source instanceof ServerPlayer player) || !canUseZoneExcavation(player)) {
@@ -201,6 +224,8 @@ public final class KunJinKaoQolHandler {
         ZoneSelection.Corners corners = currentCorners(player);
         if (corners == null || corners.a() == null || corners.b() == null) {
             player.displayClientMessage(Component.translatable("message.kunjinkao.zone_need_corners"), true);
+            // 再说一句"怎么框"：角点已经不是按键设的了，玩家按下执行键时最缺的就是这句。
+            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_need_stick"), true);
             return;
         }
         long now = System.currentTimeMillis();
@@ -210,7 +235,9 @@ public final class KunJinKaoQolHandler {
             int sizeX = Math.abs(corners.a().getX() - corners.b().getX()) + 1;
             int sizeY = Math.abs(corners.a().getY() - corners.b().getY()) + 1;
             int sizeZ = Math.abs(corners.a().getZ() - corners.b().getZ()) + 1;
-            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_confirm",
+            boolean placing = valueOf(player, QolSetting.ZONE_MODE) == ZoneExcavationJob.MODE_PLACE;
+            player.displayClientMessage(Component.translatable(
+                    placing ? "message.kunjinkao.zone_confirm_place" : "message.kunjinkao.zone_confirm",
                     sizeX, sizeY, sizeZ, sizeX * sizeY * sizeZ), false);
             return;
         }
@@ -362,12 +389,12 @@ public final class KunJinKaoQolHandler {
         if (tick % NIGHT_VISION_INTERVAL == 0) {
             renewNightVision(player);
         }
-        // 选区挖掘的作业由拥有者自己的 tick 驱动（见 ZoneExcavationJob#tick 的说明）。
+        // 选区作业的作业由拥有者自己的 tick 驱动（见 ZoneExcavationJob#tick 的说明）。
         boolean wasRunning = ZoneExcavationJob.isRunning(player);
         if (wasRunning) {
             ZoneExcavationJob.tick(player);
             if (!ZoneExcavationJob.isRunning(player)) {
-                // 刚好这一 tick 挖完了：补一条状态让客户端的进度条归位。
+                // 刚好这一 tick 做完了：补一条状态让客户端的进度条归位。
                 sendZoneStatus(player);
             } else if (tick % RECONCILE_INTERVAL == 0) {
                 // 进度每 20 tick 回一次就够看了，每 tick 发纯属刷包。
@@ -437,7 +464,10 @@ public final class KunJinKaoQolHandler {
                  XP_BOOST, ANVIL_UNBREAKABLE, ANVIL_XP_COST, DURABILITY_PROTECTION,
                  MACHINE_LOOT, FOG_VISION, TREASURE_HUNTER_SERVER, TREASURE_HUNTER_RADIUS,
                  TREASURE_HUNTER, ZONE_EXCAVATE_SERVER, ZONE_MAX_SIDE, ZONE_DROP_POLICY,
-                 ZONE_TICK_BUDGET, ZONE_BATCH_SIDE, ZONE_UNDO_MAX -> {
+                 ZONE_TICK_BUDGET, ZONE_BATCH_SIDE, ZONE_UNDO_MAX,
+                 // 模式（ZONE_MODE）也没有"挂上去"的动作：它是作业开工那一刻读一次的选择，
+                 // 换句话说它的生效点就是 ZoneExcavationJob.start。
+                 ZONE_MODE -> {
             }
         }
     }

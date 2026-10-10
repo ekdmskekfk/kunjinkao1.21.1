@@ -92,7 +92,6 @@ public class ClientModEvents {
         event.register(KunJinKaoKeyBindings.TOGGLE_WRENCH);
         event.register(KunJinKaoKeyBindings.COLLECT_BLOCK);
         event.register(KunJinKaoKeyBindings.OPEN_QOL_PANEL);
-        event.register(KunJinKaoKeyBindings.ZONE_CORNER);
         event.register(KunJinKaoKeyBindings.ZONE_EXCAVATE);
     }
 

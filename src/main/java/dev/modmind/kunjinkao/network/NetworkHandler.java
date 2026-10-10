@@ -14,7 +14,9 @@ public final class NetworkHandler {
     // 必须让版本号跟着变，否则新旧端会在握手时被当成兼容，然后在解码时错位。
     // 22 提到 23：新增功能面板两条包（QolSettingPayload C2S / QolStatePayload S2C），注册表又变了。
     // 23 提到 24：新增选区挖掘两条包（ZoneSelectPayload C2S / ZoneStatusPayload S2C）。
-    public static final String PROTOCOL_VERSION = "24";
+    // 24 提到 25：框选改用木棍右键（服务端直接接交互事件），ZoneSelectPayload 随之删除，
+    // 注册表少了一条 —— 注册表变了就要提版本号，否则持旧包的客户端会在握手之后才炸在解码上。
+    public static final String PROTOCOL_VERSION = "25";
 
     private NetworkHandler() {
     }
@@ -67,8 +69,7 @@ public final class NetworkHandler {
         // 功能面板（QoL）：改动请求（C2S）与逐行状态回执（S2C）。
         reg.playToServer(QolSettingPayload.TYPE, QolSettingPayload.STREAM_CODEC, QolSettingPayload::handle);
         reg.playToClient(QolStatePayload.TYPE, QolStatePayload.STREAM_CODEC, QolStatePayload::handle);
-        // 选区挖掘（127）：设置角点（C2S）与选区/进度回执（S2C）。
-        reg.playToServer(ZoneSelectPayload.TYPE, ZoneSelectPayload.STREAM_CODEC, ZoneSelectPayload::handle);
+        // 选区作业（127）：选区与进度回执（S2C）。设角点不再走网络（木棍右键在服务端直接处理）。
         reg.playToClient(ZoneStatusPayload.TYPE, ZoneStatusPayload.STREAM_CODEC, ZoneStatusPayload::handle);
     }
 

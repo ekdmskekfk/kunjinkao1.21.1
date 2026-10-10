@@ -110,25 +110,18 @@ public class KunJinKaoKeyBindings {
     );
 
     /**
-     * B 键：选区挖掘（127）—— 把准星指着的那一格设成选区的一个角点。
-     * <p>
-     * 选 B/N 是因为 {@code J I P H ] . L R V K G} 都已经被本模组占掉了；
-     * 这两个键在原版里没有默认用途，不会和别的操作抢。
-     * 按一次设 A、再按一次设 B、再按一次又回到 A，不需要第三个键来切换角点。
-     */
-    public static final KeyMapping ZONE_CORNER = new KeyMapping(
-            "key.kunjinkao.zone_corner",
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_B,
-            CATEGORY
-    );
-
-    /**
-     * N 键：选区挖掘（127）—— 确认执行当前选区。
+     * N 键：选区作业（127）—— 确认执行当前选区。
      * <p>
      * 按住 Shift 再按这个是取消（停作业或清选区）。取消刻意不另给按键：
      * 每多一个按键就多一个和别的模组抢默认键的机会，而"执行/取消"本来就是一正一反的一对，
      * 用同一个键加修饰键比两个独立的键更好记。
+     * <p>
+     * 这个键<b>只管执行</b>。框选改用木棍右键（见 {@code ZoneSelectionHandler}），
+     * 原来那个设角点的键已经删掉：同一个功能留两套框选方式，迟早会出现
+     * "一边能用一边不能用"这种谁也说不清的状态。
+     * <p>
+     * 面板那一行还可以再绑一个执行键（{@code QolPanelConfig#actionKey}），两者是同一件事的
+     * 两个入口，都发同一个动作包，服务端不区分是谁按的。
      */
     public static final KeyMapping ZONE_EXCAVATE = new KeyMapping(
             "key.kunjinkao.zone_excavate",

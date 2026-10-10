@@ -14,7 +14,6 @@ import dev.modmind.kunjinkao.network.ToggleDisguisePayload;
 import dev.modmind.kunjinkao.network.ToggleOverwritePayload;
 import dev.modmind.kunjinkao.network.ToggleThemePayload;
 import dev.modmind.kunjinkao.network.ToggleTacticalHudPayload;
-import dev.modmind.kunjinkao.network.ZoneSelectPayload;
 import dev.modmind.kunjinkao.client.hud.HudScreen;
 import dev.modmind.kunjinkao.client.hud.HudEntityScreen;
 import dev.modmind.kunjinkao.client.gui.SwordOptionsScreen;
@@ -22,15 +21,11 @@ import dev.modmind.kunjinkao.client.gui.AdminPasswordScreen;
 import dev.modmind.kunjinkao.client.gui.QolControlScreen;
 import dev.modmind.kunjinkao.client.qol.QolClientState;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraft.core.BlockPos;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
@@ -42,15 +37,6 @@ import javax.annotation.Nullable;
 
 @EventBusSubscriber(modid = KunJinKaoEntry.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public class KunJinKaoClientEvents {
-
-    /**
-     * 选区挖掘（127）：下一次按 B 键设的是 A 还是 B 角点。
-     * <p>
-     * 记在客户端而无所谓"服务端那个角点是不是还在"——两个角点各自独立，
-     * 服务端那边取消掉一个也不影响这边的交替节奏，玩家永远是"A、B、A、B"地按，
-     * 不需要看着屏幕上的框来判断该按第几下。
-     */
-    private static boolean zoneNextCornerIsB = false;
 
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
@@ -79,7 +65,6 @@ public class KunJinKaoClientEvents {
         handleCycleAreaMode();
         handleToggleWrench();
         handleCollectBlock();
-        handleZoneCorner();
         handleZoneExecute();
     }
 
@@ -316,47 +301,14 @@ public class KunJinKaoClientEvents {
     }
 
     /**
-     * 选区挖掘（127）：B 键把准星指着的那一格设成选区的一个角点。
+     * 选区作业（127）：N 键确认执行；按住 Shift 再按是取消。
      * <p>
-     * 坐标由客户端用自己的射线取，服务端会重新校验（距离、维度、单边上限）——
-     * 这里取到的坐标只是「玩家看着的那一格」，不是权威值。
-     */
-    private static void handleZoneCorner() {
-        if (!KunJinKaoKeyBindings.ZONE_CORNER.consumeClick()) {
-            return;
-        }
-        Minecraft minecraft = Minecraft.getInstance();
-        Player player = minecraft.player;
-        if (player == null || minecraft.screen != null || minecraft.level == null) {
-            return;
-        }
-        HitResult hit = minecraft.hitResult;
-        // 只认方块命中：MISS 没有坐标，ENTITY 的位置属于实体而不是方块，
-        // 两者都不该被当成"我要框这一格"。
-        if (hit == null || hit.getType() != HitResult.Type.BLOCK || !(hit instanceof BlockHitResult blockHit)) {
-            return;
-        }
-        BlockPos pos = blockHit.getBlockPos();
-        // 命中水面、岩浆面时，真正被打到的其实是那一格液体：把角点设在液体上没有意义，
-        // 所以这里要求命中的是方块本体，而不是流体或空气。
-        BlockState state = minecraft.level.getBlockState(pos);
-        if (state.isAir() || !state.getFluidState().isEmpty()) {
-            return;
-        }
-
-        int cornerIndex = zoneNextCornerIsB ? ZoneSelectPayload.CORNER_B : ZoneSelectPayload.CORNER_A;
-        NetworkHandler.sendToServer(new ZoneSelectPayload(cornerIndex, pos));
-        // 翻转放在发包之后而不是之前：没打中时不该白白吃掉一次 A，
-        // 否则玩家点空一下，下一次按下去设的就变成 B 了，而且屏幕上完全看不出原因。
-        zoneNextCornerIsB = !zoneNextCornerIsB;
-    }
-
-    /**
-     * 选区挖掘（127）：N 键确认执行；按住 Shift 再按是取消。
-     * <p>
-     * 二次确认、权限、服务器总闸全在服务端（见 {@code KunJinKaoQolHandler} 里的三个 handleZoneXxx），
+     * 二次确认、权限、服务器总闸全在服务端（见 {@code KunJinKaoQolHandler} 里的 handleZoneXxx），
      * 客户端只把按键翻译成一条动作包，从不自己改世界 —— 所以这里连"选区够不够大"都不判，
      * 判了也只是把服务端的话提前说一遍，还会两边不一致。
+     * <p>
+     * 框选（设角点）不在这里：它改成手持木棍右键方块，由服务端的
+     * {@code ZoneSelectionHandler} 接住，客户端一个包都不用发。
      */
     private static void handleZoneExecute() {
         if (!KunJinKaoKeyBindings.ZONE_EXCAVATE.consumeClick()) {

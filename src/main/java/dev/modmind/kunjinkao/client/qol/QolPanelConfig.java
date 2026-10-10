@@ -52,6 +52,16 @@ public final class QolPanelConfig {
          * 没绑的项干脆不写进这个表，而不是写一个 0 —— 手改文件的人一眼能看出哪些绑了。
          */
         public Map<String, Integer> toggleBinds = new LinkedHashMap<>();
+        /**
+         * 需要"执行键"的设定项的快捷键：键 = 枚举名小写，值 = GLFW key code。
+         * <p>
+         * 与 {@link #toggleBinds} 分两张表而不是塞进同一张：同一个功能上"开关键"和"执行键"
+         * 是两件不同的事（一个是开关状态，一个是对当前选区动手），共用一张表就没法表达
+         * "同一个键位含义不同"，清除其中一个也会连带清掉另一个。
+         * <p>
+         * 目前只有选区作业的模式项（127）用得上：开关键管"破坏还是放置"，执行键管"开始干"。
+         */
+        public Map<String, Integer> actionBinds = new LinkedHashMap<>();
     }
 
     private static Data data;
@@ -118,6 +128,26 @@ public final class QolPanelConfig {
         return setting.name().toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * 取某项的"执行键"，没绑过返回 0。
+     * <p>
+     * 与 {@link #toggleKey} 一样拿 0 当"未绑定"：GLFW 的键值从 32 起，0 不可能是真按键。
+     */
+    public static int actionKey(QolSetting setting) {
+        Integer code = get().actionBinds.get(bindKey(setting));
+        return code == null ? 0 : code;
+    }
+
+    /** 重绑或解绑某项的执行键，{@code code} 传 0 表示解绑。同样不落盘。 */
+    public static void setActionKey(QolSetting setting, int code) {
+        Data data = get();
+        if (code == 0) {
+            data.actionBinds.remove(bindKey(setting));
+        } else {
+            data.actionBinds.put(bindKey(setting), code);
+        }
+    }
+
     private static Data load() {
         Path path = path();
         if (!Files.isRegularFile(path)) {
@@ -151,9 +181,14 @@ public final class QolPanelConfig {
         if (fixed.toggleBinds == null) {
             fixed.toggleBinds = new LinkedHashMap<>();
         }
+        // 执行键那张表同样要兜：它是后加的字段，所有已经存在的旧配置文件里都没有它。
+        if (fixed.actionBinds == null) {
+            fixed.actionBinds = new LinkedHashMap<>();
+        }
         // 只认正整数：0 在语义上是"未绑定"，负数和 null 都不是合法的 GLFW 键值，
         // 留着它们只会让按键格画出一串问号。
         fixed.toggleBinds.values().removeIf(code -> code == null || code <= 0);
+        fixed.actionBinds.values().removeIf(code -> code == null || code <= 0);
         return fixed;
     }
 

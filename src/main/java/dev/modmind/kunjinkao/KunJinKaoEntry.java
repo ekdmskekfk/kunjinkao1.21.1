@@ -63,6 +63,9 @@ public final class KunJinKaoEntry {
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.SwordMiningPenaltyHandler());
         NeoForge.EVENT_BUS.register(new KunJinKaoColdDataEffectsHandler());
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.KunJinKaoQolHandler());
+        // 选区作业（127）的框选：木棍右键设角点。与上面那个面板处理器分开注册，
+        // 是因为它只订阅交互事件、也不参与面板的任何判定。
+        NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.ZoneSelectionHandler());
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.KunJinKaoXpBoostHandler());
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.KunJinKaoAnvilHandler());
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.KunJinKaoTradeHandler());
