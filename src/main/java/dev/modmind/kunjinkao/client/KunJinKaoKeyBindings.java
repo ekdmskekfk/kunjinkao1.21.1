@@ -95,4 +95,17 @@ public class KunJinKaoKeyBindings {
             GLFW.GLFW_KEY_K,
             CATEGORY
     );
+
+    /**
+     * G 键：打开「功能控制台」面板（15 项 QoL 功能的统一入口）。
+     * <p>
+     * 开发计划里建议默认 {@code J}，但 {@code J} 早就给了伪装，所以改用 {@code G}
+     * （原版未占用，也对应"功能"）。与其它按键一样可以在"选项 → 控制"里改绑。
+     */
+    public static final KeyMapping OPEN_QOL_PANEL = new KeyMapping(
+            "key.kunjinkao.open_qol_panel",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_G,
+            CATEGORY
+    );
 }

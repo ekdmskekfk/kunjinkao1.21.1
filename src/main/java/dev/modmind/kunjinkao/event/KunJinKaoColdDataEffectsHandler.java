@@ -13,6 +13,7 @@ import dev.modmind.kunjinkao.network.HudEntityListPayload;
 // 4 个 HUD 状态回执包已合并为 HudStatePayload（带 stateId 判别）。
 import dev.modmind.kunjinkao.network.HudStatePayload;
 import dev.modmind.kunjinkao.network.NetworkHandler;
+import dev.modmind.kunjinkao.qol.QolSetting;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
@@ -141,21 +142,14 @@ public final class KunJinKaoColdDataEffectsHandler {
         boolean authorized = AdminToolConfig.isAuthorized(player.getUUID());
         boolean enabled = false;
         if (authorized) {
-            // 真值必须是玩家身上"实际有没有夜视效果"：夜视会被牛奶、其它 mod 或 30 分钟时长清掉，
-            // 此时 persistentData 里的旧标记仍是 true，会把下一次点击误判成"关闭"，玩家得按两次才能再开。
-            boolean actuallyActive = player.hasEffect(MobEffects.NIGHT_VISION);
-            enabled = !actuallyActive;
-            if (enabled) {
-                player.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 20 * 60 * 30, 0, false, false, false));
-                // 标记只是效果的镜像，开启时仍写入供其它逻辑读取。
-                player.getPersistentData().putBoolean("KunJinKaoHudNightVision", true);
-            } else {
-                player.removeEffect(MobEffects.NIGHT_VISION);
-                // 关闭时清掉标记，避免残留的 true 让下一次点击被误判成"再关闭一次"。
-                player.getPersistentData().remove("KunJinKaoHudNightVision");
-            }
+            // 真值改从 QolStateSavedData 取（功能面板里 80 那一行看的是同一份）。
+            // 原来这里用"身上有没有夜视效果"当状态，判断不出效果是不是我们放的：
+            // 玩家自己先喝了一瓶夜视，第一次点这个按钮会被当成"关闭"，顺手把他的药水也摘了。
+            enabled = KunJinKaoQolHandler.toggleNightVision(player);
         }
         NetworkHandler.sendToPlayer(player, new HudStatePayload(HudStatePayload.NIGHT_VISION, enabled, authorized));
+        // 面板那一行也要跟着刷新：两个入口操作同一份状态，回执就得两个都发。
+        KunJinKaoQolHandler.sendState(player, QolSetting.NIGHT_VISION, authorized);
     }
 
     public static void handleRequestEntityList(MinecraftServer server, Player source) {

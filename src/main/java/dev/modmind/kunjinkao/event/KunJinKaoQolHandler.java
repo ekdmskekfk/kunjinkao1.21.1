@@ -1,0 +1,319 @@
+package dev.modmind.kunjinkao.event;
+
+import dev.modmind.kunjinkao.KunJinKaoEntry;
+import dev.modmind.kunjinkao.config.AdminToolConfig;
+import dev.modmind.kunjinkao.config.QolStateSavedData;
+import dev.modmind.kunjinkao.network.NetworkHandler;
+import dev.modmind.kunjinkao.network.QolStatePayload;
+import dev.modmind.kunjinkao.qol.QolSetting;
+import dev.modmind.kunjinkao.qol.QolSettings;
+import net.minecraft.core.Holder;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.ai.attributes.Attribute;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.player.Player;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+/**
+ * 功能面板（QoL）的服务端权威实现：接收改动、校验、落库、生效、回执。
+ * <p>
+ * <b>所有判定都在这里。</b> 客户端只发"我想改成什么"，授权、取值范围、前置依赖
+ * 一律在服务端重算一遍 —— 面板上的置灰只是提示，不是防线。
+ * <p>
+ * 生效策略分两类：
+ * <ul>
+ *   <li><b>状态型</b>（夜视、村庄英雄、长臂善舞）：把状态挂在玩家身上，
+ *       由 {@link #onPlayerTick} 定期校正。这样死亡重生、换维度、被别的模组清掉之后
+ *       都能自己回来，不需要为每种情况写一条恢复逻辑。</li>
+ *   <li><b>查询型</b>（凌空采掘）：没有"挂上去"的动作，由消费方
+ *       （{@code SwordMiningPenaltyHandler}）在读的时候查一次当前值。</li>
+ * </ul>
+ */
+public final class KunJinKaoQolHandler {
+
+    private static final Logger LOGGER = LogManager.getLogger("KunJinKao");
+
+    // ===== 星瞳夜视（80）=====
+    /**
+     * 我们自己施加的夜视时长。
+     * <p>
+     * 这个数值同时是"这条夜视是不是我们放的"的判据：剩余时长比它长，
+     * 就说明是玩家自己喝的药水或别的模组给的，我们只续期不覆盖、关闭时也不摘。
+     */
+    private static final int NIGHT_VISION_DURATION = 300;
+    /** 剩余时长低于这个值就补一次，避免每 tick 都在重加效果。 */
+    private static final int NIGHT_VISION_RENEW_BELOW = 100;
+
+    // ===== 万民敬仰（88）=====
+    private static final int HERO_DURATION = 300;
+    private static final int HERO_RENEW_BELOW = 100;
+    /** 参考实现换算：等级 N 对应 amplifier = N × 4 - 1（原版每级 +4 点好感）。 */
+    private static final int HERO_AMPLIFIER_PER_LEVEL = 4;
+
+    // ===== 长臂善舞（89）=====
+    private static final ResourceLocation REACH_BLOCK_MODIFIER =
+            ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "qol_reach_block");
+    private static final ResourceLocation REACH_ENTITY_MODIFIER =
+            ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "qol_reach_entity");
+
+    /** 校正周期（tick）。20 是 1 秒，够快又完全不值得优化。 */
+    private static final int RECONCILE_INTERVAL = 20;
+    /** 夜视续期周期：比 {@link #RECONCILE_INTERVAL} 慢一档，因为它的续期窗口本来就很长。 */
+    private static final int NIGHT_VISION_INTERVAL = 100;
+
+    // ===================== 网络入口 =====================
+
+    /**
+     * 客户端请求改一项设置。
+     * <p>
+     * 未知 settingId 直接忽略：新旧端版本号已经隔开了，但多一层防御不花钱，
+     * 免得将来有人手改包体时在这里抛异常。
+     */
+    public static void handleSettingChange(Player source, int settingId, int value) {
+        if (!(source instanceof ServerPlayer player)) {
+            return;
+        }
+        QolSetting setting = QolSetting.byId(settingId);
+        if (setting == null) {
+            return;
+        }
+
+        if (setting.scope() == QolSetting.Scope.SERVER) {
+            // M1 里还没有服务器级项（72/77/96/119/127 在 M2/M3）。
+            // 真正接上时，这里要改成校验 OP 等级并写回 AdminToolConfig 的 [qol] 分节 + SPEC.save()，
+            // 而不是写进 QolStateSavedData —— 服务器级值必须和 toml 保持一致。
+            LOGGER.warn("[Kunjinkao] 收到服务器级设置改动，但该作用域尚未实现：{}", setting);
+            return;
+        }
+
+        if (!AdminToolConfig.isAuthorized(player.getUUID())) {
+            // 未授权：拒绝改动，但仍然回一条状态，让面板把这一行刷新成服务端的真实值，
+            // 而不是停在客户端自己以为的那个值上。
+            player.displayClientMessage(Component.translatable("message.kunjinkao.qol_denied"), true);
+            sendState(player, setting, false);
+            return;
+        }
+
+        int clamped = QolSettings.clamp(setting, value);
+        QolStateSavedData.get(player.server).setValue(player.getUUID(), setting, clamped);
+        applyTo(player, setting);
+        sendState(player, setting, true);
+    }
+
+    /** 打开面板时把每一行都发一遍。 */
+    public static void sendFullState(ServerPlayer player) {
+        boolean authorized = AdminToolConfig.isAuthorized(player.getUUID());
+        for (QolSetting setting : QolSetting.values()) {
+            sendState(player, setting, authorized);
+        }
+    }
+
+    /**
+     * 客户端请求全量状态（打开面板时发一次）。
+     * <p>
+     * 这里没有额外鉴权：全量状态里只有"这一项现在开着还是关着、值是多少"，本来就允许玩家看到自己的设置；
+     * 未授权时每条回执里的 {@code authorized} 是 false，客户端据此把整行置灰。
+     * 真正的拦截在 {@link #handleSettingChange} —— 看得见不等于改得动。
+     */
+    public static void handleRequestFullState(Player source) {
+        if (source instanceof ServerPlayer player) {
+            sendFullState(player);
+        }
+    }
+
+    /** 发某一行的状态。范围和作用域取自服务端的表，客户端算不出来（上限含服务器配置）。 */    public static void sendState(ServerPlayer player, QolSetting setting, boolean authorized) {
+        int value = valueOf(player, setting);
+        NetworkHandler.sendToPlayer(player, QolStatePayload.of(
+                setting, value > 0, value, setting.min(), QolSettings.maxOf(setting), authorized));
+    }
+
+    /** 按 UUID 读当前值；没写过就是该项默认值。 */
+    public static int valueOf(ServerPlayer player, QolSetting setting) {
+        return QolStateSavedData.get(player.server).getValue(player.getUUID(), setting);
+    }
+
+    public static boolean isOn(ServerPlayer player, QolSetting setting) {
+        return valueOf(player, setting) > 0;
+    }
+
+    /**
+     * 夜视开关的共享入口：战术 HUD 的按钮与功能面板的那一行都走这里。
+     * <p>
+     * 两个入口必须操作同一份状态（存在 QolStateSavedData 里），否则会出现
+     * "HUD 说开着、面板说关着"这种两套开关各记一份的局面。
+     *
+     * @return 切换后的状态
+     */
+    public static boolean toggleNightVision(ServerPlayer player) {
+        boolean now = !isOn(player, QolSetting.NIGHT_VISION);
+        QolStateSavedData.get(player.server).setValue(
+                player.getUUID(), QolSetting.NIGHT_VISION, now ? 1 : 0);
+        applyNightVision(player, now);
+        return now;
+    }
+
+    // ===================== 周期校正 =====================
+
+    @SubscribeEvent
+    public void onPlayerTick(PlayerTickEvent.Post event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        int tick = player.tickCount;
+        if (tick % RECONCILE_INTERVAL == 0) {
+            applyWaterBreath(player);
+            applyVillageHero(player);
+            reconcileReach(player);
+        }
+        if (tick % NIGHT_VISION_INTERVAL == 0) {
+            renewNightVision(player);
+        }
+    }
+
+    @SubscribeEvent
+    public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            applyAll(player);
+            sendFullState(player);
+        }
+    }
+
+    @SubscribeEvent
+    public void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            // 死亡会清掉药水效果与 transient 属性修饰符，重生后必须整体重挂一次。
+            applyAll(player);
+            sendFullState(player);
+        }
+    }
+
+    @SubscribeEvent
+    public void onPlayerChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            // 换维度同样会丢 transient 修饰符；药水效果会保留，但重挂一次也无害（幂等）。
+            applyAll(player);
+        }
+    }
+
+    // ===================== 各项生效逻辑 =====================
+
+    private static void applyAll(ServerPlayer player) {
+        for (QolSetting setting : QolSetting.values()) {
+            applyTo(player, setting);
+        }
+    }
+
+    private static void applyTo(ServerPlayer player, QolSetting setting) {
+        switch (setting) {
+            case NIGHT_VISION -> applyNightVision(player, isOn(player, setting));
+            case WATER_BREATH -> applyWaterBreath(player);
+            case VILLAGE_HERO -> applyVillageHero(player);
+            case REACH -> reconcileReach(player);
+            case FLY_MINING -> {
+                // 查询型：没有需要挂上去的状态，由 SwordMiningPenaltyHandler 现查现用。
+            }
+        }
+    }
+
+    /**
+     * 星瞳夜视（80）。
+     * <p>
+     * 刻意只在"没有效果"或"效果不长于我们自己那一档"时才写入：
+     * 玩家自己喝的夜视药水通常比 300 tick 长，覆盖它等于把他的药水时长砍短，
+     * 属于"抢玩家的药水"。反向也成立 —— 关闭时只摘不长于我们那一档的那条。
+     */
+    private static void applyNightVision(ServerPlayer player, boolean enabled) {
+        MobEffectInstance current = player.getEffect(MobEffects.NIGHT_VISION);
+        boolean looksLikeOurs = current == null || current.getDuration() <= NIGHT_VISION_DURATION;
+        if (enabled) {
+            if (looksLikeOurs) {
+                player.addEffect(new MobEffectInstance(
+                        MobEffects.NIGHT_VISION, NIGHT_VISION_DURATION, 0, false, false, false));
+            }
+        } else if (looksLikeOurs && current != null) {
+            player.removeEffect(MobEffects.NIGHT_VISION);
+        }
+    }
+
+    /** 续期：只在快到期时补，长于我们那一档的一律不碰。 */
+    private static void renewNightVision(ServerPlayer player) {
+        if (!isOn(player, QolSetting.NIGHT_VISION)) {
+            return;
+        }
+        MobEffectInstance current = player.getEffect(MobEffects.NIGHT_VISION);
+        if (current == null || current.getDuration() < NIGHT_VISION_RENEW_BELOW) {
+            applyNightVision(player, true);
+        }
+    }
+
+    /** 鲛人之息（85）：直接把氧气补满。刻意不用水肺药水 —— 那会在 HUD 上多一个图标，还要续期。 */
+    private static void applyWaterBreath(ServerPlayer player) {
+        if (!isOn(player, QolSetting.WATER_BREATH)) {
+            return;
+        }
+        if (player.getAirSupply() < player.getMaxAirSupply()) {
+            player.setAirSupply(player.getMaxAirSupply());
+        }
+    }
+
+    /** 万民敬仰（88）：常驻村庄英雄，等级换算成 amplifier。 */
+    private static void applyVillageHero(ServerPlayer player) {
+        int level = isOn(player, QolSetting.VILLAGE_HERO) ? valueOf(player, QolSetting.VILLAGE_HERO) : 0;
+        MobEffectInstance current = player.getEffect(MobEffects.HERO_OF_THE_VILLAGE);
+
+        if (level <= 0) {
+            // 只摘我们自己那一档：玩家刚打完袭击拿到的村庄英雄不能顺手清掉。
+            if (current != null && current.getDuration() <= HERO_DURATION) {
+                player.removeEffect(MobEffects.HERO_OF_THE_VILLAGE);
+            }
+            return;
+        }
+
+        int amplifier = Math.min(255, level * HERO_AMPLIFIER_PER_LEVEL - 1);
+        // 玩家有更强的（比如袭击给的），不抢；只在没有、快过期、或我们该给得更高时才写。
+        if (current != null && current.getAmplifier() > amplifier) {
+            return;
+        }
+        if (current == null || current.getDuration() < HERO_RENEW_BELOW || current.getAmplifier() < amplifier) {
+            player.addEffect(new MobEffectInstance(
+                    MobEffects.HERO_OF_THE_VILLAGE, HERO_DURATION, amplifier, false, false, false));
+        }
+    }
+
+    /** 长臂善舞（89）：两个交互距离各加 N 格。用 transient 修饰符，不落盘，重挂靠生命周期事件。 */
+    private static void reconcileReach(ServerPlayer player) {
+        int blocks = isOn(player, QolSetting.REACH) ? valueOf(player, QolSetting.REACH) : 0;
+        applyReachModifier(player, Attributes.BLOCK_INTERACTION_RANGE, REACH_BLOCK_MODIFIER, blocks);
+        applyReachModifier(player, Attributes.ENTITY_INTERACTION_RANGE, REACH_ENTITY_MODIFIER, blocks);
+    }
+
+    private static void applyReachModifier(ServerPlayer player, Holder<Attribute> attribute,
+                                           ResourceLocation modifierId, int amount) {
+        AttributeInstance instance = player.getAttribute(attribute);
+        if (instance == null) {
+            return;
+        }
+        if (amount <= 0) {
+            instance.removeModifier(modifierId);
+            return;
+        }
+        AttributeModifier existing = instance.getModifier(modifierId);
+        // 已经是目标值就别动：每 20 tick 摘一次再挂一次会让属性面板上的数字反复闪。
+        if (existing != null && existing.amount() == amount) {
+            return;
+        }
+        instance.removeModifier(modifierId);
+        instance.addTransientModifier(new AttributeModifier(
+                modifierId, amount, AttributeModifier.Operation.ADD_VALUE));
+    }
+}

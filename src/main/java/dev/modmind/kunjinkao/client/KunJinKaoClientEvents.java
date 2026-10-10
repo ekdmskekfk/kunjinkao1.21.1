@@ -18,6 +18,9 @@ import dev.modmind.kunjinkao.client.hud.HudScreen;
 import dev.modmind.kunjinkao.client.hud.HudEntityScreen;
 import dev.modmind.kunjinkao.client.gui.SwordOptionsScreen;
 import dev.modmind.kunjinkao.client.gui.AdminPasswordScreen;
+import dev.modmind.kunjinkao.client.gui.QolControlScreen;
+import dev.modmind.kunjinkao.client.qol.QolClientState;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
@@ -49,6 +52,7 @@ public class KunJinKaoClientEvents {
         handleCycleTheme();
         handleToggleTacticalHud();
         handleOpenSwordOptions();
+        handleOpenQolPanel();
         handleOpenAdminPassword();
         handleUndoPlacement();
         handleCycleAreaMode();
@@ -232,6 +236,33 @@ public class KunJinKaoClientEvents {
         if (hand != null) {
             minecraft.setScreen(new SwordOptionsScreen(hand));
         }
+    }
+
+    /**
+     * G 键：打开「功能控制台」面板。
+     * <p>
+     * 不要求手持剑 —— 面板管的是玩家自己的功能开关（夜视、呼吸、交易…），
+     * 跟手上拿什么没关系。全量状态由面板自己在 init 里要一次。
+     */
+    private static void handleOpenQolPanel() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (!KunJinKaoKeyBindings.OPEN_QOL_PANEL.consumeClick()
+                || minecraft.player == null
+                || minecraft.screen != null) {
+            return;
+        }
+        minecraft.setScreen(new QolControlScreen());
+    }
+
+    /**
+     * 断开连接时清掉面板的客户端镜像。
+     * <p>
+     * 不清的话，退出去再进另一个服务器，面板会先画上一局的旧状态，
+     * 直到新的全量同步到达 —— 那一瞬间看起来就是"我明明没开夜视，它显示开着"。
+     */
+    @SubscribeEvent
+    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        QolClientState.clear();
     }
 
     /**

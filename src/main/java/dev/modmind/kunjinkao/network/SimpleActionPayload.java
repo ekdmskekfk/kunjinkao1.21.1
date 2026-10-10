@@ -2,6 +2,7 @@ package dev.modmind.kunjinkao.network;
 
 import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.event.KunJinKaoColdDataEffectsHandler;
+import dev.modmind.kunjinkao.event.KunJinKaoQolHandler;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -33,6 +34,8 @@ public record SimpleActionPayload(int actionId) implements CustomPacketPayload {
     public static final int TOGGLE_HUD_MAGNET = 4;
     /** 撤销最近一步放置/破坏。 */
     public static final int UNDO_PLACEMENT = 5;
+    /** 功能面板：请求一次全量状态（打开面板时发）。 */
+    public static final int REQUEST_QOL_STATE = 6;
 
     public static final Type<SimpleActionPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "simple_action"));
@@ -54,6 +57,7 @@ public record SimpleActionPayload(int actionId) implements CustomPacketPayload {
                 case TOGGLE_HUD_TRUE_INVISIBILITY -> KunJinKaoColdDataEffectsHandler.handleToggleHudTrueInvisibility(server, context.player());
                 case TOGGLE_HUD_MAGNET -> KunJinKaoColdDataEffectsHandler.handleToggleHudMagnet(server, context.player());
                 case UNDO_PLACEMENT -> KunJinKaoColdDataEffectsHandler.handleUndoPlacement(context.player());
+                case REQUEST_QOL_STATE -> KunJinKaoQolHandler.handleRequestFullState(context.player());
                 default -> {
                     // 未知 actionId：忽略，等价于原来收到一个不认识的空载荷包。
                 }

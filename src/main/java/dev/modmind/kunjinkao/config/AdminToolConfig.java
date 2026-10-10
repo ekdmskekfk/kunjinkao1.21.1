@@ -32,6 +32,16 @@ public final class AdminToolConfig {
     public static final ModConfigSpec COMMON_SPEC;
     private static final ModConfigSpec.ConfigValue<String> ADMIN_PASSWORD;
 
+    /**
+     * 功能面板（QoL）的服务器级参数。
+     * <p>
+     * 这些是"服务器愿意给到多少"的上限，不是个人开关：个人开关与个人数值存在
+     * {@link QolStateSavedData} 里，按 UUID 分。两边分开是为了让服主调小上限时
+     * 不用去动玩家存档，把上限调回来玩家的个人设置也还在。
+     */
+    private static final ModConfigSpec.IntValue QOL_VILLAGE_HERO_MAX_LEVEL;
+    private static final ModConfigSpec.IntValue QOL_REACH_MAX_BLOCKS;
+
     private static final Logger LOGGER = LogManager.getLogger("KunJinKao");
 
     /** 同一玩家两次尝试之间的最小间隔（毫秒），阻断脚本化高速爆破。 */
@@ -61,7 +71,43 @@ public final class AdminToolConfig {
                         " 留空表示关闭密码验证，任何人都无法通过密码取得管理员权限。")
                 .define("password", DEFAULT_ADMIN_PASSWORD);
         builder.pop();
+        builder.push("qol");
+        QOL_VILLAGE_HERO_MAX_LEVEL = builder
+                .comment(" 万民敬仰（88）个人等级的服务器上限。",
+                        " 面板里玩家最多能把自己调到多少级；施加的 amplifier = 等级 × 4 - 1。",
+                        " 设为 0 等于全服禁用这一项。")
+                .defineInRange("villageHeroMaxLevel", 5, 0, 255);
+        QOL_REACH_MAX_BLOCKS = builder
+                .comment(" 长臂善舞（89）交互距离加成的服务器上限（单位：格）。",
+                        " 同时作用于方块交互距离与实体交互距离。",
+                        " 设为 0 等于全服禁用这一项。")
+                .defineInRange("reachMaxBlocks", 8, 0, 64);
+        builder.pop();
         COMMON_SPEC = builder.build();
+    }
+
+    /** 万民敬仰的服务器上限等级。配置未加载时回落到 0（等于禁用），不放开权限。 */
+    public static int qolVillageHeroMaxLevel() {
+        return intOrDefault(QOL_VILLAGE_HERO_MAX_LEVEL, 0);
+    }
+
+    /** 长臂善舞的服务器上限格数。配置未加载时回落到 0（等于禁用），不放开权限。 */
+    public static int qolReachMaxBlocks() {
+        return intOrDefault(QOL_REACH_MAX_BLOCKS, 0);
+    }
+
+    /**
+     * 读一个 IntValue，未加载时回落到保守值。
+     * <p>
+     * 与 {@link #configuredPassword()} 同一个理由：配置还没加载时不能猜一个"宽松"的默认值，
+     * 否则启动早期的一瞬间面板能给出比服主配置更大的上限。
+     */
+    private static int intOrDefault(ModConfigSpec.IntValue value, int fallback) {
+        try {
+            return value.get();
+        } catch (IllegalStateException notLoadedYet) {
+            return fallback;
+        }
     }
 
     private AdminToolConfig() {

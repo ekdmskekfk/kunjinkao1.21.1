@@ -12,7 +12,8 @@ public final class NetworkHandler {
 
     // 从 20 提到 21：本次把 18 个包合并成 3 个（判别 id 线格式），注册表与线格式都变了，
     // 必须让版本号跟着变，否则新旧端会在握手时被当成兼容，然后在解码时错位。
-    public static final String PROTOCOL_VERSION = "22";
+    // 22 提到 23：新增功能面板两条包（QolSettingPayload C2S / QolStatePayload S2C），注册表又变了。
+    public static final String PROTOCOL_VERSION = "23";
 
     private NetworkHandler() {
     }
@@ -62,6 +63,9 @@ public final class NetworkHandler {
         reg.playToClient(ExcludedPlayersPayload.TYPE, ExcludedPlayersPayload.STREAM_CODEC, ExcludedPlayersPayload::handle);
         reg.playToServer(ManageExcludedPlayerPayload.TYPE, ManageExcludedPlayerPayload.STREAM_CODEC, ManageExcludedPlayerPayload::handle);
         reg.playToClient(TimeAccelStatusPayload.TYPE, TimeAccelStatusPayload.STREAM_CODEC, TimeAccelStatusPayload::handle);
+        // 功能面板（QoL）：改动请求（C2S）与逐行状态回执（S2C）。
+        reg.playToServer(QolSettingPayload.TYPE, QolSettingPayload.STREAM_CODEC, QolSettingPayload::handle);
+        reg.playToClient(QolStatePayload.TYPE, QolStatePayload.STREAM_CODEC, QolStatePayload::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {

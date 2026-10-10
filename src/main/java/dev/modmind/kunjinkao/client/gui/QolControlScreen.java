@@ -1,0 +1,599 @@
+package dev.modmind.kunjinkao.client.gui;
+
+import dev.modmind.kunjinkao.KunJinKaoPalette;
+import dev.modmind.kunjinkao.client.qol.QolClientState;
+import dev.modmind.kunjinkao.client.qol.QolPanelConfig;
+import dev.modmind.kunjinkao.network.NetworkHandler;
+import dev.modmind.kunjinkao.network.QolSettingPayload;
+import dev.modmind.kunjinkao.network.QolStatePayload;
+import dev.modmind.kunjinkao.network.SimpleActionPayload;
+import dev.modmind.kunjinkao.qol.QolSetting;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * 功能控制台：把模组的所有 QoL 功能集中到一页里开关与调值。
+ * <p>
+ * 这一页<b>不持有任何权威状态</b>。行上画的东西每帧都现读 {@link QolClientState} ——
+ * 服务端推来新值、别的管理员在服务器上改了配置、或者权限被撤销，
+ * 面板下一帧就跟着变，不需要重开界面，也不需要谁记得去刷新。
+ * 本类里唯一的本地状态是"我刚请求过什么"，见 {@link #pendingValue}。
+ * <p>
+ * 控件全部自绘（分类标签、行、关闭按钮），因为原版 Button 画不出"整行可点 + 右侧状态列
+ * + 权限徽章"这种排布；只有搜索框用原版 {@link EditBox}，输入法、光标、选中这些
+ * 交给原版处理，比自己写一个稳。
+ */
+public final class QolControlScreen extends Screen {
+
+    // ===== 布局常量（GUI 像素，与缩放无关）=====
+    private static final int SIDE = 8;
+    /** 标题栏高度：放得下标题与右上角的关闭按钮。 */
+    private static final int TITLE_H = 24;
+    private static final int SEARCH_H = 18;
+    private static final int TAB_H = 18;
+    /** 各条之间的竖直间距。 */
+    private static final int GAP = 4;
+    private static final int ROW_H = 26;
+    /** 一屏最多画几行；再多就靠滚动。上限压着是为了面板别在超大分辨率下被拉成一条。 */
+    private static final int MAX_ROWS = 8;
+    private static final int CODE_BADGE_W = 24;
+    private static final int BADGE_H = 12;
+    private static final int CLOSE_W = 46;
+    private static final int CLOSE_H = 14;
+    private static final int TAB_GAP = 4;
+    /** 权限徽章的最大宽度：够放「需要管理员权限」，也不至于把名字列挤没。 */
+    private static final int BADGE_MAX_W = 140;
+
+    // ===== 配色 =====
+    /** 面板底色：深蓝。用带 alpha 的值而不是不透明色，底下的世界还透得出来一点。 */
+    private static final int COLOR_PANEL = 0xE0122030;
+    private static final int COLOR_TEXT = 0xFFE9FBFF;
+    /** 次级文字：分类标签、提示语。 */
+    private static final int COLOR_DIM = 0xFF8FEAFF;
+    /** 「已关闭」用的冷灰：与「已开启」的青色拉开，一眼能分清开关状态。 */
+    private static final int COLOR_OFF = 0xFF9BB8C4;
+    /** 半透明的青色蒙版：徽章底、标签选中底、行悬停底共用一份。 */
+    private static final int COLOR_TINT = 0x4020A0C0;
+    private static final int COLOR_ROW_HOVER = 0x40165A70;
+    private static final int COLOR_SEPARATOR = 0x3020A0C0;
+
+    /**
+     * 数值行「在途」缓冲的有效期。
+     * <p>
+     * 滚轮连滚时包还没回来，若每次都拿只读镜像当基准，滚 5 格只会加 1。
+     * 这里记下"我最后请求的值"，在服务端把它推回来之前用它当基准；
+     * 超时（比如请求被服务端拒绝、值根本没变）就丢弃，回到镜像值，免得永远卡在幻值上。
+     */
+    private static final long PENDING_TTL_MS = 1000L;
+
+    // ===== init() 算出的几何，render 与命中测试共用 =====
+    private int panelX;
+    private int panelY;
+    private int panelW;
+    private int panelH;
+    private int searchY;
+    private int tabY;
+    private int listTop;
+    private int listRows;
+    private int closeX;
+    private int closeY;
+    /** 权限徽章列宽：取三种文案里最宽的那个，保证各行的状态列对齐。 */
+    private int badgeW = 48;
+
+    // ===== 交互状态 =====
+    private EditBox searchBox;
+    /** 当前搜索词。过滤一律以它为准，不看 EditBox —— 重建界面时 EditBox 是新的。 */
+    private String query = "";
+    private QolSetting.Category selectedCategory = restoredCategory();
+    private final List<QolSetting> visible = new ArrayList<>();
+    private int scroll = QolPanelConfig.get().scrollY;
+    private final List<int[]> tabBoxes = new ArrayList<>();
+    private final List<QolSetting.Category> tabCategories = new ArrayList<>();
+
+    /** 数值行最近一次请求的值与请求时刻，见 {@link #PENDING_TTL_MS}。 */
+    private final int[] pendingValue = new int[QolSetting.COUNT];
+    private final long[] pendingAt = new long[QolSetting.COUNT];
+    private final boolean[] pendingValid = new boolean[QolSetting.COUNT];
+
+    public QolControlScreen() {
+        super(Component.translatable("screen.kunjinkao.qol.title"));
+    }
+
+    /** 第一个有内容的分类。空分类不画标签，所以不能直接取 {@code values()[0]} 当默认选中项。 */
+    private static QolSetting.Category firstCategory() {
+        for (QolSetting.Category category : QolSetting.Category.values()) {
+            if (QolSetting.hasAnyIn(category)) {
+                return category;
+            }
+        }
+        return QolSetting.Category.values()[0];
+    }
+
+    /**
+     * 恢复上次选中的分类。
+     * <p>
+     * 配置文件里的分类名可能是手改的、也可能来自一个类别集合已经变过的旧版本，
+     * 所以必须验证两件事：名字对得上、且这个类别现在确实有内容（空类别不画标签）。
+     * 任何一条不满足就退回 {@link #firstCategory()}，而不是让面板选中一个画不出来的标签。
+     */
+    private static QolSetting.Category restoredCategory() {
+        String saved = QolPanelConfig.get().selectedCategory;
+        for (QolSetting.Category category : QolSetting.Category.values()) {
+            if (category.name().equals(saved) && QolSetting.hasAnyIn(category)) {
+                return category;
+            }
+        }
+        return firstCategory();
+    }
+
+    /**
+     * 关闭面板时把界面状态写回磁盘。
+     * <p>
+     * 刻意只在关闭时存一次、不在每次滚动时存：滚动一屏能触发几十次写盘，
+     * 而这份文件唯一的作用就是"下次打开时还是上次那个样子"，丢最后一次中间状态无所谓。
+     */
+    @Override
+    public void onClose() {
+        QolPanelConfig.Data data = QolPanelConfig.get();
+        data.selectedCategory = selectedCategory.name();
+        data.scrollY = scroll;
+        QolPanelConfig.save();
+        super.onClose();
+    }
+
+    @Override
+    protected void init() {
+        panelW = Math.min(380, Math.max(160, width - 16));
+        // 面板高度跟着屏幕走：矮屏少画几行（滚动兜底），高屏多画几行，不必写死。
+        int chrome = TITLE_H + SEARCH_H + GAP + TAB_H + GAP + SIDE;
+        int rows = (Math.max(80, height - 8) - chrome) / ROW_H;
+        listRows = Math.max(1, Math.min(MAX_ROWS, rows));
+        panelH = chrome + ROW_H * listRows;
+        panelX = (width - panelW) / 2;
+        panelY = (height - panelH) / 2;
+
+        searchY = panelY + TITLE_H;
+        tabY = searchY + SEARCH_H + GAP;
+        listTop = tabY + TAB_H + GAP;
+        closeX = panelX + panelW - SIDE - CLOSE_W;
+        closeY = panelY + 5;
+
+        // 徽章列宽按当前语言实际像素算：英文文案比中文长得多，写死宽度会溢出面板。
+        badgeW = Math.min(BADGE_MAX_W, Math.max(
+                Math.max(font.width(Component.translatable("screen.kunjinkao.qol.needs_permission")),
+                        font.width(Component.translatable("screen.kunjinkao.qol.scope_personal"))),
+                font.width(Component.translatable("screen.kunjinkao.qol.scope_server"))) + 8);
+
+        buildTabs();
+
+        searchBox = new EditBox(font, panelX + SIDE, searchY, panelW - SIDE * 2, SEARCH_H,
+                Component.translatable("screen.kunjinkao.qol.search_hint"));
+        searchBox.setMaxLength(24);
+        searchBox.setHint(Component.translatable("screen.kunjinkao.qol.search_hint"));
+        searchBox.setResponder(this::onSearchChanged);
+        // 改窗口大小会重跑 init()，EditBox 是新的；把上一个搜索词放回去，别让玩家的输入白打。
+        searchBox.setValue(query);
+        addRenderableWidget(searchBox);
+
+        rebuildVisible();
+
+        // 打开面板就主动要一次全量状态：镜像里可能还是上一个服务器的旧行（断线才清），
+        // 不主动要一次的话，面板会一直画旧值直到服务端碰巧推包。
+        NetworkHandler.sendToServer(new SimpleActionPayload(SimpleActionPayload.REQUEST_QOL_STATE));
+    }
+
+    private void buildTabs() {
+        tabBoxes.clear();
+        tabCategories.clear();
+        int x = panelX + SIDE;
+        for (QolSetting.Category category : QolSetting.Category.values()) {
+            // 没有项的类别不画标签 —— 空标签点进去是一片空白，比不显示更让人困惑。
+            if (!QolSetting.hasAnyIn(category)) {
+                continue;
+            }
+            int w = font.width(Component.translatable(category.translationKey())) + 16;
+            if (x + w > panelX + panelW - SIDE) {
+                break;
+            }
+            tabBoxes.add(new int[]{x, tabY, w, TAB_H});
+            tabCategories.add(category);
+            x += w + TAB_GAP;
+        }
+    }
+
+    private void onSearchChanged(String text) {
+        query = text == null ? "" : text;
+        // 换搜索词等于换了一个列表，滚动位置必须归零，否则会停在一片空白上。
+        scroll = 0;
+        rebuildVisible();
+    }
+
+    /**
+     * 重算当前要显示的行。
+     * <p>
+     * 有搜索词时<b>忽略分类标签、跨全部类别</b>：玩家搜「89」时心里想的是某一项功能，
+     * 不是"便捷分类下的第 89 号"，再让他先点对标签就是多余的一步。
+     */
+    private void rebuildVisible() {
+        visible.clear();
+        String needle = query.trim().toLowerCase(Locale.ROOT);
+        if (needle.isEmpty()) {
+            for (QolSetting setting : QolSetting.values()) {
+                if (setting.category() == selectedCategory) {
+                    visible.add(setting);
+                }
+            }
+        } else {
+            for (QolSetting setting : QolSetting.values()) {
+                if (matches(setting, needle)) {
+                    visible.add(setting);
+                }
+            }
+        }
+        scroll = clampScroll(scroll);
+    }
+
+    private int clampScroll(int value) {
+        return Math.max(0, Math.min(Math.max(0, visible.size() - listRows), value));
+    }
+
+    /**
+     * 三种匹配方式：序号（89）、枚举名（reach）、当前语言下的显示名（长臂善舞）。
+     * <p>
+     * 序号用 contains 而不是 equals：输入「8」时把 80/83/85/88/89 都列出来，
+     * 玩家记不清后两位时还能往下挑；搜到更多不是错，搜不到才是。
+     */
+    private static boolean matches(QolSetting setting, String needle) {
+        if (Integer.toString(setting.code()).contains(needle)) {
+            return true;
+        }
+        if (setting.name().toLowerCase(Locale.ROOT).contains(needle)) {
+            return true;
+        }
+        // 显示名必须按当前语言取：写死中文的话，英文客户端上按名字搜什么都搜不到。
+        return Component.translatable(setting.translationKey()).getString()
+                .toLowerCase(Locale.ROOT).contains(needle);
+    }
+
+    private boolean isSearching() {
+        return !query.trim().isEmpty();
+    }
+
+    // ===== 绘制 =====
+
+    /**
+     * 1.21.1 的 {@code Screen.render} 先调 renderBackground，之后才画控件。
+     * 面板、标签、行都必须画在这里：写在 render 里画在 super.render 之前会被背景糊掉，
+     * 之后又会盖住搜索框。
+     */
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.renderBackground(graphics, mouseX, mouseY, partialTick);
+
+        graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, COLOR_PANEL);
+        drawBorder(graphics, panelX, panelY, panelW, panelH, KunJinKaoPalette.NORMAL);
+        graphics.drawString(font, title, panelX + SIDE, panelY + 8, COLOR_TEXT, false);
+
+        drawCloseButton(graphics, mouseX, mouseY);
+        drawTabStrip(graphics, mouseX, mouseY);
+        drawRows(graphics, mouseX, mouseY);
+    }
+
+    /**
+     * 右上角关闭按钮。
+     * <p>
+     * 自绘而不是用原版 Button：面板其余部分都是自绘的，混一个原版灰色按钮在标题栏上
+     * 会显得是别处拼来的；而且悬停时能直接切到语义色红，一眼看出"这是退出"。
+     */
+    private void drawCloseButton(GuiGraphics graphics, int mouseX, int mouseY) {
+        boolean hovered = inside(mouseX, mouseY, closeX, closeY, CLOSE_W, CLOSE_H);
+        if (hovered) {
+            graphics.fill(closeX, closeY, closeX + CLOSE_W, closeY + CLOSE_H,
+                    KunJinKaoPalette.alpha(KunJinKaoPalette.ERROR, 0.25F));
+        }
+        drawBorder(graphics, closeX, closeY, CLOSE_W, CLOSE_H,
+                hovered ? KunJinKaoPalette.ERROR : KunJinKaoPalette.NORMAL);
+        graphics.drawCenteredString(font, Component.translatable("screen.kunjinkao.qol.close"),
+                closeX + CLOSE_W / 2, closeY + (CLOSE_H - 8) / 2,
+                hovered ? KunJinKaoPalette.ERROR : COLOR_TEXT);
+    }
+
+    /**
+     * 分类标签条。搜索时这一条改成显示「找到 N 项」——
+     * 搜索本来就跨类别，标签这时候既不能点也没有意义，占着位置不如报个数。
+     */
+    private void drawTabStrip(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (isSearching()) {
+            graphics.drawString(font,
+                    Component.translatable("screen.kunjinkao.qol.search_result", visible.size()),
+                    panelX + SIDE, tabY + (TAB_H - 8) / 2, KunJinKaoPalette.ACCEL, false);
+            return;
+        }
+        for (int i = 0; i < tabBoxes.size(); i++) {
+            int[] box = tabBoxes.get(i);
+            QolSetting.Category category = tabCategories.get(i);
+            boolean selected = category == selectedCategory;
+            boolean hovered = inside(mouseX, mouseY, box[0], box[1], box[2], box[3]);
+            if (selected || hovered) {
+                graphics.fill(box[0], box[1], box[0] + box[2], box[1] + box[3],
+                        selected ? COLOR_TINT : COLOR_ROW_HOVER);
+            }
+            if (selected) {
+                drawBorder(graphics, box[0], box[1], box[2], box[3], KunJinKaoPalette.NORMAL);
+            }
+            graphics.drawCenteredString(font, Component.translatable(category.translationKey()),
+                    box[0] + box[2] / 2, box[1] + (TAB_H - 8) / 2,
+                    selected ? KunJinKaoPalette.NORMAL : COLOR_DIM);
+        }
+    }
+
+    private void drawRows(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (visible.isEmpty()) {
+            graphics.drawCenteredString(font, Component.translatable("screen.kunjinkao.qol.empty"),
+                    panelX + panelW / 2, listTop + ROW_H * listRows / 2 - 4, COLOR_DIM);
+            return;
+        }
+        int hoveredIndex = rowIndexAt(mouseX, mouseY);
+        for (int i = 0; i < listRows; i++) {
+            int index = scroll + i;
+            if (index >= visible.size()) {
+                break;
+            }
+            drawRow(graphics, visible.get(index), listTop + i * ROW_H, index == hoveredIndex);
+        }
+    }
+
+    private void drawRow(GuiGraphics graphics, QolSetting setting, int rowY, boolean hovered) {
+        int rowX = panelX + SIDE;
+        int rowW = panelW - SIDE * 2;
+        int rowH = ROW_H - 2;
+        int textY = rowY + (rowH - 8) / 2;
+
+        // 每帧现读镜像：服务端一改，下一帧这里就是新值。任何"上次画的是什么"的缓存都会
+        // 让面板显示过期的权威状态。
+        QolStatePayload row = QolClientState.row(setting);
+        boolean syncing = row == null;
+        boolean authorized = !syncing && row.authorized();
+
+        if (hovered) {
+            graphics.fill(rowX, rowY, rowX + rowW, rowY + rowH, COLOR_ROW_HOVER);
+        }
+        graphics.fill(rowX, rowY + ROW_H - 1, rowX + rowW, rowY + ROW_H, COLOR_SEPARATOR);
+
+        // 序号徽章：用给人看的 code（80/83/…）而不是线格式 id —— 玩家和文档都用前者说话。
+        int codeX = rowX + 4;
+        int codeY = rowY + (rowH - BADGE_H) / 2;
+        graphics.fill(codeX, codeY, codeX + CODE_BADGE_W, codeY + BADGE_H, COLOR_TINT);
+        drawBorder(graphics, codeX, codeY, CODE_BADGE_W, BADGE_H,
+                authorized ? KunJinKaoPalette.NORMAL : COLOR_OFF);
+        graphics.drawCenteredString(font, Component.literal(Integer.toString(setting.code())),
+                codeX + CODE_BADGE_W / 2, codeY + (BADGE_H - 8) / 2,
+                authorized ? KunJinKaoPalette.NORMAL : COLOR_OFF);
+
+        // 状态列：先算出文案与颜色，好把名字列裁到不撞上它。
+        Component stateText;
+        int stateColor;
+        if (syncing) {
+            // 还没收到这一行：不猜、不画默认值，直接说在同步。
+            stateText = Component.translatable("screen.kunjinkao.qol.syncing");
+            stateColor = COLOR_OFF;
+        } else if (setting.kind() == QolSetting.Kind.TOGGLE) {
+            boolean on = row.enabled();
+            stateText = Component.translatable(on
+                    ? "screen.kunjinkao.qol.state_on" : "screen.kunjinkao.qol.state_off");
+            stateColor = on ? KunJinKaoPalette.NORMAL : COLOR_OFF;
+        } else {
+            // 上限取服务端下发的那个（含服务器配置），不是本项硬上限。
+            stateText = Component.literal(QolClientState.value(setting) + " / " + QolClientState.max(setting));
+            stateColor = KunJinKaoPalette.ACCEL;
+        }
+
+        int badgeX = rowX + rowW - 4 - badgeW;
+        Component badgeText;
+        int badgeColor;
+        if (syncing) {
+            badgeText = Component.translatable(setting.scope() == QolSetting.Scope.SERVER
+                    ? "screen.kunjinkao.qol.scope_server" : "screen.kunjinkao.qol.scope_personal");
+            badgeColor = COLOR_OFF;
+        } else if (authorized) {
+            badgeText = Component.translatable(setting.scope() == QolSetting.Scope.SERVER
+                    ? "screen.kunjinkao.qol.scope_server" : "screen.kunjinkao.qol.scope_personal");
+            badgeColor = setting.scope() == QolSetting.Scope.SERVER
+                    ? KunJinKaoPalette.CORRUPT : KunJinKaoPalette.NORMAL;
+        } else {
+            // 没权限时徽章改说原因：这一行仍会画出服务端发来的当前值，
+            // 玩家看得见"功能存在、值是多少、但我动不了"。
+            badgeText = Component.translatable("screen.kunjinkao.qol.needs_permission");
+            badgeColor = COLOR_OFF;
+        }
+
+        // 未授权整行降饱和度：不用图标或额外标记，颜色本身就说明"这行不能动"。
+        int nameColor = authorized || syncing ? COLOR_TEXT : desaturate(COLOR_TEXT);
+        int shownStateColor = authorized || syncing ? stateColor : desaturate(stateColor);
+
+        int stateX = badgeX - 8 - font.width(stateText);
+        graphics.drawString(font, stateText, stateX, textY, shownStateColor, false);
+
+        int nameX = codeX + CODE_BADGE_W + 6;
+        int nameMax = Math.max(20, stateX - 8 - nameX);
+        graphics.drawString(font,
+                font.plainSubstrByWidth(
+                        Component.translatable(setting.translationKey()).getString(), nameMax),
+                nameX, textY, nameColor, false);
+
+        int badgeY = rowY + (rowH - BADGE_H) / 2;
+        graphics.fill(badgeX, badgeY, badgeX + badgeW, badgeY + BADGE_H,
+                KunJinKaoPalette.alpha(badgeColor, authorized ? 0.18F : 0.10F));
+        drawBorder(graphics, badgeX, badgeY, badgeW, BADGE_H, badgeColor);
+        graphics.drawCenteredString(font, badgeText, badgeX + badgeW / 2, badgeY + (BADGE_H - 8) / 2,
+                badgeColor);
+    }
+
+    /**
+     * 降饱和度：按人眼亮度权重把它拉向灰。
+     * <p>
+     * 不做成纯灰是因为整行还有信息要读（值是多少）；保留一点原色，既看得出"这项是青的/琥珀的"，
+     * 又明显比可操作的行暗一档。
+     */
+    private static int desaturate(int argb) {
+        int alpha = (argb >>> 24) & 0xFF;
+        int r = (argb >> 16) & 0xFF;
+        int g = (argb >> 8) & 0xFF;
+        int b = argb & 0xFF;
+        int gray = (r * 30 + g * 59 + b * 11) / 100;
+        return (alpha << 24) | (((r + gray * 2) / 3) << 16) | (((g + gray * 2) / 3) << 8) | ((b + gray * 2) / 3);
+    }
+
+    // ===== 交互 =====
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        // 先让控件（搜索框）处理：点进搜索框要能聚焦、能拖选，
+        // 自定义区域与搜索框不重叠，所以先给控件不会漏掉任何点击。
+        if (super.mouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
+        if (button != 0) {
+            return false;
+        }
+        if (inside(mouseX, mouseY, closeX, closeY, CLOSE_W, CLOSE_H)) {
+            onClose();
+            return true;
+        }
+        if (!isSearching()) {
+            for (int i = 0; i < tabBoxes.size(); i++) {
+                int[] box = tabBoxes.get(i);
+                if (inside(mouseX, mouseY, box[0], box[1], box[2], box[3])) {
+                    selectedCategory = tabCategories.get(i);
+                    scroll = 0;
+                    rebuildVisible();
+                    return true;
+                }
+            }
+        }
+        int index = rowIndexAt(mouseX, mouseY);
+        if (index >= 0) {
+            QolSetting setting = visible.get(index);
+            // 数值行点一下不改值：那会让"点空白处不小心改了数字"，滚轮才有明确的方向感。
+            if (setting.kind() == QolSetting.Kind.TOGGLE) {
+                toggle(setting);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (scrollY == 0.0D) {
+            return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+        }
+        int index = rowIndexAt(mouseX, mouseY);
+        if (index >= 0) {
+            QolSetting setting = visible.get(index);
+            QolStatePayload row = QolClientState.row(setting);
+            if (setting.kind() == QolSetting.Kind.NUMBER && row != null && row.authorized()) {
+                // 向上滚加、向下滚减；Shift 一次 10 格，方便在上百的区间里快速走。
+                stepValue(setting, scrollY > 0.0D ? 1 : -1, Screen.hasShiftDown());
+                return true;
+            }
+            // 数值行没同步/没权限时不吃滚轮：否则指针一停在这两行上，列表就滚不动了。
+        }
+        if (!inside(mouseX, mouseY, panelX + SIDE, listTop, panelW - SIDE * 2, ROW_H * listRows)) {
+            return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+        }
+        int next = clampScroll(scroll + (scrollY > 0.0D ? -1 : 1));
+        if (next == scroll) {
+            return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+        }
+        scroll = next;
+        return true;
+    }
+
+    /** 整行点击：只翻开关。是否生效由服务端说了算，这里不做任何乐观改动。 */
+    private void toggle(QolSetting setting) {
+        QolStatePayload row = QolClientState.row(setting);
+        if (row == null || !row.authorized()) {
+            // 没同步就把请求发出去，等于拿一个自己都不知道的值做翻转；
+            // 没权限发出去也只会被服务端丢掉。两种都直接不发。
+            return;
+        }
+        NetworkHandler.sendToServer(new QolSettingPayload(setting.id(), row.enabled() ? 0 : 1));
+    }
+
+    private void stepValue(QolSetting setting, int direction, boolean coarse) {
+        QolStatePayload row = QolClientState.row(setting);
+        if (row == null || !row.authorized()) {
+            return;
+        }
+        int max = QolClientState.max(setting);
+        int base = stepBase(setting);
+        int next = Math.max(row.min(), Math.min(max, base + direction * (coarse ? 10 : 1)));
+        if (next == base) {
+            // 已经顶到上下限：停住，不发这种"值没变"的包，免得白占带宽。
+            return;
+        }
+        int id = setting.id();
+        pendingValid[id] = true;
+        pendingValue[id] = next;
+        pendingAt[id] = System.currentTimeMillis();
+        NetworkHandler.sendToServer(new QolSettingPayload(id, next));
+    }
+
+    /**
+     * 滚轮连滚时的基准值。
+     * <p>
+     * 请求还在路上（服务端还没把新值推回来）时用"我请求过的值"接着加，
+     * 否则连滚 5 格会因为基准一直是旧值而只加 1。请求被服务端拒绝或改变时镜像值会一直对不上，
+     * 所以给在途状态加了过期时间：超时就认镜像值，面板不会卡在一个服务端并不认可的数字上。
+     */
+    private int stepBase(QolSetting setting) {
+        int id = setting.id();
+        int server = QolClientState.value(setting);
+        if (!pendingValid[id]) {
+            return server;
+        }
+        if (server == pendingValue[id] || System.currentTimeMillis() - pendingAt[id] > PENDING_TTL_MS) {
+            pendingValid[id] = false;
+            return server;
+        }
+        return pendingValue[id];
+    }
+
+    /** 命中哪一行（返回 {@link #visible} 的下标），不在列表里返回 -1。 */
+    private int rowIndexAt(double mouseX, double mouseY) {
+        if (!inside(mouseX, mouseY, panelX + SIDE, listTop, panelW - SIDE * 2, ROW_H * listRows)) {
+            return -1;
+        }
+        int index = scroll + (int) ((mouseY - listTop) / ROW_H);
+        return index >= 0 && index < visible.size() ? index : -1;
+    }
+
+    private static boolean inside(double mouseX, double mouseY, int x, int y, int w, int h) {
+        return mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
+    }
+
+    private static void drawBorder(GuiGraphics graphics, int x, int y, int w, int h, int color) {
+        graphics.fill(x, y, x + w, y + 1, color);
+        graphics.fill(x, y + h - 1, x + w, y + h, color);
+        graphics.fill(x, y, x + 1, y + h, color);
+        graphics.fill(x + w - 1, y, x + w, y + h, color);
+    }
+
+    /**
+     * 不暂停游戏。
+     * <p>
+     * 与模组里其它界面一致：这是服务器上的功能面板，多人游戏里根本没有"暂停"这回事，
+     * 单人游戏里暂停也会让面板表现和多人时不一致。反正所有改动都要等服务端回执。
+     */
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+}

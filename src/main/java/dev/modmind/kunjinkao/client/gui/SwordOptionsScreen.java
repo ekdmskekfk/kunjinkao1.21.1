@@ -2,6 +2,7 @@ package dev.modmind.kunjinkao.client.gui;
 
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import dev.modmind.kunjinkao.client.KunJinKaoKeyBindings;
+import dev.modmind.kunjinkao.client.gui.QolControlScreen;
 import dev.modmind.kunjinkao.network.NetworkHandler;
 // 9 个剑设置包已合并为 SwordSettingPayload，导入与发包点一起收敛。
 import dev.modmind.kunjinkao.network.PlacementSyncPayload;
@@ -301,6 +302,17 @@ public final class SwordOptionsScreen extends Screen {
         });
         next.setMessage(Component.translatable("screen.kunjinkao.page_next"));
         next.active = page < PAGE_COUNT - 1;
+
+        // 功能控制台入口：摆在翻页按钮左边。
+        // 它是全局入口（面板管的是玩家自己的功能，跟手上有哪把剑无关），所以每一页都显示，
+        // 而不是只在设置页出现 —— 在放置记录页想顺手开一下面板是常事。
+        int entryW = 72;
+        Button openQol = addButton(navX - 4 - entryW, navY, entryW, () -> {
+            if (this.minecraft != null) {
+                this.minecraft.setScreen(new QolControlScreen());
+            }
+        });
+        openQol.setMessage(Component.translatable("screen.kunjinkao.qol.open_from_sword"));
     }
 
     /**

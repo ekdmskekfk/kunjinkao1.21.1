@@ -1,6 +1,7 @@
 package dev.modmind.kunjinkao.client;
 
 import dev.modmind.kunjinkao.client.gui.AdminPasswordScreen;
+import dev.modmind.kunjinkao.client.qol.QolClientState;
 import dev.modmind.kunjinkao.network.AdminEyeStatePayload;
 import dev.modmind.kunjinkao.network.AdminPasswordResultPayload;
 import dev.modmind.kunjinkao.network.ExcludedPlayersPayload;
@@ -11,6 +12,7 @@ import dev.modmind.kunjinkao.network.HudShieldHitPayload;
 import dev.modmind.kunjinkao.network.HudStatePayload;
 import dev.modmind.kunjinkao.network.HudTrueInvisibilityVisualPayload;
 import dev.modmind.kunjinkao.network.OverwriteEffectPayload;
+import dev.modmind.kunjinkao.network.QolStatePayload;
 import dev.modmind.kunjinkao.network.SwordDrawAnimationPayload;
 import dev.modmind.kunjinkao.network.TimeAccelStatusPayload;
 import net.minecraft.client.Minecraft;
@@ -68,6 +70,9 @@ public final class ClientPayloadHandlers {
             } else if (payload instanceof TimeAccelStatusPayload status) {
                 // 服务端心跳式推来的加速场快照：存下来，由 TimeAccelOverlayRenderer 画悬浮提示。
                 TimeAccelClientState.accept(status.entries());
+            } else if (payload instanceof QolStatePayload state) {
+                // 功能面板的一行状态：存进客户端镜像，打开着的面板每帧自己读。
+                QolClientState.accept(state);
             }
         });
     }
