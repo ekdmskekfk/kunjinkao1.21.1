@@ -66,7 +66,8 @@ public final class KunJinKaoEntry {
         // 选区作业（127）的框选：木棍右键设角点。与上面那个面板处理器分开注册，
         // 是因为它只订阅交互事件、也不参与面板的任何判定。
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.ZoneSelectionHandler());
-        NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.KunJinKaoXpBoostHandler());
+        // 经验飞涨原来在这里注册了一个独立处理器（击杀经验倍率）。改成「每 tick 加一级」之后
+        // 它变成挂在玩家 tick 上的被动效果，已经并进 KunJinKaoQolHandler，处理器本身删掉了。
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.KunJinKaoAnvilHandler());
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.KunJinKaoTradeHandler());
         NeoForge.EVENT_BUS.register(AdminSwordCraftingHandler.class);

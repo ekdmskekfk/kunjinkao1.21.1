@@ -464,6 +464,9 @@ public final class KunJinKaoQolHandler {
             return;
         }
         int tick = player.tickCount;
+        // 经验飞涨每 tick 都要给，所以它不放在下面那些"每 20 tick 校正一次"的分支里。
+        // 它没有需要维持的状态，就是"开着就一直给"，因此也不需要校正。
+        applyXpRain(player);
         if (tick % RECONCILE_INTERVAL == 0) {
             applyWaterBreath(player);
             applyVillageHero(player);
@@ -535,16 +538,19 @@ public final class KunJinKaoQolHandler {
             case WATER_BREATH -> applyWaterBreath(player);
             case VILLAGE_HERO -> applyVillageHero(player);
             case REACH -> reconcileReach(player);
+            // 经验飞涨：没有"挂上去"的状态要维持，但开关一打开就立刻给一级 ——
+            // 等下一个 tick 再给也不会错，只是玩家点完开关要愣一下才看到数字动。
+            case XP_BOOST -> applyXpRain(player);
             // 下面这些没有"挂到玩家身上"的动作：
             //   83 凌空采掘 由 SwordMiningPenaltyHandler 现查现用；
             //   84 烈焰不侵 由 EntityFireImmuneMixin 现查现用；
             //   70 万载不磨 由 ItemStackDurabilityMixin 现查现用；
             //   94/95 只在交易发生的那一刻判定；
-            //   72/77 是服务器级，值在 toml 里，消费方各自去读。
+            //   77 与 127 的其余项是服务器级，值在 toml 里，消费方各自去读。
             // 保留这些分支而不是删掉，是为了让"新增一项时该不该写生效逻辑"这个问题
             // 在编译期就逼着人想一遍 —— 枚举加了项而这里没加，switch 会报错。
             case FLY_MINING, FIRE_IMMUNE, UNLIMITED_TRADES, VILLAGER_MASTER,
-                 XP_BOOST, ANVIL_UNBREAKABLE, ANVIL_XP_COST, DURABILITY_PROTECTION,
+                 ANVIL_UNBREAKABLE, ANVIL_XP_COST, DURABILITY_PROTECTION,
                  MACHINE_LOOT, FOG_VISION, TREASURE_HUNTER_SERVER, TREASURE_HUNTER_RADIUS,
                  TREASURE_HUNTER, ZONE_EXCAVATE_SERVER, ZONE_MAX_SIDE, ZONE_DROP_POLICY,
                  ZONE_TICK_BUDGET, ZONE_BATCH_SIDE, ZONE_UNDO_MAX,
@@ -552,6 +558,22 @@ public final class KunJinKaoQolHandler {
                  ZONE_BREAK, ZONE_PLACE -> {
             }
         }
+    }
+
+    /**
+     * 经验飞涨（72）：开着的时候每一 tick 直接加一个经验等级。
+     * <p>
+     * <b>不走"给经验点"那条路。</b> {@code giveExperiencePoints} 要按等级曲线折算，
+     * 而"每 tick 一级"是直接改等级计数 —— 用前者的话这个效果的强度会随等级升高而急剧衰减，
+     * 表现成"一开始涨得飞快、后来几乎不动"，与"每 tick 一级"这句话对不上。
+     * <p>
+     * 也不做上限：这是管理员工具，想停就关掉开关。每秒 20 级，开着不管一分钟就是 1200 级。
+     */
+    private static void applyXpRain(ServerPlayer player) {
+        if (!isOn(player, QolSetting.XP_BOOST)) {
+            return;
+        }
+        player.giveExperienceLevels(1);
     }
 
     /**

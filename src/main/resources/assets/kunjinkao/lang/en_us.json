@@ -217,7 +217,7 @@
   "screen.kunjinkao.qol.treasure_hunter.desc": "Draws through-wall highlight boxes on chests, barrels, spawners, suspicious sand and similar containers within the radius.",
   "screen.kunjinkao.qol.fog_vision.desc": "Pushes the fog back underwater and in lava so you can see further. May conflict with shaders; turn this off first if the screen looks wrong.",
   "screen.kunjinkao.qol.machine_loot.desc": "Drop multiplier for kills made by fake players (simulated-player machines). 1 = vanilla. Only works for machines using the NeoForge fake player.",
-  "screen.kunjinkao.qol.xp_boost.desc": "Multiplies experience from kills. 1 = vanilla. Kills only; mining and smelting XP are unchanged.",
+  "screen.kunjinkao.qol.xp_boost.desc": "While on, grants one experience level every tick (20 levels per second). It no longer affects kill XP; it is a pure self-buff.",
   "screen.kunjinkao.qol.anvil_unbreakable.desc": "Put two identical items in an anvil to combine them into an Unbreakable result.",
   "screen.kunjinkao.qol.anvil_xp_cost.desc": "How many experience levels that combination costs.",
   "screen.kunjinkao.qol.treasure_hunter_server.desc": "Server master switch for Treasure Hunter. When off, nobody can use it and personal toggles stop working.",

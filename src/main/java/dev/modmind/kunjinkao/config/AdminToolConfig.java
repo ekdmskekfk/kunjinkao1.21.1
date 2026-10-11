@@ -112,9 +112,8 @@ public final class AdminToolConfig {
     /** 服务器级项在 toml 里的说明。写中文是因为服主看到的就是这个文件。 */
     private static String[] serverSettingComment(QolSetting setting) {
         return switch (setting) {
-            case XP_BOOST -> new String[]{
-                    " 经验飞涨（72）：击杀获得的经验乘这个倍率。1 = 原版，最大 101。",
-                    " 面板里由 OP 调整；直接编辑本文件效果相同。"};
+            // 经验飞涨（72）原来在这里有一项倍率配置，改成「每 tick 加一级」之后它变成
+            // 个人级开关（存在玩家存档里），不再是服务器级项，所以这里没有它的分支。
             case ANVIL_UNBREAKABLE -> new String[]{
                     " 不朽铭文（77）：铁砧里放两个相同物品，合出【无法破坏】的成品。",
                     " 1 = 开启，0 = 关闭。"};

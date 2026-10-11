@@ -23,8 +23,17 @@ public enum QolSetting {
     /** 89 长臂善舞：方块交互与实体交互距离各 +N 格，上限由服务器配置压。 */
     REACH(4, 89, Category.CONVENIENCE, Scope.PERSONAL, Kind.NUMBER, 0, 64, 0, ""),
 
-    /** 72 经验飞涨：击杀获得的经验乘这个倍率。1 = 原版。 */
-    XP_BOOST(5, 72, Category.INCOME, Scope.SERVER, Kind.NUMBER, 1, 101, 1, "xpBoostMultiplier"),
+    /**
+     * 72 经验飞涨：开着的时候，<b>每一 tick 直接加一个经验等级</b>（每秒 20 级）。
+     * <p>
+     * 它原来是"击杀经验乘一个服务器级倍率"，改成逐 tick 给等级之后，性质变了：
+     * 不再是"改变掉落规则"，而是"挂在玩家身上的被动效果"，所以<b>作用域也从服务器级改成个人级</b>。
+     * 单机玩时两者表现一样，但多人服上原来的写法会让全服一起刷级 ——
+     * 那不是"经验飞涨"，那是全服事件。
+     * <p>
+     * 没有倍率参数可调了：这个效果的强度就是"每 tick 一级"，给个倍率只是把同一件事换个说法。
+     */
+    XP_BOOST(5, 72, Category.INCOME, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, ""),
     /** 77 不朽铭文：铁砧里两个相同物品合出【无法破坏】。 */
     ANVIL_UNBREAKABLE(6, 77, Category.INCOME, Scope.SERVER, Kind.TOGGLE, 0, 1, 0, "anvilUnbreakableEnabled"),
     /** 77 的成本：上面那个开关生效时，铁砧收多少级经验。 */
@@ -342,17 +351,18 @@ public enum QolSetting {
     /**
      * 允许出现在面板上的服务器级项（白名单）。
      * <p>
-     * 选这三项的标准是"改了要立刻看到效果"：
+     * 选这两项的标准是"改了要立刻看到效果"：
      * <ul>
-     *   <li>{@link #XP_BOOST} 经验倍率 —— 调完马上打一只怪就知道合不合适；</li>
      *   <li>{@link #ANVIL_UNBREAKABLE} 不朽铭文开关 —— 现场开一下、拿两个物品试一次；</li>
      *   <li>{@link #ZONE_DROP_POLICY} 选区掉落策略 —— 挖之前先确认东西往哪去，
      *       挖完才发现进了销毁就晚了。</li>
      * </ul>
      * 其余服务器级项（总闸、上限、预算这些）是"设定一次就不动"的，留在配置文件里更合适。
+     * <p>
+     * 经验飞涨原来也在这份名单里，它改成个人级之后就不需要了 —— 个人级本来就上面板。
      */
     private static final QolSetting[] SERVER_ROWS_ON_PANEL = {
-            XP_BOOST, ANVIL_UNBREAKABLE, ZONE_DROP_POLICY
+            ANVIL_UNBREAKABLE, ZONE_DROP_POLICY
     };
 
     /**

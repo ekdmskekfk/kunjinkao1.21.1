@@ -217,7 +217,7 @@
   "screen.kunjinkao.qol.treasure_hunter.desc": "把半径内的箱子、木桶、刷怪笼、可疑的沙砾等用穿透方块的高亮框标出来。",
   "screen.kunjinkao.qol.fog_vision.desc": "在水下与岩浆里把雾推开，能看清远处。与光影可能冲突，画面异常时先关掉它试试。",
   "screen.kunjinkao.qol.machine_loot.desc": "假玩家（模拟玩家机器）击杀生物时的掉落倍率。1 = 原版。只对使用 NeoForge 假玩家的机器有效，不保证所有机器都吃得到。",
-  "screen.kunjinkao.qol.xp_boost.desc": "击杀生物获得的经验乘以这个倍率。1 = 原版。只影响击杀，挖矿与烧炼的经验不变。",
+  "screen.kunjinkao.qol.xp_boost.desc": "开着的时候，每一 tick 直接加一个经验等级（每秒 20 级）。不再影响击杀经验，是一个纯粹的自我加成。",
   "screen.kunjinkao.qol.anvil_unbreakable.desc": "铁砧里左右放两个完全相同的物品，合出带「无法破坏」的成品。",
   "screen.kunjinkao.qol.anvil_xp_cost.desc": "上面那个合成收多少级经验。",
   "screen.kunjinkao.qol.treasure_hunter_server.desc": "寻宝大师的服务器总闸。关掉后所有人都用不了，个人开关也会失效。",
