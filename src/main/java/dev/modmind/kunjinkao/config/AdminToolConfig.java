@@ -90,8 +90,10 @@ public final class AdminToolConfig {
         QOL_REACH_MAX_BLOCKS = builder
                 .comment(" 长臂善舞（89）交互距离加成的服务器上限（单位：格）。",
                         " 同时作用于方块交互距离与实体交互距离。",
+                        " 默认给到 64（本项上限）：这是管理员工具，不是平衡性调整，",
+                        " 卡在 8 格只会让人每次都得回来改一次。",
                         " 设为 0 等于全服禁用这一项。")
-                .defineInRange("reachMaxBlocks", 8, 0, 64);
+                .defineInRange("reachMaxBlocks", 64, 0, 64);
         // 服务器级设定项：本项自己就是"值"，同时只有 OP 能在面板里改。
         // 键名与取值范围都从 QolSetting 取，免得这里和枚举各写一份范围、改一处漏一处。
         for (QolSetting setting : QolSetting.values()) {

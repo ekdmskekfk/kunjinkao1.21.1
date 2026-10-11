@@ -102,7 +102,7 @@ public enum QolSetting {
      * 塞不下的那部分再按 0 的方式进背包。于是没装 AE2 的服务器上这一项与 0 表现完全一致，
      * 服主不必为「有没有 AE2」准备两套配置。
      */
-    ZONE_DROP_POLICY(19, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 0, 3, 0, "zoneDropPolicy"),
+    ZONE_DROP_POLICY(19, 127, Category.ENGINEERING, Scope.SERVER, Kind.CHOICE, 0, 3, 0, "zoneDropPolicy"),
     /**
      * 127 每 tick 的时间预算（毫秒）。作业按它分批，保证 MSPT 不被一次挖穿地形拉爆。
      * <p>
@@ -314,19 +314,46 @@ public enum QolSetting {
     /**
      * 这一项要不要出现在 G 键面板里。
      * <p>
-     * <b>服务器级项不出现在面板上</b>，它们只活在 {@code config/kunjinkao-admin.toml} 的
-     * {@code [qol]} 分节里。理由是两种东西混在一张列表里看着像同一种：
-     * 面板上的行点一下就改，而这些行改了是写进服务器配置、影响所有人的 ——
-     * 放在一起，玩家会以为"我关了寻宝大师"只是关自己的。
-     * 分开之后面板只管家自己的事，服主要调服务器规则就去改配置文件，
-     * 边界一眼看得清。
+     * 默认规则是<b>服务器级项不上面板</b>：它们只活在 {@code config/kunjinkao-admin.toml} 的
+     * {@code [qol]} 分节里。理由是两种东西混在一张列表里看着像同一种 ——
+     * 面板上的行点一下就改，而那些行改了是写进服务器配置、影响所有人的，
+     * 放在一起玩家会以为"我关了寻宝大师"只是关自己的。
      * <p>
-     * 枚举里仍然保留这些项，因为它们同时承担"配置键的定义"这个职责
+     * <b>但有三项例外，见 {@link #SERVER_ROWS_ON_PANEL}。</b> 它们都是"服主自己会边玩边调"的
+     * 旋钮，每次改都要退出去编辑文件、再回来重载，代价明显大于"混在一张表里"的那点混淆风险。
+     * 例外是白名单、不是"服务器级都行"：新加服务器级项时默认仍然不上面板，
+     * 要想清楚它是不是真的需要现场调。
+     * <p>
+     * 枚举里保留全部服务器级项，因为它们同时承担"配置键的定义"这个职责
      * （见 {@code AdminToolConfig} 里的 {@code [qol]} 分节是照它们生成的）。
      */
     public boolean panelVisible() {
-        return scope == Scope.PERSONAL;
+        if (scope == Scope.PERSONAL) {
+            return true;
+        }
+        for (QolSetting allowed : SERVER_ROWS_ON_PANEL) {
+            if (allowed == this) {
+                return true;
+            }
+        }
+        return false;
     }
+
+    /**
+     * 允许出现在面板上的服务器级项（白名单）。
+     * <p>
+     * 选这三项的标准是"改了要立刻看到效果"：
+     * <ul>
+     *   <li>{@link #XP_BOOST} 经验倍率 —— 调完马上打一只怪就知道合不合适；</li>
+     *   <li>{@link #ANVIL_UNBREAKABLE} 不朽铭文开关 —— 现场开一下、拿两个物品试一次；</li>
+     *   <li>{@link #ZONE_DROP_POLICY} 选区掉落策略 —— 挖之前先确认东西往哪去，
+     *       挖完才发现进了销毁就晚了。</li>
+     * </ul>
+     * 其余服务器级项（总闸、上限、预算这些）是"设定一次就不动"的，留在配置文件里更合适。
+     */
+    private static final QolSetting[] SERVER_ROWS_ON_PANEL = {
+            XP_BOOST, ANVIL_UNBREAKABLE, ZONE_DROP_POLICY
+    };
 
     /**
      * 选项类项的取值名翻译键，形如 {@code <名称键>.value0}。
