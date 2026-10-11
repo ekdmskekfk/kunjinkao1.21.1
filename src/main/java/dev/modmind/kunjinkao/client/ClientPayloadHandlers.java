@@ -16,6 +16,7 @@ import dev.modmind.kunjinkao.network.OverwriteEffectPayload;
 import dev.modmind.kunjinkao.network.QolStatePayload;
 import dev.modmind.kunjinkao.network.SwordDrawAnimationPayload;
 import dev.modmind.kunjinkao.network.TimeAccelStatusPayload;
+import dev.modmind.kunjinkao.network.WandPreviewResultPayload;
 import dev.modmind.kunjinkao.network.ZoneStatusPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -61,6 +62,8 @@ public final class ClientPayloadHandlers {
                 TacticalHudInvisibilityVisualState.setTrueInvisible(state.playerUuid(), state.enabled());
             } else if (payload instanceof HudShieldHitPayload hit) {
                 ShieldHitVisualState.trigger(hit.playerUuid(), hit.relativeImpactYaw(), hit.impactHeight());
+            } else if (payload instanceof WandPreviewResultPayload preview) {
+                WandPreviewRenderer.accept(preview.seq(), preview.positions());
             } else if (payload instanceof AdminEyeStatePayload eye) {
                 AdminEyeVisualState.setEnabled(eye.playerUuid(), eye.enabled());
             } else if (payload instanceof SwordDrawAnimationPayload animation) {

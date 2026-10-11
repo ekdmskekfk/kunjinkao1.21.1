@@ -23,7 +23,9 @@ public final class NetworkHandler {
     // 旧客户端按执行键会被新服务端当成"破坏" —— 不崩，但行为静默地不是他要的那个。
     // 27 提到 28：新增选区缩放的 C2S 包（ZoneAdjustPayload，木棍 + Shift + 滚轮）。
     // 注册表变了，线格式也新增了一条：旧客户端不认识这条注册，必须在握手时就被挡下。
-    public static final String PROTOCOL_VERSION = "28";
+    // 28 提到 29：新增建筑手杖预览两条包（WandPreviewRequestPayload C2S / WandPreviewResultPayload S2C），
+    // 注册表又变了。**只要动注册表就必须再 +1**，否则新旧端会握手成功然后解码错位。
+    public static final String PROTOCOL_VERSION = "29";
 
     private NetworkHandler() {
     }
@@ -80,6 +82,11 @@ public final class NetworkHandler {
         reg.playToClient(ZoneStatusPayload.TYPE, ZoneStatusPayload.STREAM_CODEC, ZoneStatusPayload::handle);
         // 选区作业（127）：缩放请求（C2S）。木棍 + Shift + 滚轮，服务端按玩家朝向决定轴向与正负。
         reg.playToServer(ZoneAdjustPayload.TYPE, ZoneAdjustPayload.STREAM_CODEC, ZoneAdjustPayload::handle);
+        // 建筑手杖预览：客户端报"看着哪一格"，服务端算完把坐标发回来（内容由 WandJob 决定）。
+        reg.playToServer(WandPreviewRequestPayload.TYPE, WandPreviewRequestPayload.STREAM_CODEC,
+                WandPreviewRequestPayload::handle);
+        reg.playToClient(WandPreviewResultPayload.TYPE, WandPreviewResultPayload.STREAM_CODEC,
+                WandPreviewResultPayload::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {

@@ -13,6 +13,7 @@ import dev.modmind.kunjinkao.qol.QolSetting;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,6 +52,23 @@ public final class AdminToolConfig {
      * 在这里再抄一遍字段就是三处维护同一件事。以后加服务器级功能只要往枚举里加一项。
      */
     private static final Map<QolSetting, ModConfigSpec.IntValue> QOL_SERVER = new EnumMap<>(QolSetting.class);
+
+    /**
+     * 建筑手杖（对齐 Construction Wand KOTS 的 ConfigServer）。
+     * <p>
+     * 这些量控制手杖一次能作用多大一片、能伸多远、哪些带方块实体的方块不许碰、
+     * 以及 match=SIMILAR 时哪些方块算同一种。默认值与参考实现保持一致，
+     * 只有两个例外写在注释里（放置上限与破坏上限按用户要求取 1024）。
+     */
+    private static final ModConfigSpec.IntValue WAND_PLACE_LIMIT;
+    private static final ModConfigSpec.IntValue WAND_DESTROY_LIMIT;
+    private static final ModConfigSpec.IntValue WAND_ANGEL_DISTANCE;
+    private static final ModConfigSpec.BooleanValue WAND_ANGEL_FALLING;
+    private static final ModConfigSpec.IntValue WAND_CREATIVE_LIMIT;
+    private static final ModConfigSpec.IntValue WAND_MAX_RANGE;
+    private static final ModConfigSpec.BooleanValue WAND_TE_WHITELIST;
+    private static final ModConfigSpec.ConfigValue<List<? extends String>> WAND_TE_LIST;
+    private static final ModConfigSpec.ConfigValue<List<? extends String>> WAND_SIMILAR_BLOCKS;
 
     private static final Logger LOGGER = LogManager.getLogger("KunJinKao");
 
@@ -105,6 +123,46 @@ public final class AdminToolConfig {
                     .defineInRange(setting.configKey(), setting.defaultValue(),
                             setting.min(), setting.hardMax()));
         }
+        builder.pop();
+        builder.push("wand");
+        WAND_PLACE_LIMIT = builder
+                .comment(" 建筑手杖一次最多放置多少格。",
+                        " 参考实现的无限手杖是 1024，这里默认沿用同一口径。")
+                .defineInRange("placeLimit", 1024, 1, 4096);
+        WAND_DESTROY_LIMIT = builder
+                .comment(" 破坏核心一次最多破坏多少格。",
+                        " 设为 0 等于关闭破坏核心（对齐参考实现的 destruction=0）。")
+                .defineInRange("destroyLimit", 1024, 0, 4096);
+        WAND_ANGEL_DISTANCE = builder
+                .comment(" 天使核心最多能往方块背面穿透几格去找落脚点。",
+                        " 对齐参考实现每根手杖各自的 angel 值（0 = 关闭天使核心）。")
+                .defineInRange("angelDistance", 16, 0, 128);
+        WAND_ANGEL_FALLING = builder
+                .comment(" true = 下落超过 10 格时也允许天使核心往脚下放方块。",
+                        " 参考实现默认关闭（false），打开等于允许拿它从虚空里自救。")
+                .define("angelFalling", false);
+        WAND_CREATIVE_LIMIT = builder
+                .comment(" 创造模式下建筑手杖的放置上限。",
+                        " 对齐参考实现的 InfinityWandCreative（默认 2048）。")
+                .defineInRange("creativePlaceLimit", 2048, 1, 8192);
+        WAND_MAX_RANGE = builder
+                .comment(" 放置与破坏的最大距离（格）。0 = 不限。",
+                        " 参考实现里这一项是防卡顿用的，不是平衡性调整。")
+                .defineInRange("maxRange", 100, 0, 512);
+        WAND_TE_LIST = builder
+                .comment(" 带方块实体的方块名单：可以写方块 id（minecraft:chest），也可以写模组 id（minecraft）。",
+                        " 与 teWhitelist 配合，决定这些方块能不能被手杖放置或破坏。")
+                .defineList("teList", List.of("chiselsandbits"), value -> value instanceof String);
+        WAND_TE_WHITELIST = builder
+                .comment(" true = 上面的名单是白名单（只有名单里的允许），false = 黑名单（名单里的禁止）。")
+                .define("teWhitelist", false);
+        WAND_SIMILAR_BLOCKS = builder
+                .comment(" match=SIMILAR 时视为同种的方块组。一组写一行，组内用分号隔开，例如：",
+                        " minecraft:dirt;minecraft:grass_block;minecraft:coarse_dirt")
+                .defineList("similarBlocks", List.of(
+                                "minecraft:dirt;minecraft:grass_block;minecraft:coarse_dirt;minecraft:podzol;"
+                                        + "minecraft:mycelium;minecraft:farmland;minecraft:dirt_path;minecraft:rooted_dirt"),
+                        value -> value instanceof String);
         builder.pop();
         COMMON_SPEC = builder.build();
     }
@@ -209,6 +267,69 @@ public final class AdminToolConfig {
             return value.get();
         } catch (IllegalStateException notLoadedYet) {
             return fallback;
+        }
+    }
+
+    // ===================== 建筑手杖 =====================
+
+    /** 建筑手杖单次放置上限。 */
+    public static int wandPlaceLimit() {
+        return intOrDefault(WAND_PLACE_LIMIT, 1024);
+    }
+
+    /** 破坏核心单次破坏上限。0 表示关闭破坏核心。 */
+    public static int wandDestroyLimit() {
+        return intOrDefault(WAND_DESTROY_LIMIT, 1024);
+    }
+
+    /** 天使核心的穿透距离。0 表示关闭天使核心。 */
+    public static int wandAngelDistance() {
+        return intOrDefault(WAND_ANGEL_DISTANCE, 16);
+    }
+
+    /** 下落中是否允许天使核心往脚下放方块。 */
+    public static boolean wandAngelFalling() {
+        try {
+            return WAND_ANGEL_FALLING.get();
+        } catch (IllegalStateException notLoadedYet) {
+            return false;
+        }
+    }
+
+    /** 创造模式下的放置上限。 */
+    public static int wandCreativeLimit() {
+        return intOrDefault(WAND_CREATIVE_LIMIT, 2048);
+    }
+
+    /** 手杖的最大作用距离，0 表示不限。 */
+    public static int wandMaxRange() {
+        return intOrDefault(WAND_MAX_RANGE, 100);
+    }
+
+    /** 方块实体名单是不是白名单。 */
+    public static boolean wandTeWhitelist() {
+        try {
+            return WAND_TE_WHITELIST.get();
+        } catch (IllegalStateException notLoadedYet) {
+            return false;
+        }
+    }
+
+    /** 方块实体名单（方块 id 或模组 id）。 */
+    public static List<? extends String> wandTeList() {
+        try {
+            return WAND_TE_LIST.get();
+        } catch (IllegalStateException notLoadedYet) {
+            return List.of();
+        }
+    }
+
+    /** 同类方块组：一组一行，组内用分号隔开。 */
+    public static List<? extends String> wandSimilarBlocks() {
+        try {
+            return WAND_SIMILAR_BLOCKS.get();
+        } catch (IllegalStateException notLoadedYet) {
+            return List.of();
         }
     }
 

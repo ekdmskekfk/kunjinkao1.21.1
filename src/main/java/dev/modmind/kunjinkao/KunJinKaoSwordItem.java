@@ -20,7 +20,8 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.UseAnim;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.block.state.BlockState;
-import dev.modmind.kunjinkao.world.PlacementCoreHandler;
+import dev.modmind.kunjinkao.wand.WandCore;
+import dev.modmind.kunjinkao.wand.WandJob;
 import dev.modmind.kunjinkao.world.PlacementUndoHistory;
 import dev.modmind.kunjinkao.world.SwordAreaFields;
 import dev.modmind.kunjinkao.world.SwordPlacementRegistry;
@@ -170,12 +171,14 @@ public class KunJinKaoSwordItem extends SwordItem {
 
     // ===== DataComponent 读写辅助：所有非 CustomModelData 字段都存放在 CUSTOM_DATA 的 NBT 内 =====
 
-    private static CompoundTag dataTag(ItemStack stack) {
+    /** 读剑的 CUSTOM_DATA（副本：改完必须 writeDataTag 写回）。建筑手杖那套选项也走这里。 */
+    public static CompoundTag dataTag(ItemStack stack) {
         CustomData cd = stack.get(DataComponents.CUSTOM_DATA);
         return cd != null ? cd.copyTag() : new CompoundTag();
     }
 
-    private static void writeDataTag(ItemStack stack, CompoundTag tag) {
+    /** 把改好的 CUSTOM_DATA 写回物品。 */
+    public static void writeDataTag(ItemStack stack, CompoundTag tag) {
         stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
     }
 
@@ -750,13 +753,20 @@ public class KunJinKaoSwordItem extends SwordItem {
             // 看起来毫不相干的提示。抢夺等级改由 . 菜单里的滑条（LootingLevelSlider）调节。
             return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
         }
-        // 天使核心：对着空气右键可以在半空放置方块（方块取自副手）。
-        // 官方限制一并保留：副手要有方块，且下落不超过 10 格。
-        if (isAngelCoreEnabled(stack) && PlacementCoreHandler.hasOffhandBlock(player)) {
-            if (!level.isClientSide()) {
-                PlacementUndoHistory.push(player, PlacementCoreHandler.placeInAir(player, level));
+        // 天使核心：对着空气右键可以在半空放置方块。
+        // 落点按参考实现算：眼睛位置 + 视线 × 2；生存模式下落超过 10 格时由动作自己拒绝。
+        if (isAngelCoreEnabled(stack)) {
+            net.minecraft.world.phys.Vec3 look = player.getLookAngle();
+            net.minecraft.world.phys.BlockHitResult miss = net.minecraft.world.phys.BlockHitResult.miss(
+                    look, dev.modmind.kunjinkao.wand.WandUtil.fromVector(look), player.blockPosition());
+            WandJob airJob = new WandJob(player, level, miss, stack);
+            airJob.compute();
+            if (airJob.blockCount() > 0) {
+                if (!level.isClientSide()) {
+                    PlacementUndoHistory.push(player, airJob.execute());
+                }
+                return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
             }
-            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
         }
         // 只有在「没点到方块」时才做范围清除。
         // use() 会在 useOn 返回 PASS 之后被原版调用 —— 也就是说玩家其实是对着方块按的右键。
@@ -822,9 +832,11 @@ public class KunJinKaoSwordItem extends SwordItem {
     }
 
     /**
-     * 放置类核心走这里：右键<b>方块</b>时优先按核心放置。
-     * 没有开启核心（或副手没有方块）时交回原版 —— 原版剑返回 PASS，
-     * 于是继续走 {@link #use} 的范围清除，改动前的行为完全不变。
+     * 放置类核心走这里：右键<b>方块</b>时按当前核心动手。
+     * <p>
+     * 三个核心（破坏 / 天使 / 建筑）共用 {@link WandJob}：先算这次会动哪些格子，再执行。
+     * 一格都算不出来（没有材料、位置不合法、核心被服主关掉）就交回原版 ——
+     * 原版剑返回 PASS，于是继续走 {@link #use}，别的模组的 shift+右键 也不受影响。
      */
     @Override
     public InteractionResult useOn(UseOnContext context) {
@@ -837,30 +849,22 @@ public class KunJinKaoSwordItem extends SwordItem {
         Level level = context.getLevel();
         BlockPos clickedPos = context.getClickedPos();
 
-        // ---- 0) 破坏核心：右键批量破坏，优先于放置 ----
-        // 说明里破坏模式是"右键可批量破坏连续的相同方块"，所以它必须排在放置核心前面，
-        // 否则右键会被建筑手杖截走，表现就是"破坏核心开了却还在放方块"。
-        if (isDestructionCoreEnabled(stack)) {
-            if (!level.isClientSide() && player instanceof net.minecraft.server.level.ServerPlayer) {
-                PlacementUndoHistory.push(player,
-                        PlacementCoreHandler.destroyFrom(player, level, clickedPos, context.getClickedFace()));
+        // ---- 0) 放置类核心：破坏核心 / 天使核心 / 建筑手杖 ----
+        // 三个核心共用同一条 WandJob 流水线（与参考实现一致）：先算出这次会动哪些格子，
+        // 再执行。优先级由 WandCore.active 决定（破坏 > 天使 > 建筑）。
+        // 一格都算不出来就**交回原版**：不吞这次右键，别的模组的 shift+右键 照常可用。
+        if (WandCore.active(stack) != null) {
+            net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(
+                    context.getClickLocation(), context.getClickedFace(), clickedPos, false);
+            WandJob job = new WandJob(player, level, hit, stack);
+            job.compute();
+            if (job.blockCount() > 0) {
+                if (!level.isClientSide()) {
+                    // 这一步的所有改动入撤销栈；破坏不掉落、放置会退物品。
+                    PlacementUndoHistory.push(player, job.execute());
+                }
+                return InteractionResult.sidedSuccess(level.isClientSide());
             }
-            return InteractionResult.sidedSuccess(level.isClientSide());
-        }
-
-        // ---- 1) 放置类核心（建筑手杖 / 天使核心）----
-        // 优先级最高：它们需要副手有方块，条件最明确。
-        boolean angel = isAngelCoreEnabled(stack);
-        boolean wand = isConstructionWandEnabled(stack);
-        if ((angel || wand) && PlacementCoreHandler.hasOffhandBlock(player)) {
-            if (!level.isClientSide()) {
-                // 这一步的所有改动入撤销栈；放置会退物品，空结果不入栈。
-                PlacementUndoHistory.push(player, angel
-                        ? PlacementCoreHandler.placeAngel(player, level, clickedPos, context.getClickedFace())
-                        : PlacementCoreHandler.placeConstructionRow(player, level, clickedPos,
-                                context.getClickedFace()));
-            }
-            return InteractionResult.sidedSuccess(level.isClientSide());
         }
 
         // ---- 2) shift + 右键：加速 ----
@@ -949,17 +953,9 @@ public class KunJinKaoSwordItem extends SwordItem {
         SwordToolHandler.tickBrush(level, player, stack, remainingUseDuration);
     }
 
-    /** 破坏核心：挖掉一格时连带清除面向那一侧的整排方块，且不留掉落。 */
-    @Override
-    public boolean mineBlock(ItemStack stack, Level level, BlockState state, BlockPos pos, LivingEntity miningEntity) {
-        boolean result = super.mineBlock(stack, level, state, pos, miningEntity);
-        if (!level.isClientSide() && !isInert(stack) && isDestructionCoreEnabled(stack)
-                && miningEntity instanceof Player player) {
-            PlacementUndoHistory.push(player, PlacementCoreHandler.destroyRow(player, level, pos));
-        }
-        return result;
-    }
-
+    // 破坏核心原本在这里挂了一个"挖掉一格就顺带清一整排"的钩子。参考实现里没有这个行为 ——
+    // 它的破坏核心只由右键触发，所以按"全部对齐参考实现"的要求把这一段去掉了。
+    // 要恢复的话，入口在 WandCore.DESTRUCTION 的 ActionDestruction。
     private static int clearAreaTargets(ServerLevel level, Player player, ItemStack stack, AreaClearTargetMode mode) {
         double halfWidth = 50.0D;
         AABB area = new AABB(player.getX() - halfWidth, level.getMinBuildHeight(), player.getZ() - halfWidth,
