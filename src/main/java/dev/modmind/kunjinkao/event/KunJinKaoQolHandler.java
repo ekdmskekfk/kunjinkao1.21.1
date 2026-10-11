@@ -267,6 +267,87 @@ public final class KunJinKaoQolHandler {
         }
     }
 
+    /**
+     * 缩放当前选区：木棍 + Shift + 滚轮。
+     * <p>
+     * <b>轴向与正负由服务端按玩家朝向算，不信客户端。</b> 客户端只发「往上滚了几格」，
+     * 这里取 {@code getLookAngle()}：绝对值最大的那个分量决定动哪根轴，
+     * 它的正负决定动哪一侧 —— 抬头看 = 往上扩、低头看 = 往下扩，朝 +X 看 = 往 +X 扩，
+     * 上/下/左/右/前/后都从这一条规则里自然长出来，不需要为每个方向各写一个分支。
+     * <p>
+     * 权限与总闸复用 {@link #canUseZoneExcavation}：缩放改的是同一块选区，
+     * 判定标准必须和执行键完全一致，否则会出现「框得动、挖不动」或者反过来。
+     * <p>
+     * <b>作业在跑时不让改。</b> 选区在 {@code ZoneExcavationJob.start} 那一刻就已经快照进作业了，
+     * 这时改角点只会让屏幕上的框和实际在挖的范围变成两回事 —— 玩家看着框调整，
+     * 以为挖的是新范围，实际挖的还是旧范围。
+     *
+     * @param delta 滚轮格数：正数扩大、负数缩小
+     */
+    public static void handleZoneAdjust(Player source, int delta) {
+        if (!(source instanceof ServerPlayer player) || !canUseZoneExcavation(player)) {
+            return;
+        }
+        if (delta == 0) {
+            return;
+        }
+        if (ZoneExcavationJob.isRunning(player)) {
+            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_busy"), true);
+            return;
+        }
+
+        Vec3 look = player.getLookAngle();
+        double absX = Math.abs(look.x);
+        double absY = Math.abs(look.y);
+        double absZ = Math.abs(look.z);
+        int axis;
+        double along;
+        if (absY >= absX && absY >= absZ) {
+            // 抬头看天 = 往上扩、低头看地 = 往下扩。俯仰优先于水平，是因为「往上抬一点」
+            // 在屏幕上就是高度在变，而水平分量此刻本来就很小。
+            axis = ZoneSelection.AXIS_Y;
+            along = look.y;
+        } else if (absX >= absZ) {
+            axis = ZoneSelection.AXIS_X;
+            along = look.x;
+        } else {
+            axis = ZoneSelection.AXIS_Z;
+            along = look.z;
+        }
+        // 被选中的分量不可能为 0（除非朝向向量整个是零向量），真出现 0 时按正向算，
+        // 至少给出一个确定的行为而不是随机的。
+        int direction = along < 0.0D ? -1 : 1;
+
+        ZoneSelection.AdjustResult result = ZoneSelection.adjust(player, axis, direction, delta);
+        switch (result) {
+            case NO_CORNERS -> {
+                player.displayClientMessage(
+                        Component.translatable("message.kunjinkao.zone_adjust_need_corners"), true);
+                return;
+            }
+            case TOO_BIG -> {
+                // 报出上限本身：只说「太大了」的话，玩家会以为是自己滚得太快，
+                // 于是继续滚、继续被拒，而真正的原因（服务器的单边上限）他看不到。
+                player.displayClientMessage(Component.translatable(
+                        "message.kunjinkao.zone_adjust_too_big",
+                        AdminToolConfig.qolServerValue(QolSetting.ZONE_MAX_SIDE)), true);
+                return;
+            }
+            case OK -> {
+            }
+        }
+
+        ZoneSelection.Corners corners = currentCorners(player);
+        if (corners != null && corners.a() != null && corners.b() != null) {
+            player.displayClientMessage(Component.translatable("message.kunjinkao.zone_adjusted",
+                    Math.abs(corners.a().getX() - corners.b().getX()) + 1,
+                    Math.abs(corners.a().getY() - corners.b().getY()) + 1,
+                    Math.abs(corners.a().getZ() - corners.b().getZ()) + 1), false);
+        }
+        // 线框立刻跟着变：不然玩家滚了半天，屏幕上的框还停在旧尺寸，只能靠猜。
+        sendZoneStatus(player);
+    }
+
     /** 权限与总闸。两道都过了才谈得上框选。 */
     private static boolean canUseZoneExcavation(ServerPlayer player) {
         if (AdminToolConfig.qolServerValue(QolSetting.ZONE_EXCAVATE_SERVER) <= 0) {

@@ -6,10 +6,12 @@ import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.network.NetworkHandler;
 import dev.modmind.kunjinkao.network.SimpleActionPayload;
 import dev.modmind.kunjinkao.network.SwordSettingPayload;
+import dev.modmind.kunjinkao.network.ZoneAdjustPayload;
 import dev.modmind.kunjinkao.world.SwordTimeAcceleration;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import dev.modmind.kunjinkao.network.ToggleDisguisePayload;
 import dev.modmind.kunjinkao.network.ToggleOverwritePayload;
 import dev.modmind.kunjinkao.network.ToggleThemePayload;
@@ -208,6 +210,13 @@ public class KunJinKaoClientEvents {
         if (hand == null) {
             return;
         }
+        // 主手是木棍时让给选区缩放（见下面 onZoneScrollAdjust）。
+        // 两条处理器都吃 shift+滚轮，而事件被取消并不会阻止其它监听器 ——
+        // 主手木棍、副手剑、且时间加速开着时，不加这道互斥就会一次滚轮同时改两样东西。
+        // 按主手物品分胜负：手上拿的是木棍，意图就是调整选区。
+        if (player.getMainHandItem().is(Items.STICK)) {
+            return;
+        }
         ItemStack stack = player.getItemInHand(hand);
         if (KunJinKaoSwordItem.getTimeAccelMode(stack) == SwordTimeAcceleration.MODE_OFF) {
             return;
@@ -219,6 +228,43 @@ public class KunJinKaoClientEvents {
         NetworkHandler.sendToServer(new SwordSettingPayload(hand,
                 SwordSettingPayload.TIME_ACCEL_MULTIPLIER, next));
         player.displayClientMessage(Component.translatable("message.kunjinkao.time_accel_multiplier", next), true);
+        event.setCanceled(true);
+    }
+
+    /**
+     * 木棍 + Shift + 滚轮：缩放选区（127）。
+     * <p>
+     * <b>接管条件与上面那条时间加速一样收得很紧。</b> 必须是「没开任何界面 + 按着 shift +
+     * 主手拿着木棍」，只要有一条不满足就完全放行 —— 滚轮首先是切换快捷栏的键，
+     * 本模组没有理由在别的场合把它吃掉。
+     * <p>
+     * <b>满足条件就必须取消事件。</b> 不取消的话，这一下滚轮在把选区放大一格的同时
+     * 还会去切换快捷栏，玩家会看到手里的东西跟着跳。
+     * <p>
+     * 这里只发一个「往上/往下滚了几格」的整数：轴向与正负由服务端按玩家朝向算
+     * （见 {@code KunJinKaoQolHandler#handleZoneAdjust}），客户端说了不算。
+     */
+    @SubscribeEvent
+    public static void onZoneScrollAdjust(InputEvent.MouseScrollingEvent event) {
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        if (minecraft.screen != null || player == null || !player.isShiftKeyDown()) {
+            return;
+        }
+        if (!player.getMainHandItem().is(Items.STICK)) {
+            return;
+        }
+        double scroll = event.getScrollDeltaY();
+        if (scroll == 0.0D) {
+            // 只有横向滚动（触控板的左右滑）时没有「上/下」可谈：放行。
+            // 吃掉它等于把一次根本没打算调整选区的操作变成静默无反应。
+            return;
+        }
+        // 一格滚轮就是 1 格。取整后再兜一个下限：触控板的惯性滚动可能一次只有 0.1，
+        // 四舍五入会变成 0，那样包发出去等于没反应 —— 玩家会以为功能坏了。
+        int steps = Math.min(ZoneAdjustPayload.MAX_STEPS,
+                Math.max(1, (int) Math.round(Math.abs(scroll))));
+        NetworkHandler.sendToServer(new ZoneAdjustPayload(scroll > 0.0D ? steps : -steps));
         event.setCanceled(true);
     }
 

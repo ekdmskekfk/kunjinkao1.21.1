@@ -71,6 +71,14 @@ public final class ZoneExcavationJob {
     public static final int POLICY_DROP = 1;
     /** 掉落策略：直接销毁。 */
     public static final int POLICY_DESTROY = 2;
+    /**
+     * 掉落策略：优先进 AE 网络，塞不下的部分再进背包。
+     * <p>
+     * <b>它是策略 0 的加强版，不是第四种互斥去向。</b> 塞不进 AE 时剩下的那部分走的正是
+     * {@link #POLICY_INVENTORY} 那条路（背包满了就掉在脚下），于是「AE 不在」的服务器上
+     * 这一项与策略 0 的表现完全一致，服主不需要为「没装 AE2」准备第二套配置。
+     */
+    public static final int POLICY_AE_FIRST = 3;
 
     /** 每处理这么多方块检查一次时间预算。每块都看的话，System.nanoTime 自己就成了开销。 */
     private static final int BUDGET_CHECK_INTERVAL = 64;
@@ -109,6 +117,14 @@ public final class ZoneExcavationJob {
         final List<PlacementUndoHistory.Change> undo;
         /** 策略 0 下真正进了背包的东西，撤销时要按这份清单收回来。 */
         final List<ItemStack> granted = new ArrayList<>();
+        /**
+         * 策略 3 下真正塞进 AE 的东西，撤销时要按这份清单从 ME 网络里抽回来。
+         * <p>
+         * <b>与 {@link #granted} 分开记，不能合成一份。</b> 撤销时一个要从背包收、一个要从
+         * 网络里抽，混在一起就不知道该去哪找；而「不回收 AE 那一份」的后果不是少收点东西，
+         * 是撤销直接变成刷物品 —— 地形回来了、东西还在 AE 里，按几次撤销就凭空多几份。
+         */
+        final List<ItemStack> grantedToAe = new ArrayList<>();
         /** 同一 BlockState 的掉落只掷一次骰子。见 processOne 里的说明。 */
         final Map<BlockState, List<ItemStack>> dropCache = new HashMap<>();
         /**
@@ -141,7 +157,8 @@ public final class ZoneExcavationJob {
 
     /** 一次已完成作业的撤销数据。 */
     private record Completed(ServerLevel level, ResourceLocation dimension,
-                             List<PlacementUndoHistory.Change> changes, List<ItemStack> granted) {
+                             List<PlacementUndoHistory.Change> changes, List<ItemStack> granted,
+                             List<ItemStack> grantedToAe) {
     }
 
     public static boolean isRunning(ServerPlayer player) {
@@ -326,7 +343,15 @@ public final class ZoneExcavationJob {
                 continue;
             }
             ItemStack copy = drop.copy();
-            if (policy == POLICY_INVENTORY) {
+            if (policy == POLICY_AE_FIRST) {
+                // 策略 3 只是「先进 AE」这一道前置：塞不进去的部分原样留下来，
+                // 走下面策略 0 那条路进背包 —— 于是 AE 满了不会把东西吞掉。
+                copy = routeToAeFirst(job, player, copy);
+                if (copy.isEmpty()) {
+                    continue;
+                }
+            }
+            if (policy == POLICY_INVENTORY || policy == POLICY_AE_FIRST) {
                 int before = copy.getCount();
                 if (!player.getInventory().add(copy)) {
                     player.drop(copy, false);
@@ -339,6 +364,40 @@ public final class ZoneExcavationJob {
                 Block.popResource(job.level, pos, copy);
             }
         }
+    }
+
+    /**
+     * 策略 3 的第一步：先把掉落物塞进玩家附近的 ME 网络。
+     * <p>
+     * <b>网络列表懒加载、而且与放置模式的取货共用同一份缓存。</b> 扫区块要遍历 32 格半径内
+     * 所有已加载区块的方块实体，按格做一遍就是每格扫一次；一场作业动辄几万格，这一步不能省。
+     * 作业只有一种模式，取货与存货不会同时发生，共用缓存不会互相污染。
+     * <p>
+     * <b>「附近没有网络」只提示一次。</b> 提示放在首次扫描那一次里，是因为这里每格都会走到，
+     * 每格说一句的话，几万条聊天消息会把玩家的屏幕彻底刷没 —— 而那正是他最需要看进度的时候。
+     *
+     * @return 没塞进 AE、还需要另找去处的部分；全塞进去了返回空堆
+     */
+    private static ItemStack routeToAeFirst(Job job, ServerPlayer player, ItemStack stack) {
+        if (!job.aeScanned) {
+            job.aeScanned = true;
+            job.aeStorages = Ae2ZoneSupply.findStorages(job.level, player.position());
+            if (job.aeStorages == null || job.aeStorages.isEmpty()) {
+                // 说清楚「为什么东西进了背包」：玩家选的是策略 3，如果 AE 不可用却不吭声，
+                // 他只会以为这一项没生效。
+                player.displayClientMessage(
+                        Component.translatable("message.kunjinkao.zone_ae_unavailable"), false);
+            }
+        }
+        if (job.aeStorages == null || job.aeStorages.isEmpty()) {
+            return stack;
+        }
+        int leftover = Ae2ZoneSupply.insert(job.aeStorages, stack, player);
+        int inserted = stack.getCount() - leftover;
+        if (inserted > 0) {
+            job.grantedToAe.add(stack.copyWithCount(inserted));
+        }
+        return leftover <= 0 ? ItemStack.EMPTY : stack.copyWithCount(leftover);
     }
 
     /**
@@ -434,11 +493,28 @@ public final class ZoneExcavationJob {
     private static void finish(Job job, ServerPlayer player) {
         JOBS.remove(job.owner);
         if (job.undo != null && !job.undo.isEmpty()) {
-            LAST_COMPLETED.put(job.owner, new Completed(job.level, job.dimension, job.undo, job.granted));
+            LAST_COMPLETED.put(job.owner,
+                    new Completed(job.level, job.dimension, job.undo, job.granted, job.grantedToAe));
+        }
+        // 只在真往 AE 里存了东西时说一句。这一句是策略 3 唯一的「确实生效了」的证据：
+        // 东西直接进了网络，背包里不会多出来，不说的话玩家分不清是存进去了还是被吞了。
+        int aeInserted = countOf(job.grantedToAe);
+        if (aeInserted > 0) {
+            player.displayClientMessage(
+                    Component.translatable("message.kunjinkao.zone_ae_inserted", aeInserted), false);
         }
         player.displayClientMessage(Component.translatable("message.kunjinkao.zone_done", job.total), true);
         LOGGER.info("[Kunjinkao] 选区作业完成：模式 {}，{} 格，玩家 {}",
                 job.mode == MODE_PLACE ? "放置" : "破坏", job.total, player.getName().getString());
+    }
+
+    /** 数一数清单里一共有多少件（不是多少堆）：给玩家看的数字应当是件数。 */
+    private static int countOf(List<ItemStack> stacks) {
+        int total = 0;
+        for (ItemStack stack : stacks) {
+            total += stack.getCount();
+        }
+        return total;
     }
 
     /**
@@ -453,7 +529,8 @@ public final class ZoneExcavationJob {
         JOBS.remove(job.owner);
         if (job.undo != null && !job.undo.isEmpty()) {
             // 填进去的部分照样记撤销：半场作业同样需要能还原。
-            LAST_COMPLETED.put(job.owner, new Completed(job.level, job.dimension, job.undo, job.granted));
+            LAST_COMPLETED.put(job.owner,
+                    new Completed(job.level, job.dimension, job.undo, job.granted, job.grantedToAe));
         }
         player.displayClientMessage(
                 Component.translatable("message.kunjinkao.zone_fill_out_of_items", job.placedCount), false);
@@ -519,6 +596,9 @@ public final class ZoneExcavationJob {
             restored++;
         }
         int missing = revokeGranted(player, completed.granted());
+        // 策略 3 的那一份不在背包里，得回 ME 网络去抽。抽不回来的同样只算「缺失」并如实提示，
+        // 不能因为「反正是管理员」就当作已经收回了 —— 那正是刷物品。
+        missing += revokeAeGranted(player, completed.grantedToAe());
         if (missing > 0) {
             player.displayClientMessage(Component.translatable("message.kunjinkao.zone_undo_partial", missing), true);
         }
@@ -543,6 +623,32 @@ public final class ZoneExcavationJob {
             missing += remaining;
         }
         player.getInventory().setChanged();
+        return missing;
+    }
+
+    /**
+     * 按清单从 ME 网络里收回物品；返回没能收回的件数。
+     * <p>
+     * <b>抽不回来只算缺失，不做任何补救。</b> 东西可能已经被玩家从网络里取走、用掉，
+     * 或者那一张网络已经拆了 —— 这时正确的做法是让地形照常还原、并如实报出少了几件，
+     * 而不是「既然抽不回来就算了」。后者等于把撤销变成刷物品。
+     * <p>
+     * 网络列表只扫一次：清单里可能有几百种掉落物，每种扫一遍区块是几百次全量扫描，
+     * 而撤销本来就是一按到底的操作，不该在它上面再叠几百次扫描。
+     */
+    private static int revokeAeGranted(ServerPlayer player, List<ItemStack> grantedToAe) {
+        if (grantedToAe == null || grantedToAe.isEmpty()) {
+            return 0;
+        }
+        if (!(player.level() instanceof ServerLevel level)) {
+            return countOf(grantedToAe);
+        }
+        List<Object> storages = Ae2ZoneSupply.findStorages(level, player.position());
+        int missing = 0;
+        for (ItemStack want : grantedToAe) {
+            int taken = Ae2ZoneSupply.extractUpTo(storages, want, want.getCount(), player);
+            missing += want.getCount() - taken;
+        }
         return missing;
     }
 

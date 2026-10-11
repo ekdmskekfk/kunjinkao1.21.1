@@ -21,7 +21,9 @@ public final class NetworkHandler {
     // 26 提到 27：选区作业的破坏与放置拆成两条动作 id（7 从"按模式执行"改为专指破坏，新增 9 = 放置）。
     // 包格式没变、注册表也没变，但动作 id 的含义变了：不提版本号的话，
     // 旧客户端按执行键会被新服务端当成"破坏" —— 不崩，但行为静默地不是他要的那个。
-    public static final String PROTOCOL_VERSION = "27";
+    // 27 提到 28：新增选区缩放的 C2S 包（ZoneAdjustPayload，木棍 + Shift + 滚轮）。
+    // 注册表变了，线格式也新增了一条：旧客户端不认识这条注册，必须在握手时就被挡下。
+    public static final String PROTOCOL_VERSION = "28";
 
     private NetworkHandler() {
     }
@@ -76,6 +78,8 @@ public final class NetworkHandler {
         reg.playToClient(QolStatePayload.TYPE, QolStatePayload.STREAM_CODEC, QolStatePayload::handle);
         // 选区作业（127）：选区与进度回执（S2C）。设角点不再走网络（木棍右键在服务端直接处理）。
         reg.playToClient(ZoneStatusPayload.TYPE, ZoneStatusPayload.STREAM_CODEC, ZoneStatusPayload::handle);
+        // 选区作业（127）：缩放请求（C2S）。木棍 + Shift + 滚轮，服务端按玩家朝向决定轴向与正负。
+        reg.playToServer(ZoneAdjustPayload.TYPE, ZoneAdjustPayload.STREAM_CODEC, ZoneAdjustPayload::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {

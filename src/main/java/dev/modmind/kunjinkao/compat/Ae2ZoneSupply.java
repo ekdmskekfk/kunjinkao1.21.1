@@ -17,13 +17,19 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * 选区作业（127）放置模式的最后一级货源：从玩家附近的 ME 网络里抽物品。
+ * 选区作业（127）与 ME 网络之间的两个方向：
+ * <ul>
+ *   <li><b>取</b>（放置模式的最后一级货源）：从玩家附近的 ME 网络里抽物品。</li>
+ *   <li><b>存</b>（破坏模式的掉落策略 3）：把挖出来的东西塞进玩家附近的 ME 网络，
+ *       塞不下的部分再由调用方另找去处。</li>
+ * </ul>
  * <p>
  * <b>实现程度：完整支持。</b> 依据的是 {@code appliedenergistics2-19.2.17}（AE2 的 1.21.1 分支）
  * 的公开 API，方法签名逐个用 javap 从 jar 里核对过，不是照着记忆写的：
  * {@code IInWorldGridNodeHost.getGridNode(Direction)} → {@code IGridNode.getGrid()} →
  * {@code IGrid.getService(IStorageService.class)} → {@code IStorageService.getInventory()} →
- * {@code MEStorage.extract(AEKey, long, Actionable, IActionSource)}。
+ * {@code MEStorage.extract(AEKey, long, Actionable, IActionSource)} 与
+ * {@code MEStorage.insert(AEKey, long, Actionable, IActionSource)}（<b>返回的是没塞进去的余量</b>）。
  * 密钥用 {@code AEItemKey.of(ItemStack)} 现造，动作来源用 {@code IActionSource.ofPlayer(Player)}。
  * <p>
  * 注意 {@code IActionSource} 在 {@code appeng.api.networking.security} 包里，
@@ -33,17 +39,17 @@ import java.util.List;
  * 解析失败（没装 AE2、版本对不上）就永久关掉这条路径，并只记一次日志 ——
  * 每格方块都 ClassNotFound 一次，日志会被刷爆，性能也没了。
  * <p>
- * <b>只从"活着的"网络里取。</b> 取节点后要 {@code isActive()} 为真才用它的存储：
- * 没通电、没连上网的 ME 网络本来就不该被外部抽走东西，把这种情况算成"取不到"，
- * 让作业按缺料停下并如实告诉玩家，而不是绕开 AE2 的能源规则偷偷拿货。
+ * <b>只从「活着的」网络里存取。</b> 取节点后要 {@code isActive()} 为真才用它的存储：
+ * 没通电、没连上网的 ME 网络本来就不该被外部抽走或塞进东西，把这种情况算成「取不到 / 塞不进」，
+ * 让作业按缺料停下、或把货转进背包并如实告诉玩家，而不是绕开 AE2 的能源规则偷偷动手。
  * <p>
- * <b>刻意不走 {@code StorageHelper.poweredExtraction}。</b> 那条路要多解析
- * {@code IEnergyService} / {@code IEnergySource} 两层接口，多一层反射就多一处会随 AE2 版本失效的地方，
- * 而它换来的只是"抽一个方块扣一点 AE"这种量级的效果。这里的取物发生在服务端、由已授权玩家发起，
- * 电量消耗的取舍写在这里，不藏着。
+ * <b>刻意不走 {@code StorageHelper.poweredExtraction} / {@code poweredInsertion}。</b>
+ * 那条路要多解析 {@code IEnergyService} / {@code IEnergySource} 两层接口，多一层反射就多一处
+ * 会随 AE2 版本失效的地方，而它换来的只是「一个方块扣一点 AE」这种量级的效果。
+ * 这里的存取发生在服务端、由已授权玩家发起，电量消耗的取舍写在这里，不藏着。
  * <p>
  * <b>任何异常都不许冒出这个类。</b> 调用方是服务端的作业 tick：一个反射异常漏出去就是服务器崩溃，
- * 而"AE 取不到东西"本来的正确表现只是让作业停下。
+ * 而「AE 取不到东西 / 塞不进去」本来的正确表现只是让作业换个方式继续。
  */
 public final class Ae2ZoneSupply {
 
@@ -77,6 +83,7 @@ public final class Ae2ZoneSupply {
     private static Method getInventory;
     private static Method itemKeyOf;
     private static Method extract;
+    private static Method insert;
     private static Method actionSourceOfPlayer;
     private static Object actionableModulate;
     /** {@code IStorageService} 的类型对象：{@code IGrid.getService} 要拿它当参数。 */
@@ -111,6 +118,15 @@ public final class Ae2ZoneSupply {
             // 取参数类型用 AEKey（接口里声明的那一个），不是 AEItemKey：
             // 拿实现类去找方法会 NoSuchMethodException，而接口方法才是我们真正要调的。
             extract = meStorageClass.getMethod("extract", aeKeyClass, long.class, actionableClass, actionSourceClass);
+            // insert 与 extract 是同一个接口上的两个方法，正常版本一定有。单独兜一层是因为
+            // 万一某个 AE2 版本少了它，不该把已经能用的取物路径一起废掉 —— 挖出来的东西
+            // 退化成进背包是小事，放置模式连货都取不到就是另一回事了。
+            try {
+                insert = meStorageClass.getMethod("insert", aeKeyClass, long.class, actionableClass, actionSourceClass);
+            } catch (NoSuchMethodException insertMissing) {
+                insert = null;
+                LOGGER.info("[Kunjinkao] AE2 的 MEStorage 上没有 insert：掉落策略 3 退化为进背包");
+            }
             actionableModulate = actionableClass.getField("MODULATE").get(null);
         } catch (ClassNotFoundException | NoSuchMethodException | NoSuchFieldException
                  | IllegalAccessException | LinkageError e) {
@@ -204,16 +220,147 @@ public final class Ae2ZoneSupply {
      * "谁动了网络里的东西"的记录。传一个空来源虽然也能抽，但那等于把所有取货都记成匿名操作。
      */
     private static boolean extractOne(Object storage, ItemStack template, ServerPlayer player) {
+        return extractFromOne(storage, template, 1, player) > 0L;
+    }
+
+    /**
+     * 从玩家附近的网络里抽回指定数量的某样东西（撤销时把已经塞进 AE 的那批货收回来）。
+     * <p>
+     * 与取货共用一条通道：撤销要的是「东西回到我手上」，至于它是从哪张网络抽出来的，
+     * 对账目没有影响 —— 同一张地图上的同类物品本来就是可互换的。
+     *
+     * @return 真正抽到的数量，抽不满就是抽不满
+     */
+    public static int extractUpTo(ServerPlayer player, ItemStack want, int amount) {
+        if (want.isEmpty() || amount <= 0) {
+            return 0;
+        }
+        if (!ensureResolved() || !(player.level() instanceof ServerLevel level)) {
+            return 0;
+        }
+        return extractUpTo(findStorages(level, player.position()), want, amount, player);
+    }
+
+    /**
+     * 从指定的网络列表里抽回至多 {@code amount} 个。
+     * <p>
+     * <b>传列表而不是让本方法自己去扫区块。</b> 撤销一份清单里可能有几百种掉落物，
+     * 每种都扫一遍区块是几百次全量扫描；由调用方扫一次、把同一份列表用完，
+     * 是这两个重载存在的唯一理由。
+     *
+     * @return 真正抽到的数量
+     */
+    public static int extractUpTo(List<Object> storages, ItemStack want, int amount, ServerPlayer player) {
+        if (want.isEmpty() || amount <= 0 || storages == null || storages.isEmpty()) {
+            return 0;
+        }
+        if (!ensureResolved()) {
+            return 0;
+        }
+        int remaining = amount;
+        for (Object storage : storages) {
+            if (remaining <= 0) {
+                break;
+            }
+            long got = extractFromOne(storage, want, remaining, player);
+            remaining -= (int) Math.max(0L, Math.min(got, remaining));
+        }
+        return amount - remaining;
+    }
+
+    /**
+     * 从一张网络里抽至多 {@code amount} 个物品。
+     * <p>
+     * {@code extract} 的返回值才是真正拿走的数量：网络里可能只剩半个堆，
+     * 拿返回值记账，别拿请求值记账 —— 那会把没拿到的东西也记成收回来了。
+     */
+    private static long extractFromOne(Object storage, ItemStack template, int amount, ServerPlayer player) {
         Object key = call(itemKeyOf, null, template);
         if (key == null) {
-            return false;
+            return 0L;
         }
         Object source = call(actionSourceOfPlayer, null, player);
         if (source == null) {
-            return false;
+            return 0L;
         }
-        Object amount = call(extract, storage, key, 1L, actionableModulate, source);
-        return amount instanceof Long taken && taken > 0L;
+        Object taken = call(extract, storage, key, (long) amount, actionableModulate, source);
+        return taken instanceof Long got ? Math.max(0L, Math.min(got, amount)) : 0L;
+    }
+
+    // ===================== 存入（掉落策略 3）=====================
+
+    /**
+     * 把一件物品塞进玩家附近的 ME 网络。
+     * <p>
+     * <b>返回值是「没塞进去的数量」，0 表示全塞进去了。</b> 这个方向刻意与
+     * {@code Inventory#add} 的布尔返回值不同：掉落物可能一半进网络、一半进背包，
+     * 只回答「成没成」的话，调用方没有别的办法知道剩下多少，只能自己再算一遍。
+     * <p>
+     * <b>AE2 不在、解析失败、附近没有网络，一律返回整堆数量，不抛异常。</b>
+     * 这条路径是「挖矿时顺手存进 AE」的便利功能，它出问题的正确表现是东西照常进背包，
+     * 而不是让整场作业连带服务器一起崩掉。
+     *
+     * @return 没能塞进 AE 的数量
+     */
+    public static int insert(ServerPlayer player, ItemStack stack) {
+        if (stack.isEmpty()) {
+            return 0;
+        }
+        if (!ensureResolved() || insert == null || !(player.level() instanceof ServerLevel level)) {
+            return stack.getCount();
+        }
+        return insert(findStorages(level, player.position()), stack, player);
+    }
+
+    /**
+     * 把一件物品塞进指定的网络列表，一张一张试到塞完为止。
+     * <p>
+     * 传列表的理由与 {@link #extractUpTo(List, ItemStack, int, ServerPlayer)} 相同：
+     * 调用方（作业）本来就缓存着附近网络的列表，不该为每一格掉落物重扫一遍区块。
+     *
+     * @return 没能塞进 AE 的数量
+     */
+    public static int insert(List<Object> storages, ItemStack stack, ServerPlayer player) {
+        if (stack.isEmpty()) {
+            return 0;
+        }
+        if (!ensureResolved() || insert == null || storages == null || storages.isEmpty()) {
+            return stack.getCount();
+        }
+        int remaining = stack.getCount();
+        for (Object storage : storages) {
+            if (remaining <= 0) {
+                break;
+            }
+            long accepted = insertIntoOne(storage, stack, remaining, player);
+            remaining -= (int) Math.max(0L, Math.min(accepted, remaining));
+        }
+        return remaining;
+    }
+
+    /**
+     * 往一张网络里塞至多 {@code amount} 个物品。
+     * <p>
+     * {@code insert} 的返回值是<b>没塞进去的余量</b>（不是塞进去的数量，方向与
+     * {@code extract} 相反，很容易记反），所以这里要做一次减法。
+     * 网络满了、被分区挡下、被存储总线拒绝，都表现为余量等于请求量，也就是「一个都没进去」，
+     * 于是调用方会接着试下一张网络。
+     */
+    private static long insertIntoOne(Object storage, ItemStack template, int amount, ServerPlayer player) {
+        Object key = call(itemKeyOf, null, template);
+        if (key == null) {
+            return 0L;
+        }
+        Object source = call(actionSourceOfPlayer, null, player);
+        if (source == null) {
+            return 0L;
+        }
+        Object leftover = call(insert, storage, key, (long) amount, actionableModulate, source);
+        if (!(leftover instanceof Long left)) {
+            // 没拿到余量（反射失败、AE2 内部异常）：当作一个都没进去，交给调用方换下家。
+            return 0L;
+        }
+        return Math.max(0L, Math.min((long) amount - left, amount));
     }
 
     /**

@@ -93,12 +93,16 @@ public enum QolSetting {
      */
     ZONE_MAX_SIDE(18, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 1, 512, 512, "zoneMaxSide"),
     /**
-     * 127 的掉落策略：0 = 进玩家背包、1 = 生成掉落物、2 = 直接销毁。
+     * 127 的掉落策略：0 = 进玩家背包、1 = 生成掉落物、2 = 直接销毁、3 = 优先进 AE 网络。
      * <p>
-     * 默认进背包：本工程没有"绑定容器"那套系统，掉一地的东西在 64×64 的作业量下
-     * 既卡服又难捡，直接进背包最省事。想留下"挖矿感"的服主可以改成 1。
+     * 默认进背包：本工程没有「绑定容器」那套系统，掉一地的东西在 64×64 的作业量下
+     * 既卡服又难捡，直接进背包最省事。想留下「挖矿感」的服主可以改成 1。
+     * <p>
+     * 3 是 0 的加强版而不是第四种互斥去向：先往玩家附近的 ME 网络里塞，
+     * 塞不下的那部分再按 0 的方式进背包。于是没装 AE2 的服务器上这一项与 0 表现完全一致，
+     * 服主不必为「有没有 AE2」准备两套配置。
      */
-    ZONE_DROP_POLICY(19, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 0, 2, 0, "zoneDropPolicy"),
+    ZONE_DROP_POLICY(19, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 0, 3, 0, "zoneDropPolicy"),
     /**
      * 127 每 tick 的时间预算（毫秒）。作业按它分批，保证 MSPT 不被一次挖穿地形拉爆。
      * <p>
