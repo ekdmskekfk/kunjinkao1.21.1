@@ -280,20 +280,27 @@ public final class ZoneExcavationJob {
         if (state.isAir() || state.is(BLACKLIST)) {
             return;
         }
-        BlockEntity blockEntity = job.level.getBlockEntity(pos);
 
-        // 掉落骰子按 BlockState 缓存，只在"没有方块实体"时用。
-        // 带方块实体的方块（箱子、桶）掉落取决于里面的东西，按状态缓存会把第一个箱子的
-        // 内容复制给后面所有同状态的箱子 —— 那是刷物品，不是优化。
-        //
-        // 工具一律传主手物品：破坏模式就是"用主手的物品挖"，附魔与时运都按它算。
-        // 有意不扣它的耐久，理由见类注释。
-        List<ItemStack> drops;
-        if (blockEntity == null) {
-            drops = job.dropCache.computeIfAbsent(state,
-                    cached -> Block.getDrops(cached, job.level, pos, null, player, player.getMainHandItem()));
-        } else {
-            drops = Block.getDrops(state, job.level, pos, blockEntity, player, player.getMainHandItem());
+        // 掉落必须在方块消失之前算（方块一没，方块实体与战利品表的判定上下文就跟着没了），
+        // 但"直接销毁"策略下根本不需要掉落 —— 先算一遍再丢掉是纯浪费，
+        // 而 Block.getDrops 会跑一次战利品表，是单格里最贵的一步。
+        List<ItemStack> drops = List.of();
+        if (policy != POLICY_DESTROY) {
+            // 只有"可能带方块实体"的方块才去查：getBlockEntity 每次都要过一遍区块的方块实体表，
+            // 而石头、泥土这些绝大多数方块根本没有方块实体，这一问是白问。
+            BlockEntity blockEntity = state.hasBlockEntity() ? job.level.getBlockEntity(pos) : null;
+            // 掉落骰子按 BlockState 缓存，只在"没有方块实体"时用。
+            // 带方块实体的方块（箱子、桶）掉落取决于里面的东西，按状态缓存会把第一个箱子的
+            // 内容复制给后面所有同状态的箱子 —— 那是刷物品，不是优化。
+            //
+            // 工具一律传主手物品：破坏模式就是"用主手的物品挖"，附魔与时运都按它算。
+            // 有意不扣它的耐久，理由见类注释。
+            if (blockEntity == null) {
+                drops = job.dropCache.computeIfAbsent(state,
+                        cached -> Block.getDrops(cached, job.level, pos, null, player, player.getMainHandItem()));
+            } else {
+                drops = Block.getDrops(state, job.level, pos, blockEntity, player, player.getMainHandItem());
+            }
         }
 
         if (job.undo != null) {
@@ -302,7 +309,14 @@ public final class ZoneExcavationJob {
             job.undo.add(new PlacementUndoHistory.Change(pos.immutable(), state, ItemStack.EMPTY));
         }
 
-        job.level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+        // 只发客户端更新，不做邻居更新 —— 原版那套 3 是"邻居更新 + 客户端更新"。
+        // 邻居更新会为每一格触发 6 次 neighborChanged，红石、观察者、沙砾坠落都跟着连锁；
+        // 挖空一整片时这些连锁毫无意义，却是单格成本里最贵的一块。
+        // 光照不受影响：它在 LevelChunk#setBlockState 里更新（updateSectionStatus 无条件调、
+        // checkBlock 在光照属性变化时调），与 flag 无关 —— 所以不会挖出一个黑窟窿。
+        // 代价是这一片里"依赖邻居"的东西不连锁（悬空沙砾不掉、拉杆不弹），
+        // 而"一次性挖空"要的正是这个：挖完再被沙砾埋回来才是灾难。
+        job.level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
 
         if (policy == POLICY_DESTROY) {
             return;
@@ -351,7 +365,7 @@ public final class ZoneExcavationJob {
             job.undo.add(new PlacementUndoHistory.Change(
                     pos.immutable(), previous, job.template.copyWithCount(1)));
         }
-        job.level.setBlock(pos, job.placedState, 3);
+        job.level.setBlock(pos, job.placedState, Block.UPDATE_CLIENTS);
         job.placedCount++;
         return true;
     }
@@ -501,7 +515,7 @@ public final class ZoneExcavationJob {
                     player.drop(refund, false);
                 }
             }
-            level.setBlock(change.pos(), change.previousState(), 3);
+            level.setBlock(change.pos(), change.previousState(), Block.UPDATE_CLIENTS);
             restored++;
         }
         int missing = revokeGranted(player, completed.granted());

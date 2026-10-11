@@ -99,8 +99,18 @@ public enum QolSetting {
      * 既卡服又难捡，直接进背包最省事。想留下"挖矿感"的服主可以改成 1。
      */
     ZONE_DROP_POLICY(19, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 0, 2, 0, "zoneDropPolicy"),
-    /** 127 每 tick 的时间预算（毫秒）。作业按它分批，保证 MSPT 不被一次挖穿地形拉爆。 */
-    ZONE_TICK_BUDGET(20, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 10, 48, 45, "zoneTickBudgetMs"),
+    /**
+     * 127 每 tick 的时间预算（毫秒）。作业按它分批，保证 MSPT 不被一次挖穿地形拉爆。
+     * <p>
+     * <b>这是"用 TPS 换速度"的那个旋钮。</b> 预算 50 ms 就是"每 tick 花 50 毫秒挖"，
+     * 服务器在这一段时间里只有 10 TPS —— 换算过来就是"每秒只跑 10 帧"。
+     * 上限给到 200（约 5 TPS）是刻意留出来的：单机自己挖地时，
+     * "卡 3 分钟挖完" 比 "流畅地挖 15 分钟" 更合算。
+     * <p>
+     * 先靠降单格成本（去掉邻居更新、跳过不需要的掉落计算）拿速度，
+     * 那个不花 TPS；实在还嫌慢再来调这里。
+     */
+    ZONE_TICK_BUDGET(20, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 10, 200, 45, "zoneTickBudgetMs"),
     /**
      * 127 单批处理的目标方块数。
      * <p>
