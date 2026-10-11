@@ -26,29 +26,48 @@ public record ZoneStatusPayload(boolean hasCornerA, BlockPos cornerA,
     public static final Type<ZoneStatusPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "zone_status"));
 
+    /**
+     * 线格式：<b>定长</b>，每个字段无条件写、无条件读，没有"下一个字段写不写"的分支。
+     * <p>
+     * <b>为什么坚持定长。</b> 0.10.0 那版的格式是"先写一个 hasCornerA，为真才写坐标"，
+     * 解码端为了紧凑写成
+     * {@code new ZoneStatusPayload(buf.readBoolean(), buf.readBoolean() ? buf.readBlockPos() : ...)}。
+     * Java 的构造实参从左到右求值，于是第一个 {@code readBoolean()} 读到的值<b>根本没有任何地方用它</b>，
+     * 第二个参数里的 {@code readBoolean()} 读到的已经是流里的下一个布尔 —— 从这一步起整条流错位，
+     * 表现是进游戏后第一次设角点就被踢出存档（{@code Not enough bytes in buffer}）。
+     * 编码端没错，只有解码端串了，而这类错误编译期看不出来、只有真跑起来才炸。
+     * <p>
+     * 定长之后，"读一个字段"和"写一个字段"是一一对应的，没有岔路，
+     * 也就不存在"两边对不齐"这种可能。代价是最多十几字节的空位。
+     */
     public static final StreamCodec<FriendlyByteBuf, ZoneStatusPayload> STREAM_CODEC =
             StreamCodec.of((buf, p) -> {
                         buf.writeBoolean(p.hasCornerA);
-                        if (p.hasCornerA) {
-                            buf.writeBlockPos(p.cornerA);
-                        }
+                        // 没有角点时也照样写一个坐标：用 ZERO 占位，由 hasCornerA 决定它算不算数。
+                        buf.writeBlockPos(p.cornerA);
                         buf.writeBoolean(p.hasCornerB);
-                        if (p.hasCornerB) {
-                            buf.writeBlockPos(p.cornerB);
-                        }
+                        buf.writeBlockPos(p.cornerB);
                         buf.writeBoolean(p.running);
                         buf.writeVarInt(p.done);
                         buf.writeVarInt(p.total);
-                        buf.writeBoolean(p.dimension != null);
-                        if (p.dimension != null) {
-                            buf.writeResourceLocation(p.dimension);
-                        }
+                        // 维度用空串表示"没有"，而不是再加一个布尔来门控 —— 门控就是上面那个坑。
+                        buf.writeUtf(p.dimension == null ? "" : p.dimension.toString());
                     },
-                    buf -> new ZoneStatusPayload(
-                            buf.readBoolean(), buf.readBoolean() ? buf.readBlockPos() : BlockPos.ZERO,
-                            buf.readBoolean(), buf.readBoolean() ? buf.readBlockPos() : BlockPos.ZERO,
-                            buf.readBoolean(), buf.readVarInt(), buf.readVarInt(),
-                            buf.readBoolean() ? buf.readResourceLocation() : null));
+                    buf -> {
+                        boolean hasCornerA = buf.readBoolean();
+                        BlockPos cornerA = buf.readBlockPos();
+                        boolean hasCornerB = buf.readBoolean();
+                        BlockPos cornerB = buf.readBlockPos();
+                        boolean running = buf.readBoolean();
+                        int done = buf.readVarInt();
+                        int total = buf.readVarInt();
+                        String dimensionId = buf.readUtf();
+                        // 用 tryParse 而不是 parse：这是网络解码路径，一个畸形字符串
+                        // 不该把整条连接打断。解析不出来就当"没有维度"，客户端那边本来也要判空。
+                        return new ZoneStatusPayload(hasCornerA, cornerA, hasCornerB, cornerB,
+                                running, done, total,
+                                dimensionId.isEmpty() ? null : ResourceLocation.tryParse(dimensionId));
+                    });
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }

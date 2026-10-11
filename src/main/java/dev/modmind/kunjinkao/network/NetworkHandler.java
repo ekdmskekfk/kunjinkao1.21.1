@@ -16,7 +16,9 @@ public final class NetworkHandler {
     // 23 提到 24：新增选区挖掘两条包（ZoneSelectPayload C2S / ZoneStatusPayload S2C）。
     // 24 提到 25：框选改用木棍右键（服务端直接接交互事件），ZoneSelectPayload 随之删除，
     // 注册表少了一条 —— 注册表变了就要提版本号，否则持旧包的客户端会在握手之后才炸在解码上。
-    public static final String PROTOCOL_VERSION = "25";
+    // 25 提到 26：ZoneStatusPayload 改成定长线格式（修掉解码端字段错位 —— 那一版只要一设角点
+    // 就会因为"读串了"被踢出存档）。线格式变了，同样必须提版本号。
+    public static final String PROTOCOL_VERSION = "26";
 
     private NetworkHandler() {
     }
