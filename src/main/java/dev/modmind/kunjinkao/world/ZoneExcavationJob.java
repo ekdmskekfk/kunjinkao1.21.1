@@ -3,7 +3,6 @@ package dev.modmind.kunjinkao.world;
 import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.compat.Ae2ZoneSupply;
 import dev.modmind.kunjinkao.config.AdminToolConfig;
-import dev.modmind.kunjinkao.config.QolStateSavedData;
 import dev.modmind.kunjinkao.qol.QolSetting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
@@ -35,8 +34,8 @@ import java.util.UUID;
  *   <li><b>放置</b>（{@link #MODE_PLACE}）：把区域里可替换的位置填上物品，
  *       货源依次是副手、背包、附近的 AE2 ME 网络（见 {@code Ae2ZoneSupply}）。</li>
  * </ul>
- * 模式取自玩家自己的设置（{@link QolSetting#ZONE_MODE}，个人级）。作业一开工就把模式固定下来：
- * 中途改设置不该让同一场作业一半在挖、一半在填。
+ * 模式由调用方在 {@link #start} 时传入（来自玩家按的是破坏键还是放置键）。作业一开工就把它固定下来：
+ * 中途不会有"同一场作业一半在挖、一半在填"这种事 —— 没有"当前模式"这个可变状态可以中途变。
  * <p>
  * 这是全模组唯一一处<b>不可逆</b>改变地形的功能，所以四道保险一道都不能省：
  * 服务器总闸（默认关）、只有通过密码授权的人能用、单边上限、以及执行前的二次确认
@@ -158,9 +157,12 @@ public final class ZoneExcavationJob {
     /**
      * 开始一次作业。调用方必须先确认过权限与二次确认。
      *
+     * @param mode 这次要做什么，见 {@link #MODE_BREAK} / {@link #MODE_PLACE}。
+     *             由调用方按玩家按的是哪个执行键传进来 —— 作业里不再读"当前模式"设置，
+     *             那个设置已经不存在了。
      * @return 是否真的开始（没开始时会自己给玩家发原因）
      */
-    public static boolean start(ServerPlayer player, BlockPos a, BlockPos b) {
+    public static boolean start(ServerPlayer player, BlockPos a, BlockPos b, int mode) {
         if (JOBS.containsKey(player.getUUID())) {
             player.displayClientMessage(Component.translatable("message.kunjinkao.zone_busy"), true);
             return false;
@@ -183,11 +185,8 @@ public final class ZoneExcavationJob {
         }
         int total = (int) totalLong;
 
-        // 模式读玩家自己的设置（个人级）。读不到就按 0 处理，也就是破坏 ——
-        // 默认值本身是 0，这里不额外造第二种含义。
-        int mode = QolStateSavedData.get(player.server).getValue(player.getUUID(), QolSetting.ZONE_MODE)
-                == MODE_PLACE ? MODE_PLACE : MODE_BREAK;
-
+        // 模式由调用方给：它来自玩家按的是哪个执行键，而不是某个"当前模式"设置。
+        // 这样不存在"设置里是放置、手却按成了破坏"这种需要回头确认的状态。
         ItemStack template = ItemStack.EMPTY;
         BlockState placedState = null;
         if (mode == MODE_PLACE) {

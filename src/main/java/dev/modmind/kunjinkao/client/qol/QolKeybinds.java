@@ -14,9 +14,10 @@ import net.minecraft.client.Minecraft;
  * 和选项项都不是"按一下切一下"的东西，给它们各占一个全局按键不划算，
  * 所以哪怕有人手改配置文件把键绑上去了，这里也一律忽略。
  * <p>
- * <b>执行键只对"有执行动作"的项生效</b>，目前就是选区作业（127）那一行：
- * 触发后发的是 {@link SimpleActionPayload#ZONE_EXECUTE}，<b>客户端不判定当前是破坏还是放置</b> ——
- * 模式存在服务端的玩家设置里，客户端按自己的镜像去猜就会出现"界面说放置、服务端在破坏"。
+ * <b>执行键只对"有执行动作"的项生效</b>，目前是选区作业（127）的破坏与放置两行：
+ * 触发后发的是 {@link SimpleActionPayload#ZONE_EXECUTE_BREAK} 或
+ * {@link SimpleActionPayload#ZONE_EXECUTE_PLACE}，<b>客户端不判定该挖还是该填</b> ——
+ * 按的是哪个键就是哪个动作，没有"当前模式"这个中间状态可以猜错。
  * <p>
  * 与 {@code KunJinKaoKeyBindings} 里那些键不同，这些绑定不进原版按键设置界面：
  * 它们属于面板的一部分，在面板里点格子改，改完立刻生效。
@@ -101,8 +102,30 @@ public final class QolKeybinds {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
-        boolean cancel = minecraft.player != null && minecraft.player.isShiftKeyDown();
-        NetworkHandler.sendToServer(new SimpleActionPayload(
-                cancel ? SimpleActionPayload.ZONE_CANCEL : SimpleActionPayload.ZONE_EXECUTE));
+        if (minecraft.player != null && minecraft.player.isShiftKeyDown()) {
+            // 按住 Shift = 取消。取消不区分破坏还是放置：正在跑的作业只有一个。
+            NetworkHandler.sendToServer(new SimpleActionPayload(SimpleActionPayload.ZONE_CANCEL));
+            return;
+        }
+        int actionId = actionIdFor(setting);
+        if (actionId != 0) {
+            NetworkHandler.sendToServer(new SimpleActionPayload(actionId));
+        }
+    }
+
+    /**
+     * 这一行的执行键按下时该发哪个动作 id。
+     * <p>
+     * 映射写在这里，而不是让 {@link QolSetting} 自己带一个动作 id：那会让 qol 包反过来依赖
+     * network 包（现在只有 network 依赖 qol），为一个只有客户端用得上的对应关系绕出循环依赖不划算。
+     * <p>
+     * 返回 0 表示这一行没有可执行的动作 —— 调用方据此不发包，而不是发一个无意义的 id。
+     */
+    private static int actionIdFor(QolSetting setting) {
+        return switch (setting) {
+            case ZONE_BREAK -> SimpleActionPayload.ZONE_EXECUTE_BREAK;
+            case ZONE_PLACE -> SimpleActionPayload.ZONE_EXECUTE_PLACE;
+            default -> 0;
+        };
     }
 }

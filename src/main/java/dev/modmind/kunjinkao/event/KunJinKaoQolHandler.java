@@ -106,8 +106,12 @@ public final class KunJinKaoQolHandler {
     /** 角点最远能设多远（格）。防止改过的客户端把角点设到天边，框出一整片地形。 */
     private static final double ZONE_MAX_CORNER_DISTANCE = 128.0D;
 
-    /** 待确认的执行请求：玩家 UUID -> 第一次按键的时刻。 */
-    private static final Map<UUID, Long> ZONE_PENDING_CONFIRM = new ConcurrentHashMap<>();
+    /** 待确认的执行请求：第一次按的时刻，以及那次请求的是哪种作业。 */
+    private record PendingConfirm(long at, int mode) {
+    }
+
+    /** 待确认的执行请求，按玩家存。 */
+    private static final Map<UUID, PendingConfirm> ZONE_PENDING_CONFIRM = new ConcurrentHashMap<>();
 
     // ===================== 网络入口 =====================
 
@@ -152,14 +156,6 @@ public final class KunJinKaoQolHandler {
         int clamped = QolSettings.clamp(setting, value);
         QolStateSavedData.get(player.server).setValue(player.getUUID(), setting, clamped);
         applyTo(player, setting);
-        if (setting == QolSetting.ZONE_MODE) {
-            // 模式是"下一次按下执行键要干什么"，改完立刻回一句当前是什么：
-            // 选项名写在面板那一行上，可玩家按执行键时通常已经离开面板了。
-            player.displayClientMessage(Component.translatable(
-                    clamped == ZoneExcavationJob.MODE_PLACE
-                            ? "message.kunjinkao.zone_mode_place"
-                            : "message.kunjinkao.zone_mode_break"), true);
-        }
         sendState(player, setting, true);
     }
 
@@ -213,7 +209,7 @@ public final class KunJinKaoQolHandler {
      * 确认文案按当前模式分开：破坏与放置的后果完全不同（一个是地形没了，
      * 一个是材料没了），用同一句话会让玩家在按第二下之前还想确认一次自己选的是哪个。
      */
-    public static void handleZoneExecute(Player source) {
+    public static void handleZoneExecute(Player source, int mode) {
         if (!(source instanceof ServerPlayer player) || !canUseZoneExcavation(player)) {
             return;
         }
@@ -229,20 +225,26 @@ public final class KunJinKaoQolHandler {
             return;
         }
         long now = System.currentTimeMillis();
-        Long firstPress = ZONE_PENDING_CONFIRM.get(player.getUUID());
-        if (firstPress == null || now - firstPress > ZONE_CONFIRM_WINDOW_MS) {
-            ZONE_PENDING_CONFIRM.put(player.getUUID(), now);
+        PendingConfirm pending = ZONE_PENDING_CONFIRM.get(player.getUUID());
+        // 确认必须"同一个键连按两次"：破坏与放置各有自己的执行键，
+        // 不比对模式的话，先按破坏再按放置会被当成对破坏的确认 —— 玩家以为要填墙，结果墙没了。
+        boolean confirmed = pending != null
+                && pending.mode() == mode
+                && now - pending.at() <= ZONE_CONFIRM_WINDOW_MS;
+        if (!confirmed) {
+            ZONE_PENDING_CONFIRM.put(player.getUUID(), new PendingConfirm(now, mode));
             int sizeX = Math.abs(corners.a().getX() - corners.b().getX()) + 1;
             int sizeY = Math.abs(corners.a().getY() - corners.b().getY()) + 1;
             int sizeZ = Math.abs(corners.a().getZ() - corners.b().getZ()) + 1;
-            boolean placing = valueOf(player, QolSetting.ZONE_MODE) == ZoneExcavationJob.MODE_PLACE;
             player.displayClientMessage(Component.translatable(
-                    placing ? "message.kunjinkao.zone_confirm_place" : "message.kunjinkao.zone_confirm",
+                    mode == ZoneExcavationJob.MODE_PLACE
+                            ? "message.kunjinkao.zone_confirm_place"
+                            : "message.kunjinkao.zone_confirm",
                     sizeX, sizeY, sizeZ, sizeX * sizeY * sizeZ), false);
             return;
         }
         ZONE_PENDING_CONFIRM.remove(player.getUUID());
-        if (ZoneExcavationJob.start(player, corners.a(), corners.b())) {
+        if (ZoneExcavationJob.start(player, corners.a(), corners.b(), mode)) {
             ZoneSelection.clear(player);
             sendZoneStatus(player);
         }
@@ -465,9 +467,8 @@ public final class KunJinKaoQolHandler {
                  MACHINE_LOOT, FOG_VISION, TREASURE_HUNTER_SERVER, TREASURE_HUNTER_RADIUS,
                  TREASURE_HUNTER, ZONE_EXCAVATE_SERVER, ZONE_MAX_SIDE, ZONE_DROP_POLICY,
                  ZONE_TICK_BUDGET, ZONE_BATCH_SIDE, ZONE_UNDO_MAX,
-                 // 模式（ZONE_MODE）也没有"挂上去"的动作：它是作业开工那一刻读一次的选择，
-                 // 换句话说它的生效点就是 ZoneExcavationJob.start。
-                 ZONE_MODE -> {
+                 // 两行作业入口也没有"挂上去"的动作：它们没有值，生效点就是按下执行键那一刻。
+                 ZONE_BREAK, ZONE_PLACE -> {
             }
         }
     }

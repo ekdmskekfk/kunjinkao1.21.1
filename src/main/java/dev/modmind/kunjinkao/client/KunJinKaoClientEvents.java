@@ -65,7 +65,7 @@ public class KunJinKaoClientEvents {
         handleCycleAreaMode();
         handleToggleWrench();
         handleCollectBlock();
-        handleZoneExecute();
+        // 选区作业没有固定按键：框选走木棍右键，执行走面板里绑的执行键（QolKeybinds）。
     }
 
     @SubscribeEvent
@@ -310,19 +310,6 @@ public class KunJinKaoClientEvents {
      * 框选（设角点）不在这里：它改成手持木棍右键方块，由服务端的
      * {@code ZoneSelectionHandler} 接住，客户端一个包都不用发。
      */
-    private static void handleZoneExecute() {
-        if (!KunJinKaoKeyBindings.ZONE_EXCAVATE.consumeClick()) {
-            return;
-        }
-        Minecraft minecraft = Minecraft.getInstance();
-        Player player = minecraft.player;
-        if (player == null || minecraft.screen != null) {
-            return;
-        }
-        NetworkHandler.sendToServer(new SimpleActionPayload(player.isShiftKeyDown()
-                ? SimpleActionPayload.ZONE_CANCEL
-                : SimpleActionPayload.ZONE_EXECUTE));
-    }
     private static void handleCycleAreaMode() {
         if (!KunJinKaoKeyBindings.CYCLE_AREA_MODE.consumeClick()) {
             return;

@@ -109,24 +109,9 @@ public class KunJinKaoKeyBindings {
             CATEGORY
     );
 
-    /**
-     * N 键：选区作业（127）—— 确认执行当前选区。
-     * <p>
-     * 按住 Shift 再按这个是取消（停作业或清选区）。取消刻意不另给按键：
-     * 每多一个按键就多一个和别的模组抢默认键的机会，而"执行/取消"本来就是一正一反的一对，
-     * 用同一个键加修饰键比两个独立的键更好记。
-     * <p>
-     * 这个键<b>只管执行</b>。框选改用木棍右键（见 {@code ZoneSelectionHandler}），
-     * 原来那个设角点的键已经删掉：同一个功能留两套框选方式，迟早会出现
-     * "一边能用一边不能用"这种谁也说不清的状态。
-     * <p>
-     * 面板那一行还可以再绑一个执行键（{@code QolPanelConfig#actionKey}），两者是同一件事的
-     * 两个入口，都发同一个动作包，服务端不区分是谁按的。
-     */
-    public static final KeyMapping ZONE_EXCAVATE = new KeyMapping(
-            "key.kunjinkao.zone_excavate",
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_N,
-            CATEGORY
-    );
+    // 选区作业（127）没有任何固定按键：
+    //   框选 = 手持木棍右键方块（服务端 ZoneSelectionHandler 接住，客户端不发包）
+    //   执行 = 在 G 面板里给「选区作业·破坏」和「选区作业·放置」两行各绑一个执行键
+    // 原来这里有一个 N 键做执行，已经删掉：破坏与放置拆成两行之后，
+    // 一个不区分动作的按键没法表达"这次要挖还是要填"，留着就只剩误操作。
 }

@@ -3,6 +3,7 @@ package dev.modmind.kunjinkao.network;
 import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.event.KunJinKaoColdDataEffectsHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoQolHandler;
+import dev.modmind.kunjinkao.world.ZoneExcavationJob;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -36,10 +37,18 @@ public record SimpleActionPayload(int actionId) implements CustomPacketPayload {
     public static final int UNDO_PLACEMENT = 5;
     /** 功能面板：请求一次全量状态（打开面板时发）。 */
     public static final int REQUEST_QOL_STATE = 6;
-    /** 选区挖掘（127）：确认执行当前选区。 */
-    public static final int ZONE_EXECUTE = 7;
-    /** 选区挖掘（127）：取消正在跑的作业，或清空当前选区。 */
+    /**
+     * 选区作业（127）：对当前选区执行「破坏」。
+     * <p>
+     * 破坏与放置是两条独立的动作 id，而不是"执行 + 一个模式参数"。
+     * 原来 7 号的含义是"按玩家设置的模式执行"，拆开之后它专指破坏；
+     * 这个改动没有兼容负担 —— 带旧含义的那版只在测试实例上跑过，也没推送。
+     */
+    public static final int ZONE_EXECUTE_BREAK = 7;
+    /** 选区作业（127）：取消正在跑的作业，或清空当前选区。 */
     public static final int ZONE_CANCEL = 8;
+    /** 选区作业（127）：对当前选区执行「放置」。接在 8 之后，不回头改已有取值。 */
+    public static final int ZONE_EXECUTE_PLACE = 9;
 
     public static final Type<SimpleActionPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "simple_action"));
@@ -62,7 +71,10 @@ public record SimpleActionPayload(int actionId) implements CustomPacketPayload {
                 case TOGGLE_HUD_MAGNET -> KunJinKaoColdDataEffectsHandler.handleToggleHudMagnet(server, context.player());
                 case UNDO_PLACEMENT -> KunJinKaoColdDataEffectsHandler.handleUndoPlacement(context.player());
                 case REQUEST_QOL_STATE -> KunJinKaoQolHandler.handleRequestFullState(context.player());
-                case ZONE_EXECUTE -> KunJinKaoQolHandler.handleZoneExecute(context.player());
+                case ZONE_EXECUTE_BREAK -> KunJinKaoQolHandler.handleZoneExecute(
+                        context.player(), ZoneExcavationJob.MODE_BREAK);
+                case ZONE_EXECUTE_PLACE -> KunJinKaoQolHandler.handleZoneExecute(
+                        context.player(), ZoneExcavationJob.MODE_PLACE);
                 case ZONE_CANCEL -> KunJinKaoQolHandler.handleZoneCancel(context.player());
                 default -> {
                     // 未知 actionId：忽略，等价于原来收到一个不认识的空载荷包。

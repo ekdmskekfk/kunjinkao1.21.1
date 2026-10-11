@@ -18,7 +18,10 @@ public final class NetworkHandler {
     // 注册表少了一条 —— 注册表变了就要提版本号，否则持旧包的客户端会在握手之后才炸在解码上。
     // 25 提到 26：ZoneStatusPayload 改成定长线格式（修掉解码端字段错位 —— 那一版只要一设角点
     // 就会因为"读串了"被踢出存档）。线格式变了，同样必须提版本号。
-    public static final String PROTOCOL_VERSION = "26";
+    // 26 提到 27：选区作业的破坏与放置拆成两条动作 id（7 从"按模式执行"改为专指破坏，新增 9 = 放置）。
+    // 包格式没变、注册表也没变，但动作 id 的含义变了：不提版本号的话，
+    // 旧客户端按执行键会被新服务端当成"破坏" —— 不崩，但行为静默地不是他要的那个。
+    public static final String PROTOCOL_VERSION = "27";
 
     private NetworkHandler() {
     }

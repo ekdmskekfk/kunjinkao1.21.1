@@ -103,16 +103,19 @@ public enum QolSetting {
      */
     ZONE_UNDO_MAX(22, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 0, 100000, 20000, "zoneUndoMaxBlocks"),
     /**
-     * 127 选区作业的模式：0 = 破坏、1 = 放置。
+     * 127 选区作业·破坏：按执行键把选区挖空。
      * <p>
-     * <b>个人级，不是服务器级。</b> 它是"这一次我想让作业干什么"的选择，只影响自己，
-     * 也不改变这一功能被允许做到什么：单边上限、掉落策略、每 tick 预算那些仍然是服主定死的。
-     * 把模式做成服务器级会让同服的人互相抢这个开关，而它本来就是个一次性意图。
+     * <b>破坏与放置拆成两行、各绑一个键</b>，而不是一行里切换模式再共用一个执行键。
+     * 理由是这一步没有回头路：共用一个键时"现在到底是挖还是填"取决于上次滚轮停在哪，
+     * 而滚轮很容易被误碰 —— 想填一面墙结果把墙挖了，代价太大。
+     * 两个键各管一件事，按哪个就是哪个，不存在"当前模式"这个中间状态。
      * <p>
-     * 破坏模式<b>不给主手物品扣耐久</b>，见 {@code ZoneExcavationJob} 里的说明：
+     * 破坏<b>不给主手物品扣耐久</b>，见 {@code ZoneExcavationJob} 里的说明：
      * 一次作业可能几十万方块，按格扣耐久等于必然毁掉工具。
      */
-    ZONE_MODE(23, 127, Category.ENGINEERING, Scope.PERSONAL, Kind.CHOICE, 0, 1, 0, "");
+    ZONE_BREAK(23, 127, Category.ENGINEERING, Scope.PERSONAL, Kind.ACTION, 0, 1, 0, ""),
+    /** 127 选区作业·放置：按执行键把选区里的空位用副手方块填上。 */
+    ZONE_PLACE(24, 127, Category.ENGINEERING, Scope.PERSONAL, Kind.ACTION, 0, 1, 0, "");
 
     /**
      * 面板顶部的分类标签。
@@ -146,25 +149,32 @@ public enum QolSetting {
     }
 
     /**
-     * 交互形态：开关只有 0/1，数值项是一个区间，选项项是少数几个有名字的取值。
-     * <p>
+     * 交互形态。
+     * <ul>
+     *   <li>{@link #TOGGLE}：0/1 开关，点一下切换。</li>
+     *   <li>{@link #NUMBER}：有取值区间的数值项，滚轮调。</li>
+     *   <li>{@link #CHOICE}：少数几个有名字的取值。当前没有项在用，保留给以后。</li>
+     *   <li>{@link #ACTION}：没有"值"，只有一个执行动作，靠行尾绑定的执行键触发。</li>
+     * </ul>
      * CHOICE 的<b>取值范围、校验、上限</b>与 NUMBER 完全共用同一套（见 {@link QolSettings#maxOf}）——
-     * 区别只在面板怎么呈现：NUMBER 画"当前值 / 上限"，CHOICE 画选项名并让滚轮与点击循环取值。
-     * 这样"模式"这类项不需要再造一种新的校验路径，服务端也照旧只认一个 int。
+     * 区别只在面板怎么呈现。
      */
     public enum Kind {
         TOGGLE,
         NUMBER,
-        CHOICE;
+        CHOICE,
+        ACTION;
 
         /**
          * 是不是"有取值范围"的项。
          * <p>
          * 抽成一个判断而不是各处写 {@code kind == NUMBER || kind == CHOICE}：
          * 将来再加一种带范围的形态时，只改这里一处，不会漏掉某个面板分支。
+         * <p>
+         * <b>ACTION 不算有范围</b>：它没有值可调，给它一条数值条只会让玩家以为能滚。
          */
         public boolean hasRange() {
-            return this != TOGGLE;
+            return this == NUMBER || this == CHOICE;
         }
     }
 
@@ -257,16 +267,36 @@ public enum QolSetting {
     /**
      * 这一项在面板上是否还带一个「执行键」格（按一下对当前选区开工）。
      * <p>
-     * 写成一个方法、而不是在面板与快捷键里各写一次 {@code setting == ZONE_MODE}：
+     * 写成一个方法、而不是在面板与快捷键里各写一次 {@code setting.kind() == ACTION}：
      * 将来再出现"一次性动作"类的项时只改这一处，也不会出现
      * "面板画了格子、按键却不响应"这种两边各判一次才会有的不一致。
      */
     public boolean hasExecuteAction() {
-        return this == ZONE_MODE;
+        return kind == Kind.ACTION;
     }
 
     /**
-     * 选项类项的取值名翻译键，例如 {@code screen.kunjinkao.qol.zone_mode.value0}。
+     * 这一项要不要出现在 G 键面板里。
+     * <p>
+     * <b>服务器级项不出现在面板上</b>，它们只活在 {@code config/kunjinkao-admin.toml} 的
+     * {@code [qol]} 分节里。理由是两种东西混在一张列表里看着像同一种：
+     * 面板上的行点一下就改，而这些行改了是写进服务器配置、影响所有人的 ——
+     * 放在一起，玩家会以为"我关了寻宝大师"只是关自己的。
+     * 分开之后面板只管家自己的事，服主要调服务器规则就去改配置文件，
+     * 边界一眼看得清。
+     * <p>
+     * 枚举里仍然保留这些项，因为它们同时承担"配置键的定义"这个职责
+     * （见 {@code AdminToolConfig} 里的 {@code [qol]} 分节是照它们生成的）。
+     */
+    public boolean panelVisible() {
+        return scope == Scope.PERSONAL;
+    }
+
+    /**
+     * 选项类项的取值名翻译键，形如 {@code <名称键>.value0}。
+     * <p>
+     * 当前没有项在用（原本是选区作业的"模式"，后来破坏与放置拆成两行，就不再需要选项类了），
+     * 保留它是给以后真有"三选一"这类项时直接用。
      * <p>
      * 拼在名称键后面而不是另起一套前缀：选项名与这一项强绑定，
      * 换个前缀就要在两处地方同时改，而语言文件里的漏项在编译期是发现不了的。
@@ -278,13 +308,16 @@ public enum QolSetting {
     /**
      * 本项是否属于某个分类标签。
      * <p>
-     * {@link Category#SERVER} 是汇总视图：只要 {@code scope == SERVER} 就算属于它，
-     * 不管它自己挂在哪个功能分类下。于是"收益"标签里能看到 72 倍率，
-     * 管理员切到"服务器级"还能再看到同一行 —— 这是有意的重复，不是漏改。
+     * <b>不在面板上的项（服务器级）一律不属于任何分类</b>，包括 {@link Category#SERVER} 本身 ——
+     * 那个标签是在面板里给服务器级项做汇总用的，既然它们不上面板，这个标签也就没有内容、
+     * 面板不会画它。留着这个枚举值是为了不改动已写进代码的引用。
      */
     public static boolean inCategory(QolSetting setting, Category category) {
+        if (!setting.panelVisible()) {
+            return false;
+        }
         if (category == Category.SERVER) {
-            return setting.scope == Scope.SERVER;
+            return false;
         }
         return setting.category == category;
     }

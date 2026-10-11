@@ -281,7 +281,9 @@ public final class QolControlScreen extends Screen {
             }
         } else {
             for (QolSetting setting : QolSetting.values()) {
-                if (matches(setting, needle)) {
+                // 搜索同样只搜面板上的项：服务器级项不在面板里，搜出来也点不动，
+                // 反而会让人以为"面板能改服务器配置"。
+                if (setting.panelVisible() && matches(setting, needle)) {
                     visible.add(setting);
                 }
             }
@@ -459,6 +461,11 @@ public final class QolControlScreen extends Screen {
             stateText = Component.translatable(on
                     ? "screen.kunjinkao.qol.state_on" : "screen.kunjinkao.qol.state_off");
             stateColor = on ? KunJinKaoPalette.NORMAL : COLOR_OFF;
+        } else if (setting.kind() == QolSetting.Kind.ACTION) {
+            // 动作类没有"值"可显示。这一行唯一需要让人看懂的是"它靠什么触发" ——
+            // 值那一列写一句提示，比画一条永远满格的数值条有用。
+            stateText = Component.translatable("screen.kunjinkao.qol.action_ready");
+            stateColor = KunJinKaoPalette.CORRUPT;
         } else if (setting.kind() == QolSetting.Kind.CHOICE) {
             // 选项类画选项名而不是数字：玩家要的是"破坏还是放置"，不是"0 还是 1"。
             // 数字只留给真正的区间项 —— 那里除了数字没有别的说法。
