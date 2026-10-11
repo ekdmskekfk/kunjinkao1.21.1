@@ -82,8 +82,16 @@ public enum QolSetting {
      * 由服主决定这台服务器上允许挖多大、挖出来的东西去哪，而不是让玩家自己放开上限。
      */
     ZONE_EXCAVATE_SERVER(17, 127, Category.ENGINEERING, Scope.SERVER, Kind.TOGGLE, 0, 1, 0, "zoneExcavateEnabled"),
-    /** 127 的单边上限（格）。计划里参考实现实际做到 512，本工程按 64 做。 */
-    ZONE_MAX_SIDE(18, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 1, 64, 64, "zoneMaxSide"),
+    /**
+     * 127 的单边上限（格）。
+     * <p>
+     * <b>512 是立方级的量。</b> 64 → 512 是单边 8 倍、方块数 512 倍：
+     * 512×512 的一层就是 26 万方块，若两个角点还跨了整个高度（384 格），
+     * 总量是 1 亿格。作业本身不会因此掉 TPS —— 它按 {@code zoneTickBudgetMs} 分批，
+     * 无论多大都只吃那么多时间；代价是<b>总时长</b>：1 亿格在 45 ms/tick 的预算下要跑很久。
+     * 执行前的确认提示会把总格数报出来，框完先看一眼那个数字再按第二下。
+     */
+    ZONE_MAX_SIDE(18, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 1, 512, 512, "zoneMaxSide"),
     /**
      * 127 的掉落策略：0 = 进玩家背包、1 = 生成掉落物、2 = 直接销毁。
      * <p>
@@ -93,8 +101,22 @@ public enum QolSetting {
     ZONE_DROP_POLICY(19, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 0, 2, 0, "zoneDropPolicy"),
     /** 127 每 tick 的时间预算（毫秒）。作业按它分批，保证 MSPT 不被一次挖穿地形拉爆。 */
     ZONE_TICK_BUDGET(20, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 10, 48, 45, "zoneTickBudgetMs"),
-    /** 127 单批处理的目标方块数。调大能更快挖完，但单 tick 的尖峰更高。 */
-    ZONE_BATCH_SIDE(21, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 32, 512, 256, "zoneBatchSide"),
+    /**
+     * 127 单批处理的目标方块数。
+     * <p>
+     * <b>这个值应当只是"防跑飞"的副保险，真正的限速器是 {@link #ZONE_TICK_BUDGET}。</b>
+     * 作业循环是「处理满这么多格 <b>或</b> 用完时间预算，谁先到算谁」，
+     * 所以批边长一旦偏小，它就会变成实际瓶颈、把时间预算架空。
+     * <p>
+     * 早先的上限是 512、默认 256，配 45 ms 的预算：512 格只要约 1 ms，
+     * 预算永远轮不到说话 —— 速度被钉死在 512 格/tick。
+     * 单边上限提到 512 之后这会变得很刺眼（跨全高的一亿格要跑几小时），
+     * 所以上限放大到 8192、默认 2048，让预算成为真正的约束。
+     * <p>
+     * 调大是安全的：循环每 64 格查一次时间，超预算立刻退出，
+     * 所以"一批太大"最多让单 tick 多跑几十格，不会把 MSPT 顶穿。
+     */
+    ZONE_BATCH_SIDE(21, 127, Category.ENGINEERING, Scope.SERVER, Kind.NUMBER, 32, 8192, 2048, "zoneBatchSide"),
     /**
      * 127 允许记录的撤销方块数上限；0 = 完全禁用撤销。
      * <p>
