@@ -99,7 +99,12 @@ public final class KunJinKaoEntry {
                         cyou.rimuru.shootingstardemo.mc1211.spell.b.a(player);
                     }
                 });
-        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.server.ServerStartedEvent event) -> {
+        // spell.c 与 star.d 都是「每 tick 推进一次」的函数：前者遍历法术序列调用 a2.a()
+        // 推进并在结束时收尾，后者按 minecraftServer.getTickCount() 判定过期条目。
+        // 之前它们被接在 ServerStartedEvent 上，只在开服时跑了一次 —— 结果技能只有客户端
+        // 动画（cast 包里带的那一发 FX），服务端序列永远停在第一步、列表不空，
+        // 于是再放技能就提示 "… is already on its way"。
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) -> {
             cyou.rimuru.shootingstardemo.mc1211.spell.c.a(event.getServer());
             cyou.rimuru.shootingstardemo.mc1211.star.d.a(event.getServer());
         });
