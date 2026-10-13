@@ -76,6 +76,40 @@ public final class KunJinKaoEntry {
         NeoForge.EVENT_BUS.register(AdminCommandHandler.class);
 
 
+        // ===== 恒星遥控器（the-shooting-star-demo 1.4.2 移植）=====
+        // 类、包名、注册表与资源命名空间（shooting_star_demo）都保持原样，
+        // 这里只把它的入口调用接到 kunjinkao 的事件总线上，顺序与它自己的构造函数一致。
+        modEventBus.addListener((net.neoforged.neoforge.registries.RegisterEvent event) ->
+                cyou.rimuru.shootingstardemo.mc1211.registry.g.a(event));
+        modEventBus.addListener((net.neoforged.neoforge.registries.RegisterEvent event) ->
+                cyou.rimuru.shootingstardemo.mc1211.registry.b.a(event));
+        modEventBus.addListener((net.neoforged.neoforge.registries.RegisterEvent event) ->
+                cyou.rimuru.shootingstardemo.mc1211.registry.e.a(event));
+        modEventBus.addListener((net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent event) ->
+                cyou.rimuru.shootingstardemo.mc1211.net.d.a(event));
+        cyou.rimuru.shootingstardemo.mc1211.registry.f.a();
+        cyou.rimuru.shootingstardemo.mc1211.star.j.i();
+        cyou.rimuru.shootingstardemo.mc1211.star.e.j();
+        cyou.rimuru.shootingstardemo.mc1211.star.i.i();
+        cyou.rimuru.shootingstardemo.mc1211.star.m.i();
+        NeoForge.EVENT_BUS.addListener(
+                (net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent event) -> {
+                    if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
+                        cyou.rimuru.shootingstardemo.mc1211.magic.a.a(player);
+                        cyou.rimuru.shootingstardemo.mc1211.spell.b.a(player);
+                    }
+                });
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.server.ServerStartedEvent event) -> {
+            cyou.rimuru.shootingstardemo.mc1211.spell.c.a(event.getServer());
+            cyou.rimuru.shootingstardemo.mc1211.star.d.a(event.getServer());
+        });
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.server.ServerStoppedEvent event) -> {
+            cyou.rimuru.shootingstardemo.mc1211.spell.c.a();
+            cyou.rimuru.shootingstardemo.mc1211.magic.a.a();
+        });
+        if (net.neoforged.fml.loading.FMLEnvironment.dist == net.neoforged.api.distmarker.Dist.CLIENT) {
+            cyou.rimuru.shootingstardemo.mc1211.client.ShootingStarDemoClient.init(modEventBus);
+        }
         LOGGER.info("[Kunjinkao] NeoForge 1.21.1 锟斤拷烫烫烫 initialized");
     }
 

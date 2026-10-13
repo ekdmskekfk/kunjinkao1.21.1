@@ -25,3 +25,6 @@ side="BOTH"
 # 给 neoecoae 的兼容补丁（配置标了 required=false，没装那个模组时静默跳过）
 [[mixins]]
 config="kunjinkao.mixins.json"
+
+[[mixins]]
+config="shooting_star_demo.mc1211.mixins.json"

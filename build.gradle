@@ -73,6 +73,8 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 21
+    // 移植期方便：javac 默认只报前 100 条错误，看不到全貌。
+    options.compilerArgs.addAll(['-Xmaxerrs', '2000'])
 }
 
 java {
