@@ -1,7 +1,7 @@
 {
   "itemGroup.shooting_star_demo": "The Shooting Star (Demo)",
   "item.shooting_star_demo.stellar_remote": "Zhouzhou's TV Remote",
-  "item.shooting_star_demo.stellar_remote.lore": "A random TV remote you found lying around. It probably does nothing... right?",
+  "item.shooting_star_demo.stellar_remote.lore": "Recovery ZZ-01, registered as \"Zhouzhou's TV Remote\". Period: primeval. Analysis finds the casing is not plastic; the interior holds no circuitry, no cell, no moving part of any kind. It warms on its own when nothing touches it, and answers radio sources from beyond the sky. Recommendation: do not press the red button.",
   "item.shooting_star_demo.stellar_remote.hint": "Press the [%s] key, and something seems to happen",
   "item.shooting_star_demo.magic_item.hint": "Right click: cast the selected skill · %s: skill menu · Sneak + right click: next skill",
   "key.category.shooting_star_demo.general": "The Shooting Star (Demo)",

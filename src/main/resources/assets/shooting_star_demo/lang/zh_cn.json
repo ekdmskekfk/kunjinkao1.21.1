@@ -1,7 +1,7 @@
 {
   "itemGroup.shooting_star_demo": "流星（演示版）",
   "item.shooting_star_demo.stellar_remote": "周周家的电视遥控器",
-  "item.shooting_star_demo.stellar_remote.lore": "你随手捡到的一个电视遥控器。它大概什么也做不了……对吧？",
+  "item.shooting_star_demo.stellar_remote.lore": "出土物编号 ZZ-01，登记名「周周家的电视遥控器」，年代：上古。材质分析显示外壳并非塑料；内部无电路、无电池、无任何可动部件。但它在无人触碰时会自行发热，并对外空的射电源作出应答。建议：不要按下红色按钮。",
   "item.shooting_star_demo.stellar_remote.hint": "按下 [%s] 键，似乎会发生什么",
   "item.shooting_star_demo.magic_item.hint": "右键：施放选中的技能 · %s：技能菜单 · 潜行 + 右键：下一个技能",
   "key.category.shooting_star_demo.general": "流星（演示版）",
