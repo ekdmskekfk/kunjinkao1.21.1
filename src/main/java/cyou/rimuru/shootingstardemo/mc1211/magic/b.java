@@ -72,8 +72,7 @@ extends Item {
 
     public void appendHoverText(ItemStack itemStack, Item.TooltipContext tooltipContext, List<Component> list, TooltipFlag tooltipFlag) {
         Consumer<Component> consumer = list::add;
-        consumer.accept((Component)Component.translatable((String)(this.getDescriptionId() + ".lore")).withStyle(ChatFormatting.WHITE));
-        consumer.accept((Component)Component.translatable((String)(this.getDescriptionId() + ".hint"), (Object[])new Object[]{c.get()}).withStyle(ChatFormatting.GRAY));
+        consumer.accept((Component)Component.translatable((String)(this.getDescriptionId() + ".lore")).withStyle(ChatFormatting.GRAY));
     }
 }
 
