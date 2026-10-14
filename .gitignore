@@ -33,7 +33,9 @@ dsh-launcher/
 # ---- 本地工具产物（工作区私有 gradle home / DSH 临时目录 / 反编译暂存目录） ----
 .gradle-home/
 .dsh_tmp/
-net/
+# 只忽略仓库根目录下反编译倒出来的那个 net/；写成 net/ 会把
+# src/main/java/cyou/.../mc1211/net/ 整包一起吞掉（曾因此漏提交 net 包）。
+/net/
 
 # 第三方编译期依赖（AE2 / neoecoae 的 jar），不进仓库
 libs/
