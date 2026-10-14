@@ -19,7 +19,18 @@ def nextModVersion = incrementPatchVersion(project.mod_version)
 // 否则默认构建会产出"属性值+1"的版本，属性值又停在上次 autoBump 的位置，
 // 导致版本号可倒退、同名不同内容覆盖已有 jar（审计指出）。
 def autoBump = providers.gradleProperty('autoBump').isPresent()
-def buildVersion = autoBump ? nextModVersion : project.mod_version
+// ---------------------------------------------------------------------------
+// 私密线（private/shooting-star 分支）专用：版本尾缀。
+// 这条线 = 公开 mod + the-shooting-star-demo 移植内容，版本号必须与公开线分开，
+// 否则两条线会产出同名 jar（公开线 0.11.x、私密线也从 0.11.x 起步），
+// 本地 build/libs 与测试实例互相覆盖，release 也分不清。
+//   gradle build                 -> 1.0.0-star（用 gradle.properties 里的值）
+//   gradle build -PautoBump      -> 1.0.1-star（补丁位自增并回写 gradle.properties）
+//   gradle build -PversionSuffix= -> 1.0.0（临时去掉尾缀，用于对照排查）
+// 公开线（main 分支）没有这段，版本仍是不带尾缀的 0.11.x。
+// ---------------------------------------------------------------------------
+def versionSuffix = providers.gradleProperty('versionSuffix').getOrElse('-star')
+def buildVersion = (autoBump ? nextModVersion : project.mod_version) + versionSuffix
 version = buildVersion
 group = project.maven_group
 
