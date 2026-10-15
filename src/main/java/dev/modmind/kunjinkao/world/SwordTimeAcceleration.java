@@ -500,7 +500,10 @@ public final class SwordTimeAcceleration {
             // 单台：半径 0，只动点中的那一格。
             AcceleratorBlockEntity.accelerateArea(level, session.pos(), BLOCK_RADIUS, session.multiplier(), null);
             // 生物部分：范围内的生物额外 tick，让它们真的"快起来"。
-            accelerateEntities(level, session.pos(), session.multiplier());
+            // 与加速方块、范围加速共用 AcceleratorBlockEntity 里那一份实现，
+            // 只加速生物（LivingEntity、非玩家），掉落物与箭矢不算。
+            AcceleratorBlockEntity.accelerateEntitiesInArea(level, session.pos(), ENTITY_RADIUS,
+                    session.multiplier());
         }
         if (removedAny) {
             // 加速场数量变了，刻率基线要跟着重算。
@@ -508,47 +511,4 @@ public final class SwordTimeAcceleration {
         }
     }
 
-    /**
-     * 加速范围内生物的<b>周期行为</b>：下蛋、繁殖冷却、成长这类每刻自减的计时器。
-     * <p>
-     * 做法是额外 tick 若干次，再把<b>位移与朝向原样还原</b>。
-     * 原因：这些计时器都写在 {@code tick()} 里，只能靠多调 tick 推进；
-     * 但 {@code tick()} 同时会跑 AI 与移动，直接把副作用留在外面就成了"鸡满场乱飞"。
-     * 把位置、朝向、速度还原回去，留下的正好是想要的那部分 —— 计时器变快，走位不变。
-     * <p>
-     * 玩家自己被排除：把玩家 tick 多次会让移动、攻击判定在同一刻重复触发。
-     */
-    private static void accelerateEntities(ServerLevel level, BlockPos center, int multiplier) {
-        int extra = multiplier - 1;
-        if (extra <= 0) {
-            return;
-        }
-        AABB box = new AABB(center).inflate(ENTITY_RADIUS);
-        int budget = AcceleratorBlockEntity.MAX_EXTRA_TICKS_PER_TICK;
-        for (Entity entity : level.getEntities((Entity) null, box,
-                candidate -> !(candidate instanceof Player) && candidate.isAlive())) {
-            if (budget <= 0) {
-                return;
-            }
-            int calls = Math.min(extra, budget);
-            double x = entity.getX();
-            double y = entity.getY();
-            double z = entity.getZ();
-            float yaw = entity.getYRot();
-            float pitch = entity.getXRot();
-            float headYaw = entity.getYHeadRot();
-            Vec3 motion = entity.getDeltaMovement();
-            for (int i = 0; i < calls && !entity.isRemoved(); i++) {
-                entity.tick();
-            }
-            entity.setPos(x, y, z);
-            entity.setYRot(yaw);
-            entity.setXRot(pitch);
-            entity.setYHeadRot(headYaw);
-            entity.setDeltaMovement(motion);
-            // 同步"上一帧位置"，否则客户端会朝新位置插值，看起来像瞬移了一下再弹回来。
-            entity.setOldPosAndRot();
-            budget -= calls;
-        }
-    }
 }

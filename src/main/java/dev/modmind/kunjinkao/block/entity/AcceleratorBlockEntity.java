@@ -15,6 +15,11 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import java.util.List;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
@@ -92,6 +97,9 @@ public class AcceleratorBlockEntity extends BlockEntity {
 
     private void accelerateSurroundings(ServerLevel serverLevel, BlockPos pos) {
         accelerateArea(serverLevel, pos, this.radius, this.multiplier, this);
+        // 方块之外，生物同样在这个立方体里被加速 —— 否则把机器调到 1024 倍，
+        // 走进去的怪还是原速，看起来像"只加速了一半"。
+        accelerateEntitiesInArea(serverLevel, pos, this.radius, this.multiplier);
     }
 
     /**
@@ -146,6 +154,66 @@ public class AcceleratorBlockEntity extends BlockEntity {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * 每刻允许执行的额外<b>生物</b> tick 次数上限（一次调用内、范围内所有生物合计）。
+     * <p>
+     * 与方块的 {@link #MAX_EXTRA_TICKS_PER_TICK} 分开：实体 tick 比方块实体 tick 贵
+     * 一个数量级（AI、寻路、碰撞、药水与伤害计时全在里头），4096 次实体 tick 足够把
+     * TPS 打到个位数。这里单独收窄，并按范围内生物数量<b>均分</b>：走进场里的每一只
+     * 都真的被加速，而不是迭代顺序靠前的吃满、后面的饿死。
+     */
+    public static final int MAX_EXTRA_ENTITY_TICKS_PER_TICK = 512;
+
+    /**
+     * 对一个立方区域里的生物做时间加速。
+     * <p>
+     * 语义与 {@link #accelerateArea} 的方块加速对应：区域内每只生物额外 tick
+     * （倍率 - 1）次，随后把<b>位移、朝向、速度原样还原</b>。留下的是每刻自减的计时器
+     * （成长、繁殖冷却、受伤无敌帧、药水时长、攻击冷却……），而不是"鸡满场乱飞"——
+     * {@code tick()} 同时会跑 AI 与物理，副作用不能留在外面。
+     * <p>
+     * 只加速 {@link LivingEntity}：掉落物、经验球、箭矢不算"生物"，把它们的消失计时
+     * 一起加速，表现就是"刚掉在地上的东西转眼没了"。玩家同样排除：把玩家 tick 多次
+     * 会让移动与攻击判定在同一刻重复触发。
+     *
+     * @param radius 立方区域半径，与 {@link #accelerateArea} 的 radius 同义
+     */
+    public static void accelerateEntitiesInArea(ServerLevel serverLevel, BlockPos pos, int radius, int multiplier) {
+        int extra = multiplier - 1;
+        if (extra <= 0 || radius < 0) {
+            return;
+        }
+        AABB box = new AABB(pos).inflate(radius);
+        List<LivingEntity> targets = serverLevel.getEntitiesOfClass(LivingEntity.class, box,
+                candidate -> !(candidate instanceof Player) && candidate.isAlive());
+        if (targets.isEmpty()) {
+            return;
+        }
+        int calls = Math.max(1, Math.min(extra, MAX_EXTRA_ENTITY_TICKS_PER_TICK / targets.size()));
+        for (LivingEntity entity : targets) {
+            if (entity.isRemoved()) {
+                continue;
+            }
+            double x = entity.getX();
+            double y = entity.getY();
+            double z = entity.getZ();
+            float yaw = entity.getYRot();
+            float pitch = entity.getXRot();
+            float headYaw = entity.getYHeadRot();
+            Vec3 motion = entity.getDeltaMovement();
+            for (int i = 0; i < calls && !entity.isRemoved(); i++) {
+                entity.tick();
+            }
+            entity.setPos(x, y, z);
+            entity.setYRot(yaw);
+            entity.setXRot(pitch);
+            entity.setYHeadRot(headYaw);
+            entity.setDeltaMovement(motion);
+            // 同步"上一帧位置"，否则客户端会朝新位置插值，看起来像瞬移了一下再弹回来。
+            entity.setOldPosAndRot();
         }
     }
 

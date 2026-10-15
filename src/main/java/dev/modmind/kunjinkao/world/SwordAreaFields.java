@@ -261,6 +261,12 @@ public final class SwordAreaFields {
             //
             // 一格一格调，每台机器各自拿到完整预算，等价于在这个立方体里摆了 N 个单台加速器 ——
             // 这也正是"范围加速"该有的语义。
+            //
+            // 生物也一起加速：范围加速的语义是"这个立方体里的一切都变快"，
+            // 以前只加速方块实体，怪走进去照常慢吞吞地跑，看起来像只加速了一半。
+            // 放在逐格循环之前调用一次即可 —— 它自己按范围一次性查实体。
+            AcceleratorBlockEntity.accelerateEntitiesInArea(serverLevel, entry.pos(), entry.radius(),
+                    entry.multiplier());
             int half = entry.radius();
             for (int dx = -half; dx <= half; dx++) {
                 for (int dy = -half; dy <= half; dy++) {
