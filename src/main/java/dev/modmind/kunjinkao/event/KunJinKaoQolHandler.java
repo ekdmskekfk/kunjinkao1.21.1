@@ -2,7 +2,7 @@ package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.KunJinKaoPalette;
-import dev.modmind.kunjinkao.WorldGateRegistry;
+import dev.modmind.kunjinkao.SwordRegistry;
 import dev.modmind.kunjinkao.config.AdminToolConfig;
 import dev.modmind.kunjinkao.config.QolStateSavedData;
 import dev.modmind.kunjinkao.network.NetworkHandler;
@@ -15,6 +15,7 @@ import dev.modmind.kunjinkao.world.ZoneSelection;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.Rotations;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
@@ -28,6 +29,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -46,6 +48,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joml.Vector3f;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -141,7 +144,7 @@ public final class KunJinKaoQolHandler {
      *
      * 三处关键细节都对着 1.21.1 的渲染代码确认过：
      *   - Invisible 只让"身体"不画。LivingEntityRenderer 里 render layers（手持物）在身体可见性
-     *     之外单独跑，所以"隐形盔甲架举着方块"，看到的只有方块；
+     *     之外单独跑，所以"隐形盔甲架举着剑"，看到的只有剑；
      *   - ArmorStandRenderer#shouldShowName 只判 isCustomNameVisible，不看隐形，
      *     所以隐形盔甲架的名字照样浮在头顶 —— 称号牌就是这么来的；
      *   - 玩家自己的名牌改不了：Player#getDisplayName 走的是 profile 名 + 队伍前缀，
@@ -154,18 +157,36 @@ public final class KunJinKaoQolHandler {
     /** 装饰实体身上的标记，排查问题时报得出是谁的。 */
     private static final String COSMETIC_ENTITY_TAG = "kunjinkao_cosmetic";
 
-    /** 公转方块的个数。 */
+    /** 剑的个数。 */
     private static final int ORBIT_BIT_COUNT = 3;
-    /** 公转半径（格）。 */
-    private static final double ORBIT_RADIUS = 0.85D;
-    /** 公转平面离脚底多高（格）。 */
-    private static final double ORBIT_HEIGHT = 1.25D;
-    /** 公转时的上下浮动幅度（格）。 */
-    private static final double ORBIT_BOB = 0.09D;
-    /** 每 tick 转过的角度。4° → 一圈 1.5 秒。 */
-    private static final double ORBIT_SPIN_DEGREES = 4.0D;
-    /** 小号盔甲架的手持物渲染在原点上方约半格，位置要往下补这么多，方块中心才落在指定点上。 */
+    /** 排在身后多远（格）。 */
+    private static final double ORBIT_BACK_DISTANCE = 0.95D;
+    /** 左右两把各偏出去多少（格）；中间那把正好在正中。 */
+    private static final double ORBIT_SIDE_SPREAD = 0.55D;
+    /** 剑柄高度（相对脚底，格）。 */
+    private static final double ORBIT_HEIGHT = 1.2D;
+    /** 轻微摆动幅度（格）。三把剑一起上下点头太机械，给一点相位差。 */
+    private static final double ORBIT_SWAY = 0.1D;
+    /** 摆动/浮动速度（弧度每 tick）。 */
+    private static final double ORBIT_SWAY_SPEED = 0.06D;
+    /**
+     * 举剑时，持物渲染在实体原点上方多高（格）。
+     * <p>
+     * 这是整套装饰里唯一只能"看着调"的数：它是"0.5 缩放的盔甲架手部变换"叠上物品的
+     * thirdperson_righthand 变换算出来的，不值得在代码里复算一遍。剑看起来偏高就调大它。
+     */
     private static final double BIT_HAND_OFFSET = 0.5D;
+    /** 举剑的手臂姿势：原版盔甲架的默认右手姿势，剑尖朝上。 */
+    private static final Rotations SWORD_POSE_IDLE = new Rotations(-15.0F, 0.0F, 10.0F);
+    /**
+     * 向下刺的手臂姿势：整个手部坐标系绕 X 翻 180°。
+     * <p>
+     * 手持物的渲染是"先用手臂变换、再绕 X 转 -90°"，所以把手翻过来，剑就朝下了。
+     * 这也是唯一能让剑朝下的办法：盔甲架的身体俯仰不参与渲染，只有各部位的姿势参与。
+     */
+    private static final Rotations SWORD_POSE_STAB = new Rotations(180.0F, 0.0F, 0.0F);
+    /** 刺击姿势下，剑尖相对实体原点的偏移（和 {@link #BIT_HAND_OFFSET} 一起调）。 */
+    private static final double STAB_HAND_OFFSET = 0.5D;
 
     // ===== 反击（202 附带）=====
     /** 一次反击持续多久（tick）。100 = 5 秒。 */
@@ -192,8 +213,12 @@ public final class KunJinKaoQolHandler {
     private static final double STRIKE_CHASE = 0.45D;
     /** 离头顶这么近才算"飞到了"，到了才开始扣血。 */
     private static final double STRIKE_REACH = 0.55D;
-    /** 停在头顶上方多高（格）。 */
+    /** 剑尖停在头顶上方多高（格）。 */
     private static final double STRIKE_HOVER = 0.45D;
+    /** 两下之间抬起多少（格）：每一下都是先抬起来再刺下去，不然看起来只是贴着不动。 */
+    private static final double STRIKE_RETRACT = 0.4D;
+    /** 离下一击还有几 tick 之内开始压下去。要留够追击收敛的时间，否则刺击和伤害对不上。 */
+    private static final int STRIKE_THRUST_WINDOW = 3;
 
     // ===== 光环与拖尾（203）=====
     /** 光环每几 tick 撒一圈。 */
@@ -214,17 +239,46 @@ public final class KunJinKaoQolHandler {
     private static final double TITLE_HEIGHT = 0.45D;
 
     /**
-     * 光环用品红（数据损坏）、拖尾用青色（常态）。
+     * 光环与拖尾的淡蓝。
      * <p>
-     * 两种粒子的体积都很小，颜色分开才看得出层次 —— 这和 {@link KunJinKaoPalette} 里
-     * "按含义定色"是同一套规矩，不是随手挑的两种好看颜色。
+     * 它不占 {@link KunJinKaoPalette} 的槽位：那四个颜色是<b>剑的语义色</b>
+     * （常态/加速/损坏/错误），装饰是另一条线，硬塞进去只会让"按含义定色"这条规矩失效。
      */
-    private static final DustParticleOptions AURA_PARTICLE = cosmeticDust(KunJinKaoPalette.CORRUPT, 1.1F);
-    private static final DustParticleOptions TRAIL_PARTICLE = cosmeticDust(KunJinKaoPalette.NORMAL, 0.9F);
+    private static final int AURA_COLOR = 0xFF9ED8FF;
+    private static final DustParticleOptions AURA_PARTICLE = cosmeticDust(AURA_COLOR, 1.05F);
+    /** 拖尾用同一个淡蓝，只是更小更暗一档：同色系里靠尺寸分层，否则两团粒子会糊在一起。 */
+    private static final DustParticleOptions TRAIL_PARTICLE = cosmeticDust(AURA_COLOR, 0.75F);
 
     private static DustParticleOptions cosmeticDust(int argb, float scale) {
         return new DustParticleOptions(new Vector3f(
                 KunJinKaoPalette.red(argb), KunJinKaoPalette.green(argb), KunJinKaoPalette.blue(argb)), scale);
+    }
+
+    /**
+     * 挂件自定义名的前缀，后面接主人的 UUID。
+     * <p>
+     * 这个名字<b>不显示</b>（CustomNameVisible=false），它只是一条同步通道：
+     * 客户端要知道"这把剑是谁的"，才做得到"别人看得见、自己看不见"。
+     * 用自定义名而不是自写一个包，是因为名字本来就跟着实体一起同步，不必为此多一套协议。
+     */
+    public static final String COSMETIC_BIT_NAME_PREFIX = "kunjinkao:bit:";
+
+    /**
+     * 这个实体是不是"该被某个玩家自己藏起来"的浮游挂件。
+     * <p>
+     * 服务端做不到只对一个人隐藏实体：可见性（Invisible）是实体级的，对所有人一样；
+     * 唯一的例外是"同队 + canSeeFriendlyInvisibles"，而那个方向正好相反（只能让队友看见隐形的，
+     * 挡不住特定的人）。所以这一刀只能由客户端来画：每个人的客户端不画自己名下的那份挂件。
+     * <p>
+     * 代价要写清楚：<b>如果对方客户端没有装这个模组，他自己的挂件仍然会显示</b> ——
+     * 服务端没有任何办法让同一个实体"对 A 可见、对 B 不可见"。这是原版机制的限制。
+     */
+    public static boolean isCosmeticBitHiddenFrom(Entity entity, Player viewer) {
+        if (viewer == null || !entity.hasCustomName()) {
+            return false;
+        }
+        Component name = entity.getCustomName();
+        return name != null && name.getString().equals(COSMETIC_BIT_NAME_PREFIX + viewer.getUUID());
     }
 
     /** 每个在线管理员一份装饰状态，键是玩家 UUID。 */
@@ -232,7 +286,7 @@ public final class KunJinKaoQolHandler {
 
     /** 一个管理员的装饰状态：实体句柄 + 反击进度。 */
     private static final class Cosmetics {
-        /** 公转的三个方块；索引 0 兼作反击时飞出去的那一个。 */
+        /** 身后的三把剑；索引 0 兼作反击时飞出去的那一把。 */
         final List<CosmeticBit> bits = new ArrayList<>(ORBIT_BIT_COUNT);
         /** 头顶称号牌。 */
         CosmeticBit title;
@@ -242,7 +296,7 @@ public final class KunJinKaoQolHandler {
         int strikeTicks;
         /** 下一击在 strikeTicks 到达这个值时落地。 */
         int nextStrikeTick;
-        /** 反击结束后，索引 0 那一块正在飞回公转轨道。 */
+        /** 反击结束后，索引 0 那一把正在飞回背后。 */
         boolean returning;
         /** 上一次撒拖尾粒子的位置；null 表示"刚开，还没有上一处"。 */
         Vec3 trailFrom;
@@ -259,7 +313,7 @@ public final class KunJinKaoQolHandler {
      * 装饰用的隐形盔甲架。
      * <p>
      * 覆写 {@link #shouldBeSaved()} 返回 false 是关键的一步：这些实体只在"主人挂着装饰"的这段时间里
-     * 存在，写进存档只会在服务器崩过之后留下一堆没人认领的浮空方块。
+     * 存在，写进存档只会在服务器崩过之后留下一堆没人认领的浮空剑。
      * 不落盘 = 世界重载/重启之后一定不残留，比事后清扫可靠得多。
      */
     private static final class CosmeticBit extends ArmorStand {
@@ -647,7 +701,7 @@ public final class KunJinKaoQolHandler {
                 sendZoneStatus(player);
             }
         }
-        // 装饰（201–203）每 tick 都要推进：公转、追头、光环都是"看起来在动"的东西，
+        // 装饰（201–203）每 tick 都要推进：背后三把剑、刺击、光环都是"看起来在动"的东西，
         // 20 tick 一档的话看起来就是一张一张地跳。
         tickCosmetics(player);
     }
@@ -894,8 +948,10 @@ public final class KunJinKaoQolHandler {
      * <p>
      * public 的 setter 一律放在 {@code load} 之后：load 会把 NBT 里的默认值一并写回实体，
      * 顺序反了就会被覆盖回去。
+     *
+     * @param hideFrom 挂件要藏起来的那个人（浮游挂件传主人自己）；null 表示不藏
      */
-    private static CosmeticBit spawnCosmeticBit(ServerLevel level, ItemStack held) {
+    private static CosmeticBit spawnCosmeticBit(ServerLevel level, ItemStack held, @Nullable UUID hideFrom) {
         CosmeticBit bit = new CosmeticBit(level);
         CompoundTag tag = new CompoundTag();
         tag.putBoolean("Small", true);
@@ -912,20 +968,35 @@ public final class KunJinKaoQolHandler {
             // 手里永远举着这一件。隐形/Marker 的盔甲架 hurt 会直接返回 false，所以它不会被抢走。
             bit.setItemInHand(InteractionHand.MAIN_HAND, held);
         }
+        if (hideFrom != null) {
+            // 名字不显示，只用来告诉客户端"这把剑是谁的"（见 isCosmeticBitHiddenFrom）。
+            bit.setCustomName(Component.literal(COSMETIC_BIT_NAME_PREFIX + hideFrom));
+        }
         bit.addTag(COSMETIC_ENTITY_TAG);
         level.addFreshEntity(bit);
         return bit;
     }
 
     /**
+     * 设剑的持握姿势。
+     * <p>
+     * 姿势走实体数据同步（{@code ArmorStand#setRightArmPose} → {@code DATA_RIGHT_ARM_POSE}），
+     * 所以每 tick 设一遍也不会多发包：值没变就不会标脏。每 tick 重设的好处是自愈 ——
+     * 反击结束后不需要专门找一个"该把剑翻回来了"的时机。
+     */
+    private static void setSwordPose(CosmeticBit bit, boolean stabbing) {
+        bit.setRightArmPose(stabbing ? SWORD_POSE_STAB : SWORD_POSE_IDLE);
+    }
+
+    /**
      * 摆一个装饰实体。
      *
-     * @param y       方块/牌子**看起来**应该在的位置，不是实体原点
+     * @param y       剑尖/牌子**看起来**应该在的位置，不是实体原点
      * @param yOffset 实体渲染中心相对原点的偏移：手持物要往下补，名牌本身不用
      */
     private static void placeCosmetic(CosmeticBit bit, double x, double y, double z, float yaw, double yOffset) {
         bit.setPos(x, y - yOffset, z);
-        // 方块跟着公转角度转：既是自转，也让方块的正面一直朝着外侧。
+        // 剑跟着玩家朝向转：不只是自转，整队剑是"跟着人身后"一起转向的。
         bit.setYRot(yaw);
         // 每 tick 都是直接摆位置，残留的速度会让客户端看到抖动，顺手清掉。
         bit.setDeltaMovement(Vec3.ZERO);
@@ -962,7 +1033,7 @@ public final class KunJinKaoQolHandler {
             if (state.title != null) {
                 state.title.discard();
             }
-            state.title = spawnCosmeticBit(level, ItemStack.EMPTY);
+            state.title = spawnCosmeticBit(level, ItemStack.EMPTY, null);
             state.title.setCustomName(titleText(player));
             state.title.setCustomNameVisible(true);
         }
@@ -984,7 +1055,7 @@ public final class KunJinKaoQolHandler {
                 .append(Component.literal(player.getGameProfile().getName()).withStyle(ChatFormatting.WHITE));
     }
 
-    /** 公转的三个方块（202），顺带推进正在进行的反击。 */
+    /** 身后三把剑（202），顺带推进正在进行的反击。 */
     private static void tickOrbit(ServerPlayer player, Cosmetics state, boolean on) {
         ServerLevel level = serverLevelOf(player);
         if (!on || level == null) {
@@ -1000,38 +1071,53 @@ public final class KunJinKaoQolHandler {
             }
         }
         while (state.bits.size() < ORBIT_BIT_COUNT) {
-            state.bits.add(spawnCosmeticBit(level, new ItemStack(WorldGateRegistry.WORLD_GATE_ITEM.get())));
+            // 用本模组自己的剑。空手的一把是"未验证的合成成品"才有的状态，新 ItemStack 是正常剑，
+            // 物品模型谓词会给出 -1（完整剑模型），不会渲染成编译阶段的小方块。
+            state.bits.add(spawnCosmeticBit(level,
+                    new ItemStack(SwordRegistry.KUN_JIN_KAO_SWORD.get()), player.getUUID()));
         }
 
-        double base = Math.toRadians(player.tickCount * ORBIT_SPIN_DEGREES);
+        // 位置按玩家朝向算，而不是绕圈：朝向的水平分量是 (-sin, cos)，
+        // 身后就是它的反向，身侧是 (cos, sin)。三把剑排成一段弧，随朝向一起转，
+        // 转视角的时候它们是"在背后"而不是"围着人转"。
+        double yaw = Math.toRadians(player.getYRot());
+        double behindX = Math.sin(yaw);
+        double behindZ = -Math.cos(yaw);
+        double sideX = Math.cos(yaw);
+        double sideZ = Math.sin(yaw);
+        int tick = player.tickCount;
         for (int i = 0; i < state.bits.size(); i++) {
-            // 反击中的那一个由 tickStrike 定位（索引 0）：这里不跳过的话两处会每 tick 互相拉扯。
+            // 反击中的那一把由 tickStrike 定位（索引 0）：这里不跳过的话两处会每 tick 互相拉扯。
             if (i == 0 && state.strikeTarget != null) {
                 continue;
             }
-            double angle = base + i * (Math.PI * 2.0D / ORBIT_BIT_COUNT);
-            double targetX = player.getX() + Math.cos(angle) * ORBIT_RADIUS;
-            double targetY = player.getY() + ORBIT_HEIGHT + Math.sin(angle * 2.0D) * ORBIT_BOB;
-            double targetZ = player.getZ() + Math.sin(angle) * ORBIT_RADIUS;
+            CosmeticBit bit = state.bits.get(i);
+            setSwordPose(bit, false);
+            // slot：-1 / 0 / +1，正好左、中、右。
+            double slot = i - (ORBIT_BIT_COUNT - 1) / 2.0D;
+            double phase = tick * ORBIT_SWAY_SPEED + i * 1.7D;
+            double targetX = player.getX() + behindX * ORBIT_BACK_DISTANCE
+                    + sideX * (slot * ORBIT_SIDE_SPREAD + Math.sin(phase) * ORBIT_SWAY);
+            double targetY = player.getY() + ORBIT_HEIGHT + Math.sin(phase) * 0.05D;
+            double targetZ = player.getZ() + behindZ * ORBIT_BACK_DISTANCE
+                    + sideZ * (slot * ORBIT_SIDE_SPREAD + Math.sin(phase) * ORBIT_SWAY);
             if (i == 0 && state.returning) {
                 // 飞回来：和追人一样用指数逼近，别从目标头顶"啪"一下跳回背后。
-                CosmeticBit bit = state.bits.get(i);
                 Vec3 from = bit.position().add(0.0D, BIT_HAND_OFFSET, 0.0D);
                 Vec3 to = new Vec3(targetX, targetY, targetZ);
                 Vec3 next = from.add(to.subtract(from).scale(STRIKE_CHASE));
                 if (next.distanceTo(to) < 0.25D) {
                     state.returning = false;
                 }
-                placeCosmetic(bit, next.x, next.y, next.z, (float) Math.toDegrees(angle), BIT_HAND_OFFSET);
+                placeCosmetic(bit, next.x, next.y, next.z, player.getYRot(), BIT_HAND_OFFSET);
                 continue;
             }
-            placeCosmetic(state.bits.get(i), targetX, targetY, targetZ,
-                    (float) Math.toDegrees(angle), BIT_HAND_OFFSET);
+            placeCosmetic(bit, targetX, targetY, targetZ, player.getYRot(), BIT_HAND_OFFSET);
         }
         tickStrike(player, state, level);
     }
 
-    /** 收走公转方块并结束反击。关掉挂件的路上也要走这一步 —— 否则方块没了，人还在挨打。 */
+    /** 收走三把剑并结束反击。关掉挂件的路上也要走这一步 —— 否则剑没了，人还在挨打。 */
     private static void clearBits(Cosmetics state) {
         for (CosmeticBit bit : state.bits) {
             bit.discard();
@@ -1048,8 +1134,8 @@ public final class KunJinKaoQolHandler {
      * 在事件里把整段反击做完会把主线程按住 5 秒，那就是一次卡服。
      * <p>
      * 只认"打进来的一方是玩家"：这条装饰的语义是"打管理员会还手"。
-     * 让僵尸也能触发的话，管理员挂机一晚就会被自己的方块拖着满地图追怪。
-     * 一次只追一个人：被几个人围住时先把第一个打回去，比三个方块各飞一边清楚得多。
+     * 让僵尸也能触发的话，管理员挂机一晚就会被自己的剑拖着满地图追怪。
+     * 一次只追一个人：被几个人围住时先把第一个打回去，比三把剑各飞一边清楚得多。
      */
     @SubscribeEvent
     public void onLivingIncomingDamage(LivingIncomingDamageEvent event) {
@@ -1072,19 +1158,19 @@ public final class KunJinKaoQolHandler {
         state.nextStrikeTick = 0;
     }
 
-    /** 反击：索引 0 的那块方块脱离轨道，追着目标的头顶打；打完飞回去。 */
+    /** 反击：索引 0 的那把剑脱离身后，飞到目标头顶向下刺；打完飞回去。 */
     private static void tickStrike(ServerPlayer admin, Cosmetics state, ServerLevel level) {
         if (state.strikeTarget == null) {
             return;
         }
         if (state.bits.isEmpty()) {
-            // 方块被清掉了就没得追了（下一 tick 会重新长出来）。
+            // 剑被清掉了就没得追了（下一 tick 会重新长出来）。
             finishStrike(state);
             return;
         }
         ServerPlayer victim = level.getServer().getPlayerList().getPlayer(state.strikeTarget);
         if (victim == null || !victim.isAlive() || victim.level() != level) {
-            // 目标下线、死了、或者换维度了：这次反击到此为止，方块飞回轨道。
+            // 目标下线、死了、或者换维度了：这次反击到此为止，剑飞回身后。
             // 全服找不到人的"跨维度追击"没有意义，挨打的人已经不在管理员眼前了。
             finishStrike(state);
             return;
@@ -1092,11 +1178,17 @@ public final class KunJinKaoQolHandler {
         state.strikeTicks++;
 
         CosmeticBit bit = state.bits.get(0);
-        Vec3 head = new Vec3(victim.getX(), victim.getY() + victim.getBbHeight() + STRIKE_HOVER, victim.getZ());
-        // 用"看起来的位置"算距离：实体原点和方块中心差着半个格，混着算会让方块停在头顶上方半格。
-        Vec3 from = bit.position().add(0.0D, BIT_HAND_OFFSET, 0.0D);
+        // 追人的这一把翻成"剑尖朝下"。
+        setSwordPose(bit, true);
+        // 每一下之间先抬起来再压下去：只压着不动看起来是"贴着"，不是"刺"。
+        // 判定用"离下一击还剩几 tick"，这样刺下去的时机和伤害落地是同一下。
+        boolean thrusting = state.nextStrikeTick - state.strikeTicks <= STRIKE_THRUST_WINDOW;
+        double hover = STRIKE_HOVER + (thrusting ? 0.0D : STRIKE_RETRACT);
+        Vec3 head = new Vec3(victim.getX(), victim.getY() + victim.getBbHeight() + hover, victim.getZ());
+        // 用"剑尖看起来的位置"算距离：实体原点和剑尖差着半格，混着算会让剑停在头顶上方半格。
+        Vec3 from = bit.position().add(0.0D, STAB_HAND_OFFSET, 0.0D);
         Vec3 next = from.add(head.subtract(from).scale(STRIKE_CHASE));
-        placeCosmetic(bit, next.x, next.y, next.z, victim.getYRot(), BIT_HAND_OFFSET);
+        placeCosmetic(bit, next.x, next.y, next.z, victim.getYRot(), STAB_HAND_OFFSET);
 
         // 飞到了才开始打：还没到就扣血，看起来像隔着半条街在放技能。
         if (next.distanceTo(head) < STRIKE_REACH && state.strikeTicks >= state.nextStrikeTick) {
@@ -1108,7 +1200,7 @@ public final class KunJinKaoQolHandler {
         }
     }
 
-    /** 收尾：清掉目标，并让方块走"飞回轨道"的分支，不要从头顶瞬间跳回背后。 */
+    /** 收尾：清掉目标，并让剑走"飞回身后"的分支，不要从头顶瞬间跳回去。 */
     private static void finishStrike(Cosmetics state) {
         state.endStrike();
         state.returning = true;
