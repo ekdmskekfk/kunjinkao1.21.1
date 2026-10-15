@@ -160,7 +160,21 @@ public enum QolSetting {
      */
     ZONE_BREAK(23, 127, Category.ENGINEERING, Scope.PERSONAL, Kind.ACTION, 0, 1, 0, ""),
     /** 127 选区作业·放置：按执行键把选区里的空位用副手方块填上。 */
-    ZONE_PLACE(24, 127, Category.ENGINEERING, Scope.PERSONAL, Kind.ACTION, 0, 1, 0, "");
+    ZONE_PLACE(24, 127, Category.ENGINEERING, Scope.PERSONAL, Kind.ACTION, 0, 1, 0, ""),
+
+    // ===== 管理员装饰（G 面板的「装饰」页）=====
+    // 三项都是个人级开关，但服务端在生效前还会再查一次"这个人是不是通过验证的管理员"
+    // （见 KunJinKaoQolHandler 里的装饰判定）：装饰是管理员身份的展示，
+    // 不该让任何玩家点开开关就给自己戴上。
+    //
+    // 序号沿用"给人看的功能号"。装饰这三项不在原开发计划里，所以从 201 起另起一段，
+    // 免得和 70-127 那些真正对应计划条目的号码混在一起。
+    /** 201 乱码称号：头顶名字前挂一枚乱码前缀，所有玩家都看得见。 */
+    COSMETIC_TITLE(25, 201, Category.COSMETIC, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, ""),
+    /** 202 浮游挂件：背后三个小方块绕身公转，被玩家攻击时其中一个飞去他头顶反击。 */
+    COSMETIC_ORBIT(26, 202, Category.COSMETIC, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, ""),
+    /** 203 光环与拖尾：脚下一圈光环，移动时拖出一条渐隐的粒子尾迹。 */
+    COSMETIC_AURA(27, 203, Category.COSMETIC, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, "");
 
     /**
      * 面板顶部的分类标签。
@@ -174,6 +188,8 @@ public enum QolSetting {
         INCOME("income"),
         CONVENIENCE("convenience"),
         ENGINEERING("engineering"),
+        /** 管理员装饰：称号、浮游挂件、光环拖尾。 */
+        COSMETIC("cosmetic"),
         SERVER("server");
 
         private final String key;

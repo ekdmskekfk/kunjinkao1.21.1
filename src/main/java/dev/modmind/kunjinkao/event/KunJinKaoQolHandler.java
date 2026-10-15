@@ -1,6 +1,8 @@
 package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoEntry;
+import dev.modmind.kunjinkao.KunJinKaoPalette;
+import dev.modmind.kunjinkao.WorldGateRegistry;
 import dev.modmind.kunjinkao.config.AdminToolConfig;
 import dev.modmind.kunjinkao.config.QolStateSavedData;
 import dev.modmind.kunjinkao.network.NetworkHandler;
@@ -10,27 +12,42 @@ import dev.modmind.kunjinkao.qol.QolSetting;
 import dev.modmind.kunjinkao.qol.QolSettings;
 import dev.modmind.kunjinkao.world.ZoneExcavationJob;
 import dev.modmind.kunjinkao.world.ZoneSelection;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.particles.DustParticleOptions;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.joml.Vector3f;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -112,6 +129,149 @@ public final class KunJinKaoQolHandler {
 
     /** 待确认的执行请求，按玩家存。 */
     private static final Map<UUID, PendingConfirm> ZONE_PENDING_CONFIRM = new ConcurrentHashMap<>();
+
+    // ===================== 管理员装饰（201–203）=====================
+    /*
+     * 三项装饰（乱码称号 / 浮游挂件 / 光环拖尾）共用一套载体：**隐形的盔甲架**。
+     *
+     * 为什么不是 BlockDisplay：1.21 把 Display 的全部 setter 都收成了 private
+     * （setBlockState、setTransformation、setPosRotInterpolationDuration …），代码里配不出来，
+     * 只能走 /summon 那种 NBT 路子；而盔甲架是原版实体、API 全公开，
+     * **别的玩家不装这个模组也看得见** —— 这是本次需求里最硬的一条，载体必须是原版就能渲染的东西。
+     *
+     * 三处关键细节都对着 1.21.1 的渲染代码确认过：
+     *   - Invisible 只让"身体"不画。LivingEntityRenderer 里 render layers（手持物）在身体可见性
+     *     之外单独跑，所以"隐形盔甲架举着方块"，看到的只有方块；
+     *   - ArmorStandRenderer#shouldShowName 只判 isCustomNameVisible，不看隐形，
+     *     所以隐形盔甲架的名字照样浮在头顶 —— 称号牌就是这么来的；
+     *   - 玩家自己的名牌改不了：Player#getDisplayName 走的是 profile 名 + 队伍前缀，
+     *     完全不看 CustomName，setCustomName 到玩家身上对别人来说什么都不会发生。
+     *
+     * 全部设成 Marker：没有碰撞箱、不可拾取、不受活塞推动 —— 装饰不该被玩家点掉、
+     * 也不该抢走玩家准星原来的目标。
+     */
+
+    /** 装饰实体身上的标记，排查问题时报得出是谁的。 */
+    private static final String COSMETIC_ENTITY_TAG = "kunjinkao_cosmetic";
+
+    /** 公转方块的个数。 */
+    private static final int ORBIT_BIT_COUNT = 3;
+    /** 公转半径（格）。 */
+    private static final double ORBIT_RADIUS = 0.85D;
+    /** 公转平面离脚底多高（格）。 */
+    private static final double ORBIT_HEIGHT = 1.25D;
+    /** 公转时的上下浮动幅度（格）。 */
+    private static final double ORBIT_BOB = 0.09D;
+    /** 每 tick 转过的角度。4° → 一圈 1.5 秒。 */
+    private static final double ORBIT_SPIN_DEGREES = 4.0D;
+    /** 小号盔甲架的手持物渲染在原点上方约半格，位置要往下补这么多，方块中心才落在指定点上。 */
+    private static final double BIT_HAND_OFFSET = 0.5D;
+
+    // ===== 反击（202 附带）=====
+    /** 一次反击持续多久（tick）。100 = 5 秒。 */
+    private static final int STRIKE_DURATION = 100;
+    /**
+     * 两下之间的间隔（tick）。
+     * <p>
+     * 10 不是随手挑的：玩家受击后有 20 tick 无敌帧，而 {@code LivingEntity#hurt} 的判定是
+     * {@code invulnerableTime > 10} 才丢弃这一下 —— 间隔取 10 tick 时，下一次伤害正好落在
+     * 无敌帧的第 10 tick 上，每一击都能真的打出去，同时完全不用去动玩家的无敌时间
+     * （清掉它会让别人打这个玩家的伤害也一起变实，反击就不"干净"了）。
+     */
+    private static final int STRIKE_DAMAGE_INTERVAL = 10;
+    /** 每一击的伤害点数。 */
+    private static final float STRIKE_DAMAGE = 1.0F;
+    /**
+     * 低于这个血量就不再打。
+     * <p>
+     * 3.0 = 一颗心（2.0）+ 这一击（1.0）：打完至少还剩一颗心。
+     * 这套东西是"打管理员会还手"的惩罚，不是处决。
+     */
+    private static final float STRIKE_MIN_HEALTH = 3.0F;
+    /** 追击速度：每 tick 靠近剩余距离的这个比例。越近越慢，停在头顶时不会抖。 */
+    private static final double STRIKE_CHASE = 0.45D;
+    /** 离头顶这么近才算"飞到了"，到了才开始扣血。 */
+    private static final double STRIKE_REACH = 0.55D;
+    /** 停在头顶上方多高（格）。 */
+    private static final double STRIKE_HOVER = 0.45D;
+
+    // ===== 光环与拖尾（203）=====
+    /** 光环每几 tick 撒一圈。 */
+    private static final int AURA_INTERVAL = 2;
+    /** 光环半径（格）。 */
+    private static final double AURA_RADIUS = 0.9D;
+    /** 光环离脚底多高（格）。 */
+    private static final double AURA_HEIGHT = 0.15D;
+    /** 一圈的点数。 */
+    private static final int AURA_POINTS = 10;
+    /** 每 tick 转过的弧度：一圈约 4 秒。 */
+    private static final double AURA_SPIN = 0.05D;
+    /** 拖尾：走过这么远才补一段粒子，站着不动就不刷。 */
+    private static final double TRAIL_STEP = 0.55D;
+    /** 一次最多补几个点：瞬移几千格时用它封顶，免得一 tick 撒满整条线上。 */
+    private static final int TRAIL_MAX_POINTS = 8;
+    /** 称号牌浮在头顶多高（格）。正好落在原版名牌上方一点。 */
+    private static final double TITLE_HEIGHT = 0.45D;
+
+    /**
+     * 光环用品红（数据损坏）、拖尾用青色（常态）。
+     * <p>
+     * 两种粒子的体积都很小，颜色分开才看得出层次 —— 这和 {@link KunJinKaoPalette} 里
+     * "按含义定色"是同一套规矩，不是随手挑的两种好看颜色。
+     */
+    private static final DustParticleOptions AURA_PARTICLE = cosmeticDust(KunJinKaoPalette.CORRUPT, 1.1F);
+    private static final DustParticleOptions TRAIL_PARTICLE = cosmeticDust(KunJinKaoPalette.NORMAL, 0.9F);
+
+    private static DustParticleOptions cosmeticDust(int argb, float scale) {
+        return new DustParticleOptions(new Vector3f(
+                KunJinKaoPalette.red(argb), KunJinKaoPalette.green(argb), KunJinKaoPalette.blue(argb)), scale);
+    }
+
+    /** 每个在线管理员一份装饰状态，键是玩家 UUID。 */
+    private static final Map<UUID, Cosmetics> COSMETICS = new ConcurrentHashMap<>();
+
+    /** 一个管理员的装饰状态：实体句柄 + 反击进度。 */
+    private static final class Cosmetics {
+        /** 公转的三个方块；索引 0 兼作反击时飞出去的那一个。 */
+        final List<CosmeticBit> bits = new ArrayList<>(ORBIT_BIT_COUNT);
+        /** 头顶称号牌。 */
+        CosmeticBit title;
+        /** 正在被反击的目标；null 表示没有反击在进行。 */
+        UUID strikeTarget;
+        /** 反击已经持续了多少 tick。 */
+        int strikeTicks;
+        /** 下一击在 strikeTicks 到达这个值时落地。 */
+        int nextStrikeTick;
+        /** 反击结束后，索引 0 那一块正在飞回公转轨道。 */
+        boolean returning;
+        /** 上一次撒拖尾粒子的位置；null 表示"刚开，还没有上一处"。 */
+        Vec3 trailFrom;
+
+        /** 结束反击。{@code returning} 由调用方决定：正常打完要飞回去，挂件被关掉则不用。 */
+        void endStrike() {
+            strikeTarget = null;
+            strikeTicks = 0;
+            nextStrikeTick = 0;
+        }
+    }
+
+    /**
+     * 装饰用的隐形盔甲架。
+     * <p>
+     * 覆写 {@link #shouldBeSaved()} 返回 false 是关键的一步：这些实体只在"主人挂着装饰"的这段时间里
+     * 存在，写进存档只会在服务器崩过之后留下一堆没人认领的浮空方块。
+     * 不落盘 = 世界重载/重启之后一定不残留，比事后清扫可靠得多。
+     */
+    private static final class CosmeticBit extends ArmorStand {
+        CosmeticBit(ServerLevel level) {
+            super(EntityType.ARMOR_STAND, level);
+        }
+
+        @Override
+        public boolean shouldBeSaved() {
+            return false;
+        }
+    }
 
     // ===================== 网络入口 =====================
 
@@ -487,6 +647,9 @@ public final class KunJinKaoQolHandler {
                 sendZoneStatus(player);
             }
         }
+        // 装饰（201–203）每 tick 都要推进：公转、追头、光环都是"看起来在动"的东西，
+        // 20 tick 一档的话看起来就是一张一张地跳。
+        tickCosmetics(player);
     }
 
     /** 玩家退出时清掉他的选区、作业与撤销记录。 */
@@ -496,6 +659,7 @@ public final class KunJinKaoQolHandler {
             ZONE_PENDING_CONFIRM.remove(player.getUUID());
             ZoneSelection.forget(player.getUUID());
             ZoneExcavationJob.forget(player.getUUID());
+            forgetCosmetics(player);
         }
     }
 
@@ -556,6 +720,11 @@ public final class KunJinKaoQolHandler {
                  ZONE_TICK_BUDGET, ZONE_BATCH_SIDE, ZONE_UNDO_MAX,
                  // 两行作业入口也没有"挂上去"的动作：它们没有值，生效点就是按下执行键那一刻。
                  ZONE_BREAK, ZONE_PLACE -> {
+            }
+            // 装饰（201 称号牌 / 202 浮游挂件 / 203 光环拖尾）同样没有"挂到玩家身上"的动作：
+            // 它们由 tickCosmetics 每 tick 推进，开关一改下一 tick（50 ms）就出现或消失，
+            // 不需要在这里补一次，也不该在这里另写一份 —— 两份逻辑迟早在某一边漏掉一处。
+            case COSMETIC_TITLE, COSMETIC_ORBIT, COSMETIC_AURA -> {
             }
         }
     }
@@ -666,5 +835,361 @@ public final class KunJinKaoQolHandler {
         instance.removeModifier(modifierId);
         instance.addTransientModifier(new AttributeModifier(
                 modifierId, amount, AttributeModifier.Operation.ADD_VALUE));
+    }
+
+    // ===================== 管理员装饰的实现 =====================
+
+    /**
+     * 装饰的总入口：每 tick 走一遍。
+     * <p>
+     * 三项共用一个入口是有意的 —— 它们的状态（实体句柄、反击进度）都在同一份 {@link Cosmetics} 里，
+     * 拆成三条独立路径的话，"关掉挂件时顺手结束反击"这种跨项动作就没地方放了。
+     */
+    private static void tickCosmetics(ServerPlayer player) {
+        // 先判授权再读设置：未授权的玩家是绝大多数，不该为这三项每 tick 去翻一次玩家存档。
+        boolean authorized = AdminToolConfig.isAuthorized(player.getUUID());
+        boolean titleOn = authorized && isOn(player, QolSetting.COSMETIC_TITLE);
+        boolean orbitOn = authorized && isOn(player, QolSetting.COSMETIC_ORBIT);
+        boolean auraOn = authorized && isOn(player, QolSetting.COSMETIC_AURA);
+        boolean anyOn = titleOn || orbitOn || auraOn;
+
+        Cosmetics state = COSMETICS.get(player.getUUID());
+        if (state == null) {
+            if (!anyOn) {
+                return;
+            }
+            state = new Cosmetics();
+            COSMETICS.put(player.getUUID(), state);
+        }
+
+        tickTitle(player, state, titleOn);
+        tickOrbit(player, state, orbitOn);
+        tickAura(player, state, auraOn);
+
+        // 三项都关掉（或者被取消了授权）就不要再留这份状态：实体在上面各自已经收走了。
+        if (!anyOn) {
+            COSMETICS.remove(player.getUUID(), state);
+        }
+    }
+
+    /** 掉线：装饰实体跟着一起收走。它们不落盘，所以这里必须清干净，否则会一直飘在原地。 */
+    private static void forgetCosmetics(ServerPlayer player) {
+        Cosmetics state = COSMETICS.remove(player.getUUID());
+        if (state == null) {
+            return;
+        }
+        clearBits(state);
+        if (state.title != null) {
+            state.title.discard();
+            state.title = null;
+        }
+    }
+
+    /**
+     * 造一个隐形的小号盔甲架。
+     * <p>
+     * Small / Marker / Invisible 三个标记是先写进 NBT 再 {@code load} 进去的：1.21 里
+     * {@code ArmorStand#setSmall} 与 {@code setMarker} 都是 private，而 NBT 读写是公开的
+     * （/summon 走的就是这条路）。为两个布尔量写一个 mixin 不划算。
+     * <p>
+     * public 的 setter 一律放在 {@code load} 之后：load 会把 NBT 里的默认值一并写回实体，
+     * 顺序反了就会被覆盖回去。
+     */
+    private static CosmeticBit spawnCosmeticBit(ServerLevel level, ItemStack held) {
+        CosmeticBit bit = new CosmeticBit(level);
+        CompoundTag tag = new CompoundTag();
+        tag.putBoolean("Small", true);
+        tag.putBoolean("Marker", true);
+        tag.putBoolean("Invisible", true);
+        tag.putBoolean("NoBasePlate", true);
+        tag.putBoolean("ShowArms", false);
+        bit.load(tag);
+        bit.setInvulnerable(true);
+        bit.setNoGravity(true);
+        bit.setSilent(true);
+        bit.setCustomNameVisible(false);
+        if (!held.isEmpty()) {
+            // 手里永远举着这一件。隐形/Marker 的盔甲架 hurt 会直接返回 false，所以它不会被抢走。
+            bit.setItemInHand(InteractionHand.MAIN_HAND, held);
+        }
+        bit.addTag(COSMETIC_ENTITY_TAG);
+        level.addFreshEntity(bit);
+        return bit;
+    }
+
+    /**
+     * 摆一个装饰实体。
+     *
+     * @param y       方块/牌子**看起来**应该在的位置，不是实体原点
+     * @param yOffset 实体渲染中心相对原点的偏移：手持物要往下补，名牌本身不用
+     */
+    private static void placeCosmetic(CosmeticBit bit, double x, double y, double z, float yaw, double yOffset) {
+        bit.setPos(x, y - yOffset, z);
+        // 方块跟着公转角度转：既是自转，也让方块的正面一直朝着外侧。
+        bit.setYRot(yaw);
+        // 每 tick 都是直接摆位置，残留的速度会让客户端看到抖动，顺手清掉。
+        bit.setDeltaMovement(Vec3.ZERO);
+    }
+
+    /** 当前维度；装饰实体只能加进服务端世界。 */
+    private static ServerLevel serverLevelOf(ServerPlayer player) {
+        return player.level() instanceof ServerLevel level ? level : null;
+    }
+
+    /**
+     * 头顶称号牌（201）。
+     * <p>
+     * 用一块隐形盔甲架的名字来显示，而不是改玩家自己的 CustomName：
+     * 玩家名牌渲染走的是 {@code Player#getDisplayName()}（profile 名 + 队伍前缀），CustomName 不参与，
+     * 改了对别人来说什么都不会发生。盔甲架不是玩家，名字就照原样渲染，
+     * 而且 {@code ArmorStandRenderer} 判名字时只看 CustomNameVisible、不看隐形，
+     * 于是牌子浮在头顶、架子本身看不见。
+     */
+    private static void tickTitle(ServerPlayer player, Cosmetics state, boolean on) {
+        if (!on) {
+            if (state.title != null) {
+                state.title.discard();
+                state.title = null;
+            }
+            return;
+        }
+        ServerLevel level = serverLevelOf(player);
+        if (level == null) {
+            return;
+        }
+        // 换维度、被 /kill @e[type=armor_stand] 扫掉之后自愈：下一 tick 重新长一块出来。
+        if (state.title == null || state.title.isRemoved() || state.title.level() != level) {
+            if (state.title != null) {
+                state.title.discard();
+            }
+            state.title = spawnCosmeticBit(level, ItemStack.EMPTY);
+            state.title.setCustomName(titleText(player));
+            state.title.setCustomNameVisible(true);
+        }
+        placeCosmetic(state.title,
+                player.getX(), player.getY() + player.getBbHeight() + TITLE_HEIGHT, player.getZ(),
+                player.getYRot(), 0.0D);
+    }
+
+    /**
+     * 称号牌的内容：乱码前缀 + 真名。
+     * <p>
+     * 前缀用的是主题里那个替换字符，和剑上、HUD 上的记号是同一个 —— 这是"数据损坏"这条线自己的符号。
+     * 名字取 profile 名而不是 {@code getName()}：玩家的显示名会受队伍前缀影响，摆两次会越接越长。
+     */
+    private static Component titleText(ServerPlayer player) {
+        return Component.literal(KunJinKaoPalette.MOJIBAKE + KunJinKaoPalette.MOJIBAKE)
+                .withStyle(ChatFormatting.LIGHT_PURPLE)
+                .append(Component.literal(" ").withStyle(ChatFormatting.DARK_GRAY))
+                .append(Component.literal(player.getGameProfile().getName()).withStyle(ChatFormatting.WHITE));
+    }
+
+    /** 公转的三个方块（202），顺带推进正在进行的反击。 */
+    private static void tickOrbit(ServerPlayer player, Cosmetics state, boolean on) {
+        ServerLevel level = serverLevelOf(player);
+        if (!on || level == null) {
+            clearBits(state);
+            return;
+        }
+        // 自愈：换维度、实体被别的东西清掉之后，这里下一 tick 就能补回来。
+        for (int i = state.bits.size() - 1; i >= 0; i--) {
+            CosmeticBit bit = state.bits.get(i);
+            if (bit.isRemoved() || bit.level() != level) {
+                bit.discard();
+                state.bits.remove(i);
+            }
+        }
+        while (state.bits.size() < ORBIT_BIT_COUNT) {
+            state.bits.add(spawnCosmeticBit(level, new ItemStack(WorldGateRegistry.WORLD_GATE_ITEM.get())));
+        }
+
+        double base = Math.toRadians(player.tickCount * ORBIT_SPIN_DEGREES);
+        for (int i = 0; i < state.bits.size(); i++) {
+            // 反击中的那一个由 tickStrike 定位（索引 0）：这里不跳过的话两处会每 tick 互相拉扯。
+            if (i == 0 && state.strikeTarget != null) {
+                continue;
+            }
+            double angle = base + i * (Math.PI * 2.0D / ORBIT_BIT_COUNT);
+            double targetX = player.getX() + Math.cos(angle) * ORBIT_RADIUS;
+            double targetY = player.getY() + ORBIT_HEIGHT + Math.sin(angle * 2.0D) * ORBIT_BOB;
+            double targetZ = player.getZ() + Math.sin(angle) * ORBIT_RADIUS;
+            if (i == 0 && state.returning) {
+                // 飞回来：和追人一样用指数逼近，别从目标头顶"啪"一下跳回背后。
+                CosmeticBit bit = state.bits.get(i);
+                Vec3 from = bit.position().add(0.0D, BIT_HAND_OFFSET, 0.0D);
+                Vec3 to = new Vec3(targetX, targetY, targetZ);
+                Vec3 next = from.add(to.subtract(from).scale(STRIKE_CHASE));
+                if (next.distanceTo(to) < 0.25D) {
+                    state.returning = false;
+                }
+                placeCosmetic(bit, next.x, next.y, next.z, (float) Math.toDegrees(angle), BIT_HAND_OFFSET);
+                continue;
+            }
+            placeCosmetic(state.bits.get(i), targetX, targetY, targetZ,
+                    (float) Math.toDegrees(angle), BIT_HAND_OFFSET);
+        }
+        tickStrike(player, state, level);
+    }
+
+    /** 收走公转方块并结束反击。关掉挂件的路上也要走这一步 —— 否则方块没了，人还在挨打。 */
+    private static void clearBits(Cosmetics state) {
+        for (CosmeticBit bit : state.bits) {
+            bit.discard();
+        }
+        state.bits.clear();
+        state.endStrike();
+        state.returning = false;
+    }
+
+    /**
+     * 玩家打了管理员 → 起一次反击。
+     * <p>
+     * 这里只记下"追谁"，真正的追击与扣血交给 {@link #tickStrike} 按 tick 走：
+     * 在事件里把整段反击做完会把主线程按住 5 秒，那就是一次卡服。
+     * <p>
+     * 只认"打进来的一方是玩家"：这条装饰的语义是"打管理员会还手"。
+     * 让僵尸也能触发的话，管理员挂机一晚就会被自己的方块拖着满地图追怪。
+     * 一次只追一个人：被几个人围住时先把第一个打回去，比三个方块各飞一边清楚得多。
+     */
+    @SubscribeEvent
+    public void onLivingIncomingDamage(LivingIncomingDamageEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer admin)) {
+            return;
+        }
+        if (!(event.getSource().getEntity() instanceof ServerPlayer attacker) || attacker == admin) {
+            return;
+        }
+        if (!AdminToolConfig.isAuthorized(admin.getUUID()) || !isOn(admin, QolSetting.COSMETIC_ORBIT)) {
+            return;
+        }
+        Cosmetics state = COSMETICS.get(admin.getUUID());
+        if (state == null || state.bits.isEmpty() || state.strikeTarget != null) {
+            // 挂件还没长出来，或者已经在追别人了 —— 不叠加。
+            return;
+        }
+        state.strikeTarget = attacker.getUUID();
+        state.strikeTicks = 0;
+        state.nextStrikeTick = 0;
+    }
+
+    /** 反击：索引 0 的那块方块脱离轨道，追着目标的头顶打；打完飞回去。 */
+    private static void tickStrike(ServerPlayer admin, Cosmetics state, ServerLevel level) {
+        if (state.strikeTarget == null) {
+            return;
+        }
+        if (state.bits.isEmpty()) {
+            // 方块被清掉了就没得追了（下一 tick 会重新长出来）。
+            finishStrike(state);
+            return;
+        }
+        ServerPlayer victim = level.getServer().getPlayerList().getPlayer(state.strikeTarget);
+        if (victim == null || !victim.isAlive() || victim.level() != level) {
+            // 目标下线、死了、或者换维度了：这次反击到此为止，方块飞回轨道。
+            // 全服找不到人的"跨维度追击"没有意义，挨打的人已经不在管理员眼前了。
+            finishStrike(state);
+            return;
+        }
+        state.strikeTicks++;
+
+        CosmeticBit bit = state.bits.get(0);
+        Vec3 head = new Vec3(victim.getX(), victim.getY() + victim.getBbHeight() + STRIKE_HOVER, victim.getZ());
+        // 用"看起来的位置"算距离：实体原点和方块中心差着半个格，混着算会让方块停在头顶上方半格。
+        Vec3 from = bit.position().add(0.0D, BIT_HAND_OFFSET, 0.0D);
+        Vec3 next = from.add(head.subtract(from).scale(STRIKE_CHASE));
+        placeCosmetic(bit, next.x, next.y, next.z, victim.getYRot(), BIT_HAND_OFFSET);
+
+        // 飞到了才开始打：还没到就扣血，看起来像隔着半条街在放技能。
+        if (next.distanceTo(head) < STRIKE_REACH && state.strikeTicks >= state.nextStrikeTick) {
+            state.nextStrikeTick = state.strikeTicks + STRIKE_DAMAGE_INTERVAL;
+            strikeDamage(admin, victim, bit);
+        }
+        if (state.strikeTicks >= STRIKE_DURATION) {
+            finishStrike(state);
+        }
+    }
+
+    /** 收尾：清掉目标，并让方块走"飞回轨道"的分支，不要从头顶瞬间跳回背后。 */
+    private static void finishStrike(Cosmetics state) {
+        state.endStrike();
+        state.returning = true;
+    }
+
+    /**
+     * 反击的一击。
+     * <p>
+     * 伤害用 {@code indirectMagic}：魔法伤害不吃护甲，否则一身好装备的玩家会把这套反击
+     * 减到看不见数字，那这条装饰就等于没做。附魔保护仍然有效 —— 那属于"他就是很硬"。
+     * <p>
+     * 低于 {@link #STRIKE_MIN_HEALTH} 就停手：这是惩罚，不是处决。
+     * 命中反馈同时发给围观的人（sendParticles / playSound 都是服务端广播），
+     * 不然只有被打的人自己知道发生了什么。
+     */
+    private static void strikeDamage(ServerPlayer admin, ServerPlayer victim, CosmeticBit bit) {
+        if (victim.getHealth() <= STRIKE_MIN_HEALTH) {
+            return;
+        }
+        ServerLevel level = serverLevelOf(victim);
+        if (level == null) {
+            return;
+        }
+        victim.hurt(admin.damageSources().indirectMagic(bit, admin), STRIKE_DAMAGE);
+        level.sendParticles(ParticleTypes.CRIT,
+                victim.getX(), victim.getY() + victim.getBbHeight() * 0.85D, victim.getZ(),
+                6, 0.25D, 0.25D, 0.25D, 0.02D);
+        level.sendParticles(AURA_PARTICLE,
+                victim.getX(), victim.getY() + victim.getBbHeight() + STRIKE_HOVER, victim.getZ(),
+                8, 0.18D, 0.12D, 0.18D, 0.0D);
+        level.playSound(null, victim.getX(), victim.getY(), victim.getZ(),
+                SoundEvents.AMETHYST_CLUSTER_BREAK, SoundSource.PLAYERS, 0.55F, 1.6F);
+    }
+
+    /**
+     * 光环与拖尾（203）。
+     * <p>
+     * 粒子一律由服务端发（{@code ServerLevel#sendParticles}）：客户端自己 spawn 的粒子只有本人看得见，
+     * 而这条需求的前提正是"别的玩家也看得见"。
+     */
+    private static void tickAura(ServerPlayer player, Cosmetics state, boolean on) {
+        ServerLevel level = serverLevelOf(player);
+        if (!on || level == null) {
+            state.trailFrom = null;
+            return;
+        }
+
+        // 脚下光环：一圈点按 tick 转，看起来在转而不是闪。
+        if (player.tickCount % AURA_INTERVAL == 0) {
+            double phase = player.tickCount * AURA_SPIN;
+            for (int i = 0; i < AURA_POINTS; i++) {
+                double angle = phase + i * (Math.PI * 2.0D / AURA_POINTS);
+                level.sendParticles(AURA_PARTICLE,
+                        player.getX() + Math.cos(angle) * AURA_RADIUS,
+                        player.getY() + AURA_HEIGHT,
+                        player.getZ() + Math.sin(angle) * AURA_RADIUS,
+                        1, 0.0D, 0.01D, 0.0D, 0.0D);
+            }
+        }
+
+        // 拖尾按"走过的距离"补点，不按 tick：站着不动不该在原地堆一团粒子，
+        // 而跑起来时两点之间要补满，不然速度快了尾迹会断成一节一节。
+        Vec3 now = player.position();
+        Vec3 from = state.trailFrom;
+        state.trailFrom = now;
+        if (from == null) {
+            return;
+        }
+        double distance = now.distanceTo(from);
+        if (distance < TRAIL_STEP) {
+            return;
+        }
+        // 瞬移（回城、传送门、/tp 几千格）时按上限截断，否则一 tick 就在整条线上撒满粒子。
+        int points = (int) Math.min(TRAIL_MAX_POINTS, Math.ceil(distance / TRAIL_STEP));
+        for (int i = 1; i <= points; i++) {
+            double t = i / (double) points;
+            level.sendParticles(TRAIL_PARTICLE,
+                    from.x + (now.x - from.x) * t,
+                    from.y + (now.y - from.y) * t + 0.25D,
+                    from.z + (now.z - from.z) * t,
+                    1, 0.0D, 0.0D, 0.0D, 0.0D);
+        }
     }
 }
