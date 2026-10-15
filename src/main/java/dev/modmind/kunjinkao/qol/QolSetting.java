@@ -171,7 +171,7 @@ public enum QolSetting {
     // 免得和 70-127 那些真正对应计划条目的号码混在一起。
     /** 201 乱码称号：头顶名牌上方另浮一块乱码称号牌，所有玩家都看得见。 */
     COSMETIC_TITLE(25, 201, Category.COSMETIC, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, ""),
-    /** 202 浮游挂件：身后三把剑（别人看得见，自己看不见），被玩家攻击时其中一把飞去他头顶向下刺。 */
+    /** 202 浮游挂件：身后三把剑（所有人看得见），被玩家攻击时其中一把飞去他头顶向下刺。 */
     COSMETIC_ORBIT(26, 202, Category.COSMETIC, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, ""),
     /** 203 光环与拖尾：脚下一圈淡蓝光环，移动时拖出一条渐隐的淡蓝尾迹。 */
     COSMETIC_AURA(27, 203, Category.COSMETIC, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, "");

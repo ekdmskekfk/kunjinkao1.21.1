@@ -22,8 +22,6 @@ import dev.modmind.kunjinkao.client.gui.SwordOptionsScreen;
 import dev.modmind.kunjinkao.client.gui.AdminPasswordScreen;
 import dev.modmind.kunjinkao.client.gui.QolControlScreen;
 import dev.modmind.kunjinkao.client.qol.QolClientState;
-import dev.modmind.kunjinkao.event.KunJinKaoQolHandler;
-import net.neoforged.neoforge.client.event.RenderLivingEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -75,26 +73,6 @@ public class KunJinKaoClientEvents {
     @SubscribeEvent
     public static void onLocalSwordAttack(AttackEntityEvent event) {
         KunJinKaoClientSwordVisuals.onLocalAttack(event);
-    }
-
-    /**
-     * 不画"自己名下"的浮游挂件。
-     * <p>
-     * 需求是：背后那三把剑，<b>别人看得见、管理员自己看不见</b>。服务端没有"只对某个人隐藏实体"
-     * 这种机制（可见性是实体级的，对所有人一样；唯一的例外是"同队 + canSeeFriendlyInvisibles"，
-     * 而它只能让队友看见隐形的，挡不住特定的人），所以这一刀只能画在客户端：
-     * 挂件的自定义名里带着主人的 UUID，名字本身不显示，只当同步通道用
-     * （见 {@code KunJinKaoQolHandler#COSMETIC_BIT_NAME_PREFIX}）。
-     * <p>
-     * 已知边界：对方客户端没装这个模组时，他自己的挂件仍然会显示 ——
-     * 原版机制下没有办法让同一个实体"对 A 可见、对 B 不可见"，这不属于能在服务端解决的问题。
-     */
-    @SubscribeEvent
-    public static void onRenderLivingPre(RenderLivingEvent.Pre event) {
-        Player local = Minecraft.getInstance().player;
-        if (local != null && KunJinKaoQolHandler.isCosmeticBitHiddenFrom(event.getEntity(), local)) {
-            event.setCanceled(true);
-        }
     }
 
     @SubscribeEvent

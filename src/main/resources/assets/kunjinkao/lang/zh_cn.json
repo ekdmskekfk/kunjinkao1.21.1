@@ -164,7 +164,7 @@
   "screen.kunjinkao.qol.cosmetic_title": "乱码称号",
   "screen.kunjinkao.qol.cosmetic_title.desc": "在头顶名牌上方另浮一块乱码称号牌（§d❓❓ §f名字），所有玩家都看得见。这是管理员身份的展示，只有通过管理员密码验证的人能打开。",
   "screen.kunjinkao.qol.cosmetic_orbit": "浮游挂件",
-  "screen.kunjinkao.qol.cosmetic_orbit.desc": "身后飘着三把剑（别人看得见，你自己看不见）。有玩家攻击你时，其中一把会飞到他头顶向下刺，每 10 刻造成 1 点伤害，持续 5 秒，且始终给他留 1 颗心。",
+  "screen.kunjinkao.qol.cosmetic_orbit.desc": "身后飘着三把剑（所有玩家都看得见；第一人称在镜头后面看不到）。有玩家攻击你时，其中一把会飞到他头顶向下刺，每 10 刻造成 1 点伤害，持续 5 秒，且始终给他留 1 颗心。",
   "screen.kunjinkao.qol.cosmetic_aura": "光环与拖尾",
   "screen.kunjinkao.qol.cosmetic_aura.desc": "脚下一圈缓慢旋转的淡蓝光环，移动时拖出一条渐隐的淡蓝尾迹。纯视觉，所有玩家都看得见。",
   "screen.kunjinkao.qol.night_vision": "星瞳夜视",

@@ -29,7 +29,6 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -48,7 +47,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joml.Vector3f;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -254,32 +252,16 @@ public final class KunJinKaoQolHandler {
                 KunJinKaoPalette.red(argb), KunJinKaoPalette.green(argb), KunJinKaoPalette.blue(argb)), scale);
     }
 
-    /**
-     * 挂件自定义名的前缀，后面接主人的 UUID。
-     * <p>
-     * 这个名字<b>不显示</b>（CustomNameVisible=false），它只是一条同步通道：
-     * 客户端要知道"这把剑是谁的"，才做得到"别人看得见、自己看不见"。
-     * 用自定义名而不是自写一个包，是因为名字本来就跟着实体一起同步，不必为此多一套协议。
+    /*
+     * 关于"挂件要不要连主人自己也看不见"：现在的答案是**不隐藏**，只把它们排在身后。
+     *
+     * 记一笔当时的取舍，免得以后又有人想加一遍"客户端不画自己那份"：
+     * 隐藏是能做到的（实体名里带主人 UUID，客户端在 RenderLivingEvent.Pre 里取消渲染），
+     * 但那只在"自己第一人称不想看到"这一条上有价值 —— 而位置本来就在镜头后面，
+     * 第一人称根本看不到。真正会露出来的只有 F5 第三人称，而管理员自己开第三人称时
+     * 看到自己的挂件是合理的（那是他的装饰）。所以为此多一条"名字当同步通道 + 客户端特判"
+     * 的链路不划算，删掉了。
      */
-    public static final String COSMETIC_BIT_NAME_PREFIX = "kunjinkao:bit:";
-
-    /**
-     * 这个实体是不是"该被某个玩家自己藏起来"的浮游挂件。
-     * <p>
-     * 服务端做不到只对一个人隐藏实体：可见性（Invisible）是实体级的，对所有人一样；
-     * 唯一的例外是"同队 + canSeeFriendlyInvisibles"，而那个方向正好相反（只能让队友看见隐形的，
-     * 挡不住特定的人）。所以这一刀只能由客户端来画：每个人的客户端不画自己名下的那份挂件。
-     * <p>
-     * 代价要写清楚：<b>如果对方客户端没有装这个模组，他自己的挂件仍然会显示</b> ——
-     * 服务端没有任何办法让同一个实体"对 A 可见、对 B 不可见"。这是原版机制的限制。
-     */
-    public static boolean isCosmeticBitHiddenFrom(Entity entity, Player viewer) {
-        if (viewer == null || !entity.hasCustomName()) {
-            return false;
-        }
-        Component name = entity.getCustomName();
-        return name != null && name.getString().equals(COSMETIC_BIT_NAME_PREFIX + viewer.getUUID());
-    }
 
     /** 每个在线管理员一份装饰状态，键是玩家 UUID。 */
     private static final Map<UUID, Cosmetics> COSMETICS = new ConcurrentHashMap<>();
@@ -948,10 +930,8 @@ public final class KunJinKaoQolHandler {
      * <p>
      * public 的 setter 一律放在 {@code load} 之后：load 会把 NBT 里的默认值一并写回实体，
      * 顺序反了就会被覆盖回去。
-     *
-     * @param hideFrom 挂件要藏起来的那个人（浮游挂件传主人自己）；null 表示不藏
      */
-    private static CosmeticBit spawnCosmeticBit(ServerLevel level, ItemStack held, @Nullable UUID hideFrom) {
+    private static CosmeticBit spawnCosmeticBit(ServerLevel level, ItemStack held) {
         CosmeticBit bit = new CosmeticBit(level);
         CompoundTag tag = new CompoundTag();
         tag.putBoolean("Small", true);
@@ -967,10 +947,6 @@ public final class KunJinKaoQolHandler {
         if (!held.isEmpty()) {
             // 手里永远举着这一件。隐形/Marker 的盔甲架 hurt 会直接返回 false，所以它不会被抢走。
             bit.setItemInHand(InteractionHand.MAIN_HAND, held);
-        }
-        if (hideFrom != null) {
-            // 名字不显示，只用来告诉客户端"这把剑是谁的"（见 isCosmeticBitHiddenFrom）。
-            bit.setCustomName(Component.literal(COSMETIC_BIT_NAME_PREFIX + hideFrom));
         }
         bit.addTag(COSMETIC_ENTITY_TAG);
         level.addFreshEntity(bit);
@@ -1033,7 +1009,7 @@ public final class KunJinKaoQolHandler {
             if (state.title != null) {
                 state.title.discard();
             }
-            state.title = spawnCosmeticBit(level, ItemStack.EMPTY, null);
+            state.title = spawnCosmeticBit(level, ItemStack.EMPTY);
             state.title.setCustomName(titleText(player));
             state.title.setCustomNameVisible(true);
         }
@@ -1074,7 +1050,7 @@ public final class KunJinKaoQolHandler {
             // 用本模组自己的剑。空手的一把是"未验证的合成成品"才有的状态，新 ItemStack 是正常剑，
             // 物品模型谓词会给出 -1（完整剑模型），不会渲染成编译阶段的小方块。
             state.bits.add(spawnCosmeticBit(level,
-                    new ItemStack(SwordRegistry.KUN_JIN_KAO_SWORD.get()), player.getUUID()));
+                    new ItemStack(SwordRegistry.KUN_JIN_KAO_SWORD.get())));
         }
 
         // 位置按玩家朝向算，而不是绕圈：朝向的水平分量是 (-sin, cos)，
