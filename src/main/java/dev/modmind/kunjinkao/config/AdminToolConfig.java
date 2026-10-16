@@ -183,7 +183,8 @@ public final class AdminToolConfig {
                     " 弱兼容：只认 NeoForge 的 FakePlayer，自己实现假玩家类的机器不受影响。"};
             case TREASURE_HUNTER_SERVER -> new String[]{
                     " 寻宝大师（96）服务器总闸：0 = 全服禁用（个人开关也会失效），1 = 允许。",
-                    " 它会给玩家画出周围容器的高亮框，很容易被当成透视，默认关闭。"};
+                    " 它会给玩家画出周围容器的高亮框，很容易被当成透视；",
+                    " 默认开启（本工程的用法就是管理员自己用），不想让它出现就设 0。"};
             case TREASURE_HUNTER_RADIUS -> new String[]{
                     " 寻宝大师（96）的扫描半径（格，8~64）。",
                     " 半径直接决定客户端每 20 tick 的扫描开销，别设得比实际视野大太多。"};

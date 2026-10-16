@@ -78,8 +78,10 @@ public enum QolSetting {
      * 这一项存在的意义是<b>让服主能一票否决</b>：透视类功能在服务器上很容易被当成作弊，
      * 没有总闸的话，只要玩家自己开了个人开关就能用，服主只能去删模组。
      * 总闸关闭时客户端不会扫描，个人开关点了也不会有任何反应。
+     * <p>
+     * 默认<b>开启</b>：本工程的用法就是管理员自己开，不想让它在服务器上出现的话设 0 即可。
      */
-    TREASURE_HUNTER_SERVER(14, 96, Category.INCOME, Scope.SERVER, Kind.TOGGLE, 0, 1, 0, "treasureHunterEnabled"),
+    TREASURE_HUNTER_SERVER(14, 96, Category.INCOME, Scope.SERVER, Kind.TOGGLE, 0, 1, 1, "treasureHunterEnabled"),
     /** 96 的扫描半径（格）。服务器级：半径直接决定性能开销与"能看到多远"，不该由玩家自己定。 */
     TREASURE_HUNTER_RADIUS(15, 96, Category.INCOME, Scope.SERVER, Kind.NUMBER, 8, 64, 64, "treasureHunterRadius"),
     /** 96 的个人开关：只有它还要求服务端总闸开着才生效。 */
