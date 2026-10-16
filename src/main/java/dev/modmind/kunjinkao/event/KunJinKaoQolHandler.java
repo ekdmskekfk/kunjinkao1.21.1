@@ -47,6 +47,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joml.Vector3f;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -238,6 +239,26 @@ public final class KunJinKaoQolHandler {
     /** 称号牌浮在头顶多高（格）。正好落在原版名牌上方一点。 */
     private static final double TITLE_HEIGHT = 0.45D;
 
+    // ===== 跟随补偿 =====
+    /*
+     * 装饰是服务端实体："玩家在哪"这件事要绕一圈才回到客户端 ——
+     * 服务端手上的玩家坐标本来就落后客户端画面（移动包在路上），装饰的位置再走一次
+     * 服务端 → 客户端的回程，所以装饰天然落后大约一个 RTT。
+     * 去掉 LivingEntity 那 3 tick 插值之后剩下的就是这个量级，它不是 bug，也不会自己消失，
+     * 只能按"玩家下一秒会在哪"把它补回来。
+     *
+     * 补偿量 = 上一 tick 的真实位移 × 落后的 tick 数。用记下来的位移而不是
+     * getDeltaMovement()：玩家停下的那一 tick 位移立刻变 0，不会多冲一截出去。
+     */
+    /** 基础补偿：就算 RTT 是 0，服务端拿到的坐标也落后客户端画面约 1 tick。 */
+    private static final double FOLLOW_PREDICT_BASE_TICKS = 1.0D;
+    /** 每 50 ms 延迟再加一个 tick（20 tick/秒）。 */
+    private static final double FOLLOW_PREDICT_MS_PER_TICK = 50.0D;
+    /** 补偿上限（tick）。网络再差也不能让装饰跑到玩家前面去。 */
+    private static final double FOLLOW_PREDICT_MAX_TICKS = 3.0D;
+    /** 单 tick 位移超过这么多格就不照搬（坠落/瞬移按这个上限截断）。 */
+    private static final double FOLLOW_MAX_STEP = 1.0D;
+
     /**
      * 光环与拖尾的淡蓝。
      * <p>
@@ -284,13 +305,50 @@ public final class KunJinKaoQolHandler {
         boolean returning;
         /** 上一次撒拖尾粒子的位置；null 表示"刚开，还没有上一处"。 */
         Vec3 trailFrom;
+        /** 主人上一 tick 的位置，用来算跟随补偿；null 表示还没有上一 tick 可参考。 */
+        Vec3 lastOwnerPos;
+        /** 这一 tick 摆放装饰用的位置（主人位置 + 补偿），由 tickCosmetics 每 tick 算一次。 */
+        Vec3 aimPos;
+        /** 反击目标上一 tick 的位置，同样用于补偿。 */
+        Vec3 lastVictimPos;
 
         /** 结束反击。{@code returning} 由调用方决定：正常打完要飞回去，挂件被关掉则不用。 */
         void endStrike() {
             strikeTarget = null;
             strikeTicks = 0;
             nextStrikeTick = 0;
+            lastVictimPos = null;
         }
+    }
+
+    /**
+     * 跟随补偿：返回"这个玩家这一帧看起来在哪"。
+     * <p>
+     * 见 {@link #FOLLOW_PREDICT_BASE_TICKS} 上面那段说明。补偿量取上一 tick 的真实位移乘以
+     * 落后的 tick 数，落后多少由玩家自己的延迟算出来（{@code ServerPlayer#connection} 上那个
+     * 已平滑的 RTT），所以本地测试是 1 tick、真实服务器上会自动补得更多一点。
+     * <p>
+     * 位移超过 {@link #FOLLOW_MAX_STEP} 格/tick 就按上限截断：那要么是坠落、要么是瞬移 ——
+     * 前者补一截比不补强，后者截断掉才不会让装饰在传送的瞬间飞到半张地图外。
+     *
+     * @param previous 上一 tick 记下的位置；null（刚开、或者刚换目标）表示这一 tick 不补
+     */
+    private static Vec3 compensatedPosition(ServerPlayer player, @Nullable Vec3 previous) {
+        Vec3 now = player.position();
+        if (previous == null) {
+            return now;
+        }
+        double ticks = FOLLOW_PREDICT_BASE_TICKS;
+        if (player.connection != null) {
+            ticks += Math.max(0, player.connection.latency()) / FOLLOW_PREDICT_MS_PER_TICK;
+        }
+        ticks = Math.min(ticks, FOLLOW_PREDICT_MAX_TICKS);
+        Vec3 step = now.subtract(previous);
+        double length = step.length();
+        if (length > FOLLOW_MAX_STEP) {
+            step = step.scale(FOLLOW_MAX_STEP / length);
+        }
+        return now.add(step.scale(ticks));
     }
 
     /**
@@ -919,6 +977,11 @@ public final class KunJinKaoQolHandler {
             COSMETICS.put(player.getUUID(), state);
         }
 
+        // 三项都在同一个位置上长出来，所以补偿只算一次；算完再更新"上一 tick 的位置"，
+        // 顺序反了补偿量就永远是 0。
+        state.aimPos = compensatedPosition(player, state.lastOwnerPos);
+        state.lastOwnerPos = player.position();
+
         tickTitle(player, state, titleOn);
         tickOrbit(player, state, orbitOn);
         tickAura(player, state, auraOn);
@@ -1035,7 +1098,7 @@ public final class KunJinKaoQolHandler {
             state.title.setCustomNameVisible(true);
         }
         placeCosmetic(state.title,
-                player.getX(), player.getY() + player.getBbHeight() + TITLE_HEIGHT, player.getZ(),
+                state.aimPos.x, state.aimPos.y + player.getBbHeight() + TITLE_HEIGHT, state.aimPos.z,
                 player.getYRot(), 0.0D);
     }
 
@@ -1099,10 +1162,10 @@ public final class KunJinKaoQolHandler {
             // slot：-1 / 0 / +1，正好左、中、右。
             double slot = i - (ORBIT_BIT_COUNT - 1) / 2.0D;
             double bob = Math.sin(tick * ORBIT_SWAY_SPEED + i * 1.7D) * ORBIT_BOB;
-            double targetX = player.getX() + behindX * ORBIT_BACK_DISTANCE
+            double targetX = state.aimPos.x + behindX * ORBIT_BACK_DISTANCE
                     + sideX * (slot * ORBIT_SIDE_SPREAD + sway);
-            double targetY = player.getY() + ORBIT_HEIGHT + bob;
-            double targetZ = player.getZ() + behindZ * ORBIT_BACK_DISTANCE
+            double targetY = state.aimPos.y + ORBIT_HEIGHT + bob;
+            double targetZ = state.aimPos.z + behindZ * ORBIT_BACK_DISTANCE
                     + sideZ * (slot * ORBIT_SIDE_SPREAD + sway);
             if (i == 0 && state.returning) {
                 // 飞回来：和追人一样用指数逼近，别从目标头顶"啪"一下跳回背后。
@@ -1187,7 +1250,10 @@ public final class KunJinKaoQolHandler {
         // 判定用"离下一击还剩几 tick"，这样刺下去的时机和伤害落地是同一下。
         boolean thrusting = state.nextStrikeTick - state.strikeTicks <= STRIKE_THRUST_WINDOW;
         double hover = STRIKE_HOVER + (thrusting ? 0.0D : STRIKE_RETRACT);
-        Vec3 head = new Vec3(victim.getX(), victim.getY() + victim.getBbHeight() + hover, victim.getZ());
+        // 目标也做跟随补偿：挨打的人自己看这一剑时，剑尖才不会落在他脑袋后面一点。
+        Vec3 victimAim = compensatedPosition(victim, state.lastVictimPos);
+        state.lastVictimPos = victim.position();
+        Vec3 head = new Vec3(victimAim.x, victimAim.y + victim.getBbHeight() + hover, victimAim.z);
         // 用"剑尖看起来的位置"算距离：实体原点和剑尖差着半格，混着算会让剑停在头顶上方半格。
         Vec3 from = bit.position().add(0.0D, STAB_HAND_OFFSET, 0.0D);
         Vec3 next = from.add(head.subtract(from).scale(STRIKE_CHASE));
@@ -1257,16 +1323,17 @@ public final class KunJinKaoQolHandler {
             for (int i = 0; i < AURA_POINTS; i++) {
                 double angle = phase + i * (Math.PI * 2.0D / AURA_POINTS);
                 level.sendParticles(AURA_PARTICLE,
-                        player.getX() + Math.cos(angle) * AURA_RADIUS,
-                        player.getY() + AURA_HEIGHT,
-                        player.getZ() + Math.sin(angle) * AURA_RADIUS,
+                        state.aimPos.x + Math.cos(angle) * AURA_RADIUS,
+                        state.aimPos.y + AURA_HEIGHT,
+                        state.aimPos.z + Math.sin(angle) * AURA_RADIUS,
                         1, 0.0D, 0.01D, 0.0D, 0.0D);
             }
         }
 
         // 拖尾按"走过的距离"补点，不按 tick：站着不动不该在原地堆一团粒子，
         // 而跑起来时两点之间要补满，不然速度快了尾迹会断成一节一节。
-        Vec3 now = player.position();
+        // 起点终点都用补偿后的位置：粒子同样是服务端发的，落后量和不补一样。
+        Vec3 now = state.aimPos;
         Vec3 from = state.trailFrom;
         state.trailFrom = now;
         if (from == null) {
