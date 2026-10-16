@@ -150,6 +150,8 @@ public class ClientModEvents {
             HudFunctionManager.resetAll();
             // 选区挖掘的框：不清的话换个世界进来，只要还是主世界就会在原地继续画上一局的框。
             ZoneClientState.clear();
+            // 装饰状态是服务端整表推来的快照：不清的话换服务器/存档后还会按上一局的名字画三把剑。
+            CosmeticClientState.clear();
         }
     }
 }

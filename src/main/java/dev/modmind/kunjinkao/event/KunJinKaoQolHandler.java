@@ -2,9 +2,9 @@ package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoEntry;
 import dev.modmind.kunjinkao.KunJinKaoPalette;
-import dev.modmind.kunjinkao.SwordRegistry;
 import dev.modmind.kunjinkao.config.AdminToolConfig;
 import dev.modmind.kunjinkao.config.QolStateSavedData;
+import dev.modmind.kunjinkao.network.CosmeticStatePayload;
 import dev.modmind.kunjinkao.network.NetworkHandler;
 import dev.modmind.kunjinkao.network.QolStatePayload;
 import dev.modmind.kunjinkao.network.ZoneStatusPayload;
@@ -12,13 +12,10 @@ import dev.modmind.kunjinkao.qol.QolSetting;
 import dev.modmind.kunjinkao.qol.QolSettings;
 import dev.modmind.kunjinkao.world.ZoneExcavationJob;
 import dev.modmind.kunjinkao.world.ZoneSelection;
-import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
-import net.minecraft.core.Rotations;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -26,17 +23,13 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
@@ -47,7 +40,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joml.Vector3f;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -134,73 +126,24 @@ public final class KunJinKaoQolHandler {
 
     // ===================== 管理员装饰（201–203）=====================
     /*
-     * 三项装饰（乱码称号 / 浮游挂件 / 光环拖尾）共用一套载体：**隐形的盔甲架**。
+     * 三项装饰（乱码称号 / 浮游挂件 / 光环拖尾）**完全由客户端渲染**，服务端只做两件事：
+     *   1. 算"谁戴着哪几项"，用 CosmeticStatePayload 整表推给所有客户端；
+     *   2. 反击的伤害判定（谁打了我、打到第几 tick、还剩几颗心）。
+     * 画面（三把剑的位置与刺击、称号牌文字、光环与拖尾粒子）由每个客户端用
+     * **自己那份插值过的玩家位置**算出来 —— 这就是零延迟的来源。
      *
-     * 为什么不是 BlockDisplay：1.21 把 Display 的全部 setter 都收成了 private
-     * （setBlockState、setTransformation、setPosRotInterpolationDuration …），代码里配不出来，
-     * 只能走 /summon 那种 NBT 路子；而盔甲架是原版实体、API 全公开，
-     * **别的玩家不装这个模组也看得见** —— 这是本次需求里最硬的一条，载体必须是原版就能渲染的东西。
+     * 为什么不做成服务端实体（曾经是隐形盔甲架）：实体的位置必然绕一圈网络
+     * （服务端拿到玩家坐标 → 算位置 → 再发回客户端），玩家一动就拖在后面。
+     * 那个延迟在服务端消不掉，只能按延迟做预测补偿，永远差一点；
+     * 而"谁戴着什么"这点状态是稳定的，同步它的代价几乎为零。
      *
-     * 三处关键细节都对着 1.21.1 的渲染代码确认过：
-     *   - Invisible 只让"身体"不画。LivingEntityRenderer 里 render layers（手持物）在身体可见性
-     *     之外单独跑，所以"隐形盔甲架举着剑"，看到的只有剑；
-     *   - ArmorStandRenderer#shouldShowName 只判 isCustomNameVisible，不看隐形，
-     *     所以隐形盔甲架的名字照样浮在头顶 —— 称号牌就是这么来的；
-     *   - 玩家自己的名牌改不了：Player#getDisplayName 走的是 profile 名 + 队伍前缀，
-     *     完全不看 CustomName，setCustomName 到玩家身上对别人来说什么都不会发生。
+     * 代价：没装模组的客户端看不见装饰。但本模组注册了物品，专用服务器本来就要求
+     * 双端都装 —— 这个代价是空的（真到了需要兼容原版客户端那天，只能退回服务端实体方案）。
      *
-     * 全部设成 Marker：没有碰撞箱、不可拾取、不受活塞推动 —— 装饰不该被玩家点掉、
-     * 也不该抢走玩家准星原来的目标。
+     * 反击的时间参数（持续时长、飞行时间、伤害间隔）定义在 CosmeticStatePayload 里：
+     * 服务端按它们扣血、客户端按它们做刺击动画，两边必须完全一致。
      */
 
-    /** 装饰实体身上的标记，排查问题时报得出是谁的。 */
-    private static final String COSMETIC_ENTITY_TAG = "kunjinkao_cosmetic";
-
-    /** 剑的个数。 */
-    private static final int ORBIT_BIT_COUNT = 3;
-    /** 排在身后多远（格）。 */
-    private static final double ORBIT_BACK_DISTANCE = 0.95D;
-    /** 左右两把各偏出去多少（格）；中间那把正好在正中。 */
-    private static final double ORBIT_SIDE_SPREAD = 0.55D;
-    /** 剑柄高度（相对脚底，格）。 */
-    private static final double ORBIT_HEIGHT = 1.2D;
-    /** 左右轻摆的幅度（格）。<b>三把同步摆</b>，所以间距不变；见 tickOrbit 里的说明。 */
-    private static final double ORBIT_SWAY = 0.1D;
-    /** 上下浮动的幅度（格）。每把有自己的相位差，看起来才不是一整块。 */
-    private static final double ORBIT_BOB = 0.05D;
-    /** 摆动/浮动速度（弧度每 tick）。 */
-    private static final double ORBIT_SWAY_SPEED = 0.06D;
-    /**
-     * 举剑时，持物渲染在实体原点上方多高（格）。
-     * <p>
-     * 这是整套装饰里唯一只能"看着调"的数：它是"0.5 缩放的盔甲架手部变换"叠上物品的
-     * thirdperson_righthand 变换算出来的，不值得在代码里复算一遍。剑看起来偏高就调大它。
-     */
-    private static final double BIT_HAND_OFFSET = 0.5D;
-    /** 举剑的手臂姿势：原版盔甲架的默认右手姿势，剑尖朝上。 */
-    private static final Rotations SWORD_POSE_IDLE = new Rotations(-15.0F, 0.0F, 10.0F);
-    /**
-     * 向下刺的手臂姿势：整个手部坐标系绕 X 翻 180°。
-     * <p>
-     * 手持物的渲染是"先用手臂变换、再绕 X 转 -90°"，所以把手翻过来，剑就朝下了。
-     * 这也是唯一能让剑朝下的办法：盔甲架的身体俯仰不参与渲染，只有各部位的姿势参与。
-     */
-    private static final Rotations SWORD_POSE_STAB = new Rotations(180.0F, 0.0F, 0.0F);
-    /** 刺击姿势下，剑尖相对实体原点的偏移（和 {@link #BIT_HAND_OFFSET} 一起调）。 */
-    private static final double STAB_HAND_OFFSET = 0.5D;
-
-    // ===== 反击（202 附带）=====
-    /** 一次反击持续多久（tick）。100 = 5 秒。 */
-    private static final int STRIKE_DURATION = 100;
-    /**
-     * 两下之间的间隔（tick）。
-     * <p>
-     * 10 不是随手挑的：玩家受击后有 20 tick 无敌帧，而 {@code LivingEntity#hurt} 的判定是
-     * {@code invulnerableTime > 10} 才丢弃这一下 —— 间隔取 10 tick 时，下一次伤害正好落在
-     * 无敌帧的第 10 tick 上，每一击都能真的打出去，同时完全不用去动玩家的无敌时间
-     * （清掉它会让别人打这个玩家的伤害也一起变实，反击就不"干净"了）。
-     */
-    private static final int STRIKE_DAMAGE_INTERVAL = 10;
     /** 每一击的伤害点数。 */
     private static final float STRIKE_DAMAGE = 1.0F;
     /**
@@ -210,184 +153,27 @@ public final class KunJinKaoQolHandler {
      * 这套东西是"打管理员会还手"的惩罚，不是处决。
      */
     private static final float STRIKE_MIN_HEALTH = 3.0F;
-    /** 追击速度：每 tick 靠近剩余距离的这个比例。越近越慢，停在头顶时不会抖。 */
-    private static final double STRIKE_CHASE = 0.45D;
-    /** 离头顶这么近才算"飞到了"，到了才开始扣血。 */
-    private static final double STRIKE_REACH = 0.55D;
-    /** 剑尖停在头顶上方多高（格）。 */
-    private static final double STRIKE_HOVER = 0.45D;
-    /** 两下之间抬起多少（格）：每一下都是先抬起来再刺下去，不然看起来只是贴着不动。 */
-    private static final double STRIKE_RETRACT = 0.4D;
-    /** 离下一击还有几 tick 之内开始压下去。要留够追击收敛的时间，否则刺击和伤害对不上。 */
-    private static final int STRIKE_THRUST_WINDOW = 3;
 
-    // ===== 光环与拖尾（203）=====
-    /** 光环每几 tick 撒一圈。 */
-    private static final int AURA_INTERVAL = 2;
-    /** 光环半径（格）。 */
-    private static final double AURA_RADIUS = 0.9D;
-    /** 光环离脚底多高（格）。 */
-    private static final double AURA_HEIGHT = 0.15D;
-    /** 一圈的点数。 */
-    private static final int AURA_POINTS = 10;
-    /** 每 tick 转过的弧度：一圈约 4 秒。 */
-    private static final double AURA_SPIN = 0.05D;
-    /** 拖尾：走过这么远才补一段粒子，站着不动就不刷。 */
-    private static final double TRAIL_STEP = 0.55D;
-    /** 一次最多补几个点：瞬移几千格时用它封顶，免得一 tick 撒满整条线上。 */
-    private static final int TRAIL_MAX_POINTS = 8;
-    /** 称号牌浮在头顶多高（格）。正好落在原版名牌上方一点。 */
-    private static final double TITLE_HEIGHT = 0.45D;
+    /** 反击的命中火花。光环与拖尾的粒子现在由客户端自己发，这一份是服务端发的伤害反馈。 */
+    private static final DustParticleOptions STRIKE_SPARK = new DustParticleOptions(new Vector3f(
+            KunJinKaoPalette.red(KunJinKaoPalette.COSMETIC_AURA),
+            KunJinKaoPalette.green(KunJinKaoPalette.COSMETIC_AURA),
+            KunJinKaoPalette.blue(KunJinKaoPalette.COSMETIC_AURA)), 1.05F);
 
-    // ===== 跟随补偿 =====
-    /*
-     * 装饰是服务端实体："玩家在哪"这件事要绕一圈才回到客户端 ——
-     * 服务端手上的玩家坐标本来就落后客户端画面（移动包在路上），装饰的位置再走一次
-     * 服务端 → 客户端的回程，所以装饰天然落后大约一个 RTT。
-     * 去掉 LivingEntity 那 3 tick 插值之后剩下的就是这个量级，它不是 bug，也不会自己消失，
-     * 只能按"玩家下一秒会在哪"把它补回来。
-     *
-     * 补偿量 = 上一 tick 的真实位移 × 落后的 tick 数。用记下来的位移而不是
-     * getDeltaMovement()：玩家停下的那一 tick 位移立刻变 0，不会多冲一截出去。
-     */
-    /** 基础补偿：就算 RTT 是 0，服务端拿到的坐标也落后客户端画面约 1 tick。 */
-    private static final double FOLLOW_PREDICT_BASE_TICKS = 1.0D;
-    /** 每 50 ms 延迟再加一个 tick（20 tick/秒）。 */
-    private static final double FOLLOW_PREDICT_MS_PER_TICK = 50.0D;
-    /** 补偿上限（tick）。网络再差也不能让装饰跑到玩家前面去。 */
-    private static final double FOLLOW_PREDICT_MAX_TICKS = 3.0D;
-    /** 单 tick 位移超过这么多格就不照搬（坠落/瞬移按这个上限截断）。 */
-    private static final double FOLLOW_MAX_STEP = 1.0D;
+    /** 正在进行的反击，键是挨打的管理员 UUID。 */
+    private static final Map<UUID, Strike> STRIKES = new ConcurrentHashMap<>();
+    /** 上一次广播出去的装饰旗帜，用来判断"要不要再推一次"。 */
+    private static final Map<UUID, Integer> LAST_FLAGS = new ConcurrentHashMap<>();
 
-    /**
-     * 光环与拖尾的淡蓝。
-     * <p>
-     * 它不占 {@link KunJinKaoPalette} 的槽位：那四个颜色是<b>剑的语义色</b>
-     * （常态/加速/损坏/错误），装饰是另一条线，硬塞进去只会让"按含义定色"这条规矩失效。
-     */
-    private static final int AURA_COLOR = 0xFF9ED8FF;
-    private static final DustParticleOptions AURA_PARTICLE = cosmeticDust(AURA_COLOR, 1.05F);
-    /** 拖尾用同一个淡蓝，只是更小更暗一档：同色系里靠尺寸分层，否则两团粒子会糊在一起。 */
-    private static final DustParticleOptions TRAIL_PARTICLE = cosmeticDust(AURA_COLOR, 0.75F);
-
-    private static DustParticleOptions cosmeticDust(int argb, float scale) {
-        return new DustParticleOptions(new Vector3f(
-                KunJinKaoPalette.red(argb), KunJinKaoPalette.green(argb), KunJinKaoPalette.blue(argb)), scale);
+    /** 一次反击的进度。剑的位置由客户端自己算，服务端只记时间。 */
+    private static final class Strike {
+        /** 打的是谁。 */
+        UUID target;
+        /** 已经打了多少 tick。客户端拿它显示刺击节奏。 */
+        int ticks;
+        /** 下一击在 ticks 到达这个值时落地。 */
+        int nextDamageTick;
     }
-
-    /*
-     * 关于"挂件要不要连主人自己也看不见"：现在的答案是**不隐藏**，只把它们排在身后。
-     *
-     * 记一笔当时的取舍，免得以后又有人想加一遍"客户端不画自己那份"：
-     * 隐藏是能做到的（实体名里带主人 UUID，客户端在 RenderLivingEvent.Pre 里取消渲染），
-     * 但那只在"自己第一人称不想看到"这一条上有价值 —— 而位置本来就在镜头后面，
-     * 第一人称根本看不到。真正会露出来的只有 F5 第三人称，而管理员自己开第三人称时
-     * 看到自己的挂件是合理的（那是他的装饰）。所以为此多一条"名字当同步通道 + 客户端特判"
-     * 的链路不划算，删掉了。
-     */
-
-    /** 每个在线管理员一份装饰状态，键是玩家 UUID。 */
-    private static final Map<UUID, Cosmetics> COSMETICS = new ConcurrentHashMap<>();
-
-    /** 一个管理员的装饰状态：实体句柄 + 反击进度。 */
-    private static final class Cosmetics {
-        /** 身后的三把剑；索引 0 兼作反击时飞出去的那一把。 */
-        final List<CosmeticBit> bits = new ArrayList<>(ORBIT_BIT_COUNT);
-        /** 头顶称号牌。 */
-        CosmeticBit title;
-        /** 正在被反击的目标；null 表示没有反击在进行。 */
-        UUID strikeTarget;
-        /** 反击已经持续了多少 tick。 */
-        int strikeTicks;
-        /** 下一击在 strikeTicks 到达这个值时落地。 */
-        int nextStrikeTick;
-        /** 反击结束后，索引 0 那一把正在飞回背后。 */
-        boolean returning;
-        /** 上一次撒拖尾粒子的位置；null 表示"刚开，还没有上一处"。 */
-        Vec3 trailFrom;
-        /** 主人上一 tick 的位置，用来算跟随补偿；null 表示还没有上一 tick 可参考。 */
-        Vec3 lastOwnerPos;
-        /** 这一 tick 摆放装饰用的位置（主人位置 + 补偿），由 tickCosmetics 每 tick 算一次。 */
-        Vec3 aimPos;
-        /** 反击目标上一 tick 的位置，同样用于补偿。 */
-        Vec3 lastVictimPos;
-
-        /** 结束反击。{@code returning} 由调用方决定：正常打完要飞回去，挂件被关掉则不用。 */
-        void endStrike() {
-            strikeTarget = null;
-            strikeTicks = 0;
-            nextStrikeTick = 0;
-            lastVictimPos = null;
-        }
-    }
-
-    /**
-     * 跟随补偿：返回"这个玩家这一帧看起来在哪"。
-     * <p>
-     * 见 {@link #FOLLOW_PREDICT_BASE_TICKS} 上面那段说明。补偿量取上一 tick 的真实位移乘以
-     * 落后的 tick 数，落后多少由玩家自己的延迟算出来（{@code ServerPlayer#connection} 上那个
-     * 已平滑的 RTT），所以本地测试是 1 tick、真实服务器上会自动补得更多一点。
-     * <p>
-     * 位移超过 {@link #FOLLOW_MAX_STEP} 格/tick 就按上限截断：那要么是坠落、要么是瞬移 ——
-     * 前者补一截比不补强，后者截断掉才不会让装饰在传送的瞬间飞到半张地图外。
-     *
-     * @param previous 上一 tick 记下的位置；null（刚开、或者刚换目标）表示这一 tick 不补
-     */
-    private static Vec3 compensatedPosition(ServerPlayer player, @Nullable Vec3 previous) {
-        Vec3 now = player.position();
-        if (previous == null) {
-            return now;
-        }
-        double ticks = FOLLOW_PREDICT_BASE_TICKS;
-        if (player.connection != null) {
-            ticks += Math.max(0, player.connection.latency()) / FOLLOW_PREDICT_MS_PER_TICK;
-        }
-        ticks = Math.min(ticks, FOLLOW_PREDICT_MAX_TICKS);
-        Vec3 step = now.subtract(previous);
-        double length = step.length();
-        if (length > FOLLOW_MAX_STEP) {
-            step = step.scale(FOLLOW_MAX_STEP / length);
-        }
-        return now.add(step.scale(ticks));
-    }
-
-    /**
-     * 装饰用的隐形盔甲架。
-     * <p>
-     * 覆写 {@link #shouldBeSaved()} 返回 false 是关键的一步：这些实体只在"主人挂着装饰"的这段时间里
-     * 存在，写进存档只会在服务器崩过之后留下一堆没人认领的浮空剑。
-     * 不落盘 = 世界重载/重启之后一定不残留，比事后清扫可靠得多。
-     */
-    private static final class CosmeticBit extends ArmorStand {
-        CosmeticBit(ServerLevel level) {
-            super(EntityType.ARMOR_STAND, level);
-        }
-
-        @Override
-        public boolean shouldBeSaved() {
-            return false;
-        }
-
-        /**
-         * 收到位置更新时直接落位，不做插值。
-         * <p>
-         * {@code LivingEntity#lerpTo} 只是把目标位置记下来（{@code lerpSteps = 3}），
-         * 再由 {@code LivingEntity#tick} 用 3 个 tick 慢慢挪过去 —— 那是给怪物/动物准备的：
-         * 它们的移动是服务端算的，插值能把 20 Hz 的更新抹成平滑的走位。
-         * <p>
-         * 这几个装饰是<b>贴在玩家身上</b>的，套用同一套插值的结果就是：玩家一走，它们
-         * 拖在后面 3 个 tick（冲刺时快 0.8 格），看起来就是"慢半拍地跟着"。
-         * 直接落位之后，渲染仍然会按 {@code xo/yo/zo → getX()} 做逐帧插值，所以画面依旧平滑，
-         * 只是不再落后。这也是原版 {@code Entity#lerpTo} 的默认行为（我们只是不继承
-         * {@code LivingEntity} 那份平滑）。
-         */
-        @Override
-        public void lerpTo(double x, double y, double z, float yRot, float xRot, int steps) {
-            this.setPos(x, y, z);
-            this.setRot(yRot, xRot);
-        }
-    }
-
     // ===================== 网络入口 =====================
 
     /**
@@ -783,6 +569,9 @@ public final class KunJinKaoQolHandler {
         if (event.getEntity() instanceof ServerPlayer player) {
             applyAll(player);
             sendFullState(player);
+            // 装饰是整表快照：新人一进来就重推一次 —— 他要知道别人戴着什么，
+            // 别人也要知道他的，而客户端只在收到快照时才会开始画。
+            broadcastCosmetics();
         }
     }
 
@@ -957,251 +746,83 @@ public final class KunJinKaoQolHandler {
     /**
      * 装饰的总入口：每 tick 走一遍。
      * <p>
-     * 三项共用一个入口是有意的 —— 它们的状态（实体句柄、反击进度）都在同一份 {@link Cosmetics} 里，
-     * 拆成三条独立路径的话，"关掉挂件时顺手结束反击"这种跨项动作就没地方放了。
+     * 这里只做两件事：推进反击（伤害判定），以及在状态变了的时候把整表推给客户端。
+     * 位置、动画、粒子都不在这里 —— 那些由每个客户端用自己那份玩家位置算（零延迟）。
      */
     private static void tickCosmetics(ServerPlayer player) {
-        // 先判授权再读设置：未授权的玩家是绝大多数，不该为这三项每 tick 去翻一次玩家存档。
-        boolean authorized = AdminToolConfig.isAuthorized(player.getUUID());
-        boolean titleOn = authorized && isOn(player, QolSetting.COSMETIC_TITLE);
-        boolean orbitOn = authorized && isOn(player, QolSetting.COSMETIC_ORBIT);
-        boolean auraOn = authorized && isOn(player, QolSetting.COSMETIC_AURA);
-        boolean anyOn = titleOn || orbitOn || auraOn;
+        boolean striking = driveStrike(player);
+        int flags = cosmeticFlags(player);
 
-        Cosmetics state = COSMETICS.get(player.getUUID());
-        if (state == null) {
-            if (!anyOn) {
-                return;
-            }
-            state = new Cosmetics();
-            COSMETICS.put(player.getUUID(), state);
+        Integer last = LAST_FLAGS.get(player.getUUID());
+        if (last == null || last != flags) {
+            LAST_FLAGS.put(player.getUUID(), flags);
+            broadcastCosmetics();
+            return;
         }
-
-        // 三项都在同一个位置上长出来，所以补偿只算一次；算完再更新"上一 tick 的位置"，
-        // 顺序反了补偿量就永远是 0。
-        state.aimPos = compensatedPosition(player, state.lastOwnerPos);
-        state.lastOwnerPos = player.position();
-
-        tickTitle(player, state, titleOn);
-        tickOrbit(player, state, orbitOn);
-        tickAura(player, state, auraOn);
-
-        // 三项都关掉（或者被取消了授权）就不要再留这份状态：实体在上面各自已经收走了。
-        if (!anyOn) {
-            COSMETICS.remove(player.getUUID(), state);
+        // 反击期间每 STRIKE_SYNC_INTERVAL tick 补推一次：客户端在两次之间自己把进度往前推，
+        // 时间久了会漂，定期对齐一次。不是每 tick 都推 —— 那是每个在线玩家每秒 20 个包。
+        if (striking && player.tickCount % CosmeticStatePayload.STRIKE_SYNC_INTERVAL == 0) {
+            broadcastCosmetics();
         }
     }
 
-    /** 掉线：装饰实体跟着一起收走。它们不落盘，所以这里必须清干净，否则会一直飘在原地。 */
+    /** 这个玩家现在戴着哪几项装饰。没通过管理员密码验证的人一律 0（面板上也只是置灰）。 */
+    private static int cosmeticFlags(ServerPlayer player) {
+        if (!AdminToolConfig.isAuthorized(player.getUUID())) {
+            return 0;
+        }
+        int flags = 0;
+        if (isOn(player, QolSetting.COSMETIC_TITLE)) {
+            flags |= CosmeticStatePayload.FLAG_TITLE;
+        }
+        if (isOn(player, QolSetting.COSMETIC_ORBIT)) {
+            flags |= CosmeticStatePayload.FLAG_ORBIT;
+        }
+        if (isOn(player, QolSetting.COSMETIC_AURA)) {
+            flags |= CosmeticStatePayload.FLAG_AURA;
+        }
+        return flags;
+    }
+
+    /**
+     * 把"谁戴着什么、在打谁、打到第几 tick"整表推给所有客户端。
+     * <p>
+     * 整表而不是增量：一条记录三十来字节、玩家数量又少，整表推就省掉了
+     * "增量包字段错位 / 漏包"这一整类问题 —— 客户端拿到的永远是权威快照，
+     * 表里没有的人一律视为没有装饰（下线、关开关都不需要额外的清理消息）。
+     */
+    public static void broadcastCosmetics() {
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null) {
+            return;
+        }
+        List<CosmeticStatePayload.Entry> entries = new ArrayList<>();
+        for (ServerPlayer online : server.getPlayerList().getPlayers()) {
+            int flags = cosmeticFlags(online);
+            Strike strike = STRIKES.get(online.getUUID());
+            entries.add(strike == null
+                    ? CosmeticStatePayload.Entry.idle(online.getUUID(), flags)
+                    : CosmeticStatePayload.Entry.striking(online.getUUID(), flags, strike.target, strike.ticks));
+        }
+        NetworkHandler.sendToAll(new CosmeticStatePayload(List.copyOf(entries)));
+    }
+
+    /** 掉线：清掉反击状态与旗帜缓存，并重推一次整表（让别人的客户端别再画他）。 */
     private static void forgetCosmetics(ServerPlayer player) {
-        Cosmetics state = COSMETICS.remove(player.getUUID());
-        if (state == null) {
-            return;
-        }
-        clearBits(state);
-        if (state.title != null) {
-            state.title.discard();
-            state.title = null;
-        }
-    }
-
-    /**
-     * 造一个隐形的小号盔甲架。
-     * <p>
-     * Small / Marker / Invisible 三个标记是先写进 NBT 再 {@code load} 进去的：1.21 里
-     * {@code ArmorStand#setSmall} 与 {@code setMarker} 都是 private，而 NBT 读写是公开的
-     * （/summon 走的就是这条路）。为两个布尔量写一个 mixin 不划算。
-     * <p>
-     * public 的 setter 一律放在 {@code load} 之后：load 会把 NBT 里的默认值一并写回实体，
-     * 顺序反了就会被覆盖回去。
-     */
-    private static CosmeticBit spawnCosmeticBit(ServerLevel level, ItemStack held) {
-        CosmeticBit bit = new CosmeticBit(level);
-        CompoundTag tag = new CompoundTag();
-        tag.putBoolean("Small", true);
-        tag.putBoolean("Marker", true);
-        tag.putBoolean("Invisible", true);
-        tag.putBoolean("NoBasePlate", true);
-        tag.putBoolean("ShowArms", false);
-        bit.load(tag);
-        bit.setInvulnerable(true);
-        bit.setNoGravity(true);
-        bit.setSilent(true);
-        bit.setCustomNameVisible(false);
-        if (!held.isEmpty()) {
-            // 手里永远举着这一件。隐形/Marker 的盔甲架 hurt 会直接返回 false，所以它不会被抢走。
-            bit.setItemInHand(InteractionHand.MAIN_HAND, held);
-        }
-        bit.addTag(COSMETIC_ENTITY_TAG);
-        level.addFreshEntity(bit);
-        return bit;
-    }
-
-    /**
-     * 设剑的持握姿势。
-     * <p>
-     * 姿势走实体数据同步（{@code ArmorStand#setRightArmPose} → {@code DATA_RIGHT_ARM_POSE}），
-     * 所以每 tick 设一遍也不会多发包：值没变就不会标脏。每 tick 重设的好处是自愈 ——
-     * 反击结束后不需要专门找一个"该把剑翻回来了"的时机。
-     */
-    private static void setSwordPose(CosmeticBit bit, boolean stabbing) {
-        bit.setRightArmPose(stabbing ? SWORD_POSE_STAB : SWORD_POSE_IDLE);
-    }
-
-    /**
-     * 摆一个装饰实体。
-     *
-     * @param y       剑尖/牌子**看起来**应该在的位置，不是实体原点
-     * @param yOffset 实体渲染中心相对原点的偏移：手持物要往下补，名牌本身不用
-     */
-    private static void placeCosmetic(CosmeticBit bit, double x, double y, double z, float yaw, double yOffset) {
-        bit.setPos(x, y - yOffset, z);
-        // 剑跟着玩家朝向转：不只是自转，整队剑是"跟着人身后"一起转向的。
-        bit.setYRot(yaw);
-        // 每 tick 都是直接摆位置，残留的速度会让客户端看到抖动，顺手清掉。
-        bit.setDeltaMovement(Vec3.ZERO);
-    }
-
-    /** 当前维度；装饰实体只能加进服务端世界。 */
-    private static ServerLevel serverLevelOf(ServerPlayer player) {
-        return player.level() instanceof ServerLevel level ? level : null;
-    }
-
-    /**
-     * 头顶称号牌（201）。
-     * <p>
-     * 用一块隐形盔甲架的名字来显示，而不是改玩家自己的 CustomName：
-     * 玩家名牌渲染走的是 {@code Player#getDisplayName()}（profile 名 + 队伍前缀），CustomName 不参与，
-     * 改了对别人来说什么都不会发生。盔甲架不是玩家，名字就照原样渲染，
-     * 而且 {@code ArmorStandRenderer} 判名字时只看 CustomNameVisible、不看隐形，
-     * 于是牌子浮在头顶、架子本身看不见。
-     */
-    private static void tickTitle(ServerPlayer player, Cosmetics state, boolean on) {
-        if (!on) {
-            if (state.title != null) {
-                state.title.discard();
-                state.title = null;
-            }
-            return;
-        }
-        ServerLevel level = serverLevelOf(player);
-        if (level == null) {
-            return;
-        }
-        // 换维度、被 /kill @e[type=armor_stand] 扫掉之后自愈：下一 tick 重新长一块出来。
-        if (state.title == null || state.title.isRemoved() || state.title.level() != level) {
-            if (state.title != null) {
-                state.title.discard();
-            }
-            state.title = spawnCosmeticBit(level, ItemStack.EMPTY);
-            state.title.setCustomName(titleText(player));
-            state.title.setCustomNameVisible(true);
-        }
-        placeCosmetic(state.title,
-                state.aimPos.x, state.aimPos.y + player.getBbHeight() + TITLE_HEIGHT, state.aimPos.z,
-                player.getYRot(), 0.0D);
-    }
-
-    /**
-     * 称号牌的内容：乱码前缀 + 真名。
-     * <p>
-     * 前缀用的是主题里那个替换字符，和剑上、HUD 上的记号是同一个 —— 这是"数据损坏"这条线自己的符号。
-     * 名字取 profile 名而不是 {@code getName()}：玩家的显示名会受队伍前缀影响，摆两次会越接越长。
-     */
-    private static Component titleText(ServerPlayer player) {
-        return Component.literal(KunJinKaoPalette.MOJIBAKE + KunJinKaoPalette.MOJIBAKE)
-                .withStyle(ChatFormatting.LIGHT_PURPLE)
-                .append(Component.literal(" ").withStyle(ChatFormatting.DARK_GRAY))
-                .append(Component.literal(player.getGameProfile().getName()).withStyle(ChatFormatting.WHITE));
-    }
-
-    /** 身后三把剑（202），顺带推进正在进行的反击。 */
-    private static void tickOrbit(ServerPlayer player, Cosmetics state, boolean on) {
-        ServerLevel level = serverLevelOf(player);
-        if (!on || level == null) {
-            clearBits(state);
-            return;
-        }
-        // 自愈：换维度、实体被别的东西清掉之后，这里下一 tick 就能补回来。
-        for (int i = state.bits.size() - 1; i >= 0; i--) {
-            CosmeticBit bit = state.bits.get(i);
-            if (bit.isRemoved() || bit.level() != level) {
-                bit.discard();
-                state.bits.remove(i);
-            }
-        }
-        while (state.bits.size() < ORBIT_BIT_COUNT) {
-            // 用本模组自己的剑。空手的一把是"未验证的合成成品"才有的状态，新 ItemStack 是正常剑，
-            // 物品模型谓词会给出 -1（完整剑模型），不会渲染成编译阶段的小方块。
-            state.bits.add(spawnCosmeticBit(level,
-                    new ItemStack(SwordRegistry.KUN_JIN_KAO_SWORD.get())));
-        }
-
-        // 位置按玩家朝向算，而不是绕圈：朝向的水平分量是 (-sin, cos)，
-        // 身后就是它的反向，身侧是 (cos, sin)。三把剑排成**一条直线**（与肩同向、离背等距），
-        // 随朝向一起转 —— 转视角的时候它们是"在背后"，而不是"围着人转"。
-        // 刻意不做成弧线：弧线上等角放三把，弦距就不等了，看起来就是"间隔不一致"。
-        double yaw = Math.toRadians(player.getYRot());
-        double behindX = Math.sin(yaw);
-        double behindZ = -Math.cos(yaw);
-        double sideX = Math.cos(yaw);
-        double sideZ = Math.sin(yaw);
-        int tick = player.tickCount;
-        // 左右摆动的相位【不带】每把自己的偏移：三把同步摆，间距才是恒定的 0.55 格。
-        // 早先每把各用一个相位，三把的横向偏移各走各的，间距就在 0.35–0.75 格之间来回变，
-        // 看起来就是"三把剑的间隔不一样" —— 那不是错觉，是真的在变。
-        // 想有生气就只把相位差放到上下浮动那一项上：高度差不会让人对间距产生误判。
-        double sway = Math.sin(tick * ORBIT_SWAY_SPEED) * ORBIT_SWAY;
-        for (int i = 0; i < state.bits.size(); i++) {
-            // 反击中的那一把由 tickStrike 定位（索引 0）：这里不跳过的话两处会每 tick 互相拉扯。
-            if (i == 0 && state.strikeTarget != null) {
-                continue;
-            }
-            CosmeticBit bit = state.bits.get(i);
-            setSwordPose(bit, false);
-            // slot：-1 / 0 / +1，正好左、中、右。
-            double slot = i - (ORBIT_BIT_COUNT - 1) / 2.0D;
-            double bob = Math.sin(tick * ORBIT_SWAY_SPEED + i * 1.7D) * ORBIT_BOB;
-            double targetX = state.aimPos.x + behindX * ORBIT_BACK_DISTANCE
-                    + sideX * (slot * ORBIT_SIDE_SPREAD + sway);
-            double targetY = state.aimPos.y + ORBIT_HEIGHT + bob;
-            double targetZ = state.aimPos.z + behindZ * ORBIT_BACK_DISTANCE
-                    + sideZ * (slot * ORBIT_SIDE_SPREAD + sway);
-            if (i == 0 && state.returning) {
-                // 飞回来：和追人一样用指数逼近，别从目标头顶"啪"一下跳回背后。
-                Vec3 from = bit.position().add(0.0D, BIT_HAND_OFFSET, 0.0D);
-                Vec3 to = new Vec3(targetX, targetY, targetZ);
-                Vec3 next = from.add(to.subtract(from).scale(STRIKE_CHASE));
-                if (next.distanceTo(to) < 0.25D) {
-                    state.returning = false;
-                }
-                placeCosmetic(bit, next.x, next.y, next.z, player.getYRot(), BIT_HAND_OFFSET);
-                continue;
-            }
-            placeCosmetic(bit, targetX, targetY, targetZ, player.getYRot(), BIT_HAND_OFFSET);
-        }
-        tickStrike(player, state, level);
-    }
-
-    /** 收走三把剑并结束反击。关掉挂件的路上也要走这一步 —— 否则剑没了，人还在挨打。 */
-    private static void clearBits(Cosmetics state) {
-        for (CosmeticBit bit : state.bits) {
-            bit.discard();
-        }
-        state.bits.clear();
-        state.endStrike();
-        state.returning = false;
+        STRIKES.remove(player.getUUID());
+        LAST_FLAGS.remove(player.getUUID());
+        broadcastCosmetics();
     }
 
     /**
      * 玩家打了管理员 → 起一次反击。
      * <p>
-     * 这里只记下"追谁"，真正的追击与扣血交给 {@link #tickStrike} 按 tick 走：
-     * 在事件里把整段反击做完会把主线程按住 5 秒，那就是一次卡服。
+     * 只记下"追谁"，真正的扣血交给 {@link #driveStrike} 按 tick 走：在事件里把整段反击做完
+     * 会把主线程按住 5 秒，那就是一次卡服。
      * <p>
-     * 只认"打进来的一方是玩家"：这条装饰的语义是"打管理员会还手"。
-     * 让僵尸也能触发的话，管理员挂机一晚就会被自己的剑拖着满地图追怪。
-     * 一次只追一个人：被几个人围住时先把第一个打回去，比三把剑各飞一边清楚得多。
+     * 只认"打进来的一方是玩家"：这条装饰的语义是"打管理员会还手"，让僵尸也能触发的话，
+     * 管理员挂机一晚就会被自己的剑拖着满地图追怪。一次只追一个人：被几个人围住时，
+     * 先把第一个打回去，比三把剑各飞一边清楚得多。
      */
     @SubscribeEvent
     public void onLivingIncomingDamage(LivingIncomingDamageEvent event) {
@@ -1211,68 +832,50 @@ public final class KunJinKaoQolHandler {
         if (!(event.getSource().getEntity() instanceof ServerPlayer attacker) || attacker == admin) {
             return;
         }
-        if (!AdminToolConfig.isAuthorized(admin.getUUID()) || !isOn(admin, QolSetting.COSMETIC_ORBIT)) {
+        if ((cosmeticFlags(admin) & CosmeticStatePayload.FLAG_ORBIT) == 0) {
             return;
         }
-        Cosmetics state = COSMETICS.get(admin.getUUID());
-        if (state == null || state.bits.isEmpty() || state.strikeTarget != null) {
-            // 挂件还没长出来，或者已经在追别人了 —— 不叠加。
-            return;
+        if (STRIKES.containsKey(admin.getUUID())) {
+            return;   // 已经在追别人了 —— 不叠加
         }
-        state.strikeTarget = attacker.getUUID();
-        state.strikeTicks = 0;
-        state.nextStrikeTick = 0;
+        Strike strike = new Strike();
+        strike.target = attacker.getUUID();
+        STRIKES.put(admin.getUUID(), strike);
+        broadcastCosmetics();
     }
 
-    /** 反击：索引 0 的那把剑脱离身后，飞到目标头顶向下刺；打完飞回去。 */
-    private static void tickStrike(ServerPlayer admin, Cosmetics state, ServerLevel level) {
-        if (state.strikeTarget == null) {
-            return;
+    /**
+     * 推进一次反击。
+     *
+     * @return 这一 tick 是否还在反击中
+     */
+    private static boolean driveStrike(ServerPlayer admin) {
+        Strike strike = STRIKES.get(admin.getUUID());
+        if (strike == null) {
+            return false;
         }
-        if (state.bits.isEmpty()) {
-            // 剑被清掉了就没得追了（下一 tick 会重新长出来）。
-            finishStrike(state);
-            return;
+        ServerPlayer victim = admin.server.getPlayerList().getPlayer(strike.target);
+        if (victim == null || !victim.isAlive() || victim.level() != admin.level()) {
+            // 目标下线、死了、或者换维度了：这次反击到此为止。
+            // 跨维度追击没有意义 —— 挨打的人已经不在管理员眼前了。
+            STRIKES.remove(admin.getUUID());
+            broadcastCosmetics();
+            return false;
         }
-        ServerPlayer victim = level.getServer().getPlayerList().getPlayer(state.strikeTarget);
-        if (victim == null || !victim.isAlive() || victim.level() != level) {
-            // 目标下线、死了、或者换维度了：这次反击到此为止，剑飞回身后。
-            // 全服找不到人的"跨维度追击"没有意义，挨打的人已经不在管理员眼前了。
-            finishStrike(state);
-            return;
+        strike.ticks++;
+        // 先让客户端的剑飞过去（STRIKE_FLIGHT_TICKS），飞到了才开始扣血：
+        // 否则会出现"剑还在半路，人已经开始掉血"的错位。
+        if (strike.ticks >= CosmeticStatePayload.STRIKE_FLIGHT_TICKS
+                && strike.ticks >= strike.nextDamageTick) {
+            strike.nextDamageTick = strike.ticks + CosmeticStatePayload.STRIKE_DAMAGE_INTERVAL;
+            strikeDamage(admin, victim);
         }
-        state.strikeTicks++;
-
-        CosmeticBit bit = state.bits.get(0);
-        // 追人的这一把翻成"剑尖朝下"。
-        setSwordPose(bit, true);
-        // 每一下之间先抬起来再压下去：只压着不动看起来是"贴着"，不是"刺"。
-        // 判定用"离下一击还剩几 tick"，这样刺下去的时机和伤害落地是同一下。
-        boolean thrusting = state.nextStrikeTick - state.strikeTicks <= STRIKE_THRUST_WINDOW;
-        double hover = STRIKE_HOVER + (thrusting ? 0.0D : STRIKE_RETRACT);
-        // 目标也做跟随补偿：挨打的人自己看这一剑时，剑尖才不会落在他脑袋后面一点。
-        Vec3 victimAim = compensatedPosition(victim, state.lastVictimPos);
-        state.lastVictimPos = victim.position();
-        Vec3 head = new Vec3(victimAim.x, victimAim.y + victim.getBbHeight() + hover, victimAim.z);
-        // 用"剑尖看起来的位置"算距离：实体原点和剑尖差着半格，混着算会让剑停在头顶上方半格。
-        Vec3 from = bit.position().add(0.0D, STAB_HAND_OFFSET, 0.0D);
-        Vec3 next = from.add(head.subtract(from).scale(STRIKE_CHASE));
-        placeCosmetic(bit, next.x, next.y, next.z, victim.getYRot(), STAB_HAND_OFFSET);
-
-        // 飞到了才开始打：还没到就扣血，看起来像隔着半条街在放技能。
-        if (next.distanceTo(head) < STRIKE_REACH && state.strikeTicks >= state.nextStrikeTick) {
-            state.nextStrikeTick = state.strikeTicks + STRIKE_DAMAGE_INTERVAL;
-            strikeDamage(admin, victim, bit);
+        if (strike.ticks >= CosmeticStatePayload.STRIKE_DURATION) {
+            STRIKES.remove(admin.getUUID());
+            broadcastCosmetics();
+            return false;
         }
-        if (state.strikeTicks >= STRIKE_DURATION) {
-            finishStrike(state);
-        }
-    }
-
-    /** 收尾：清掉目标，并让剑走"飞回身后"的分支，不要从头顶瞬间跳回去。 */
-    private static void finishStrike(Cosmetics state) {
-        state.endStrike();
-        state.returning = true;
+        return true;
     }
 
     /**
@@ -1282,10 +885,9 @@ public final class KunJinKaoQolHandler {
      * 减到看不见数字，那这条装饰就等于没做。附魔保护仍然有效 —— 那属于"他就是很硬"。
      * <p>
      * 低于 {@link #STRIKE_MIN_HEALTH} 就停手：这是惩罚，不是处决。
-     * 命中反馈同时发给围观的人（sendParticles / playSound 都是服务端广播），
-     * 不然只有被打的人自己知道发生了什么。
+     * 命中火花与音效由服务端发（所有客户端都收得到），不然只有挨打的人自己知道发生了什么。
      */
-    private static void strikeDamage(ServerPlayer admin, ServerPlayer victim, CosmeticBit bit) {
+    private static void strikeDamage(ServerPlayer admin, ServerPlayer victim) {
         if (victim.getHealth() <= STRIKE_MIN_HEALTH) {
             return;
         }
@@ -1293,65 +895,22 @@ public final class KunJinKaoQolHandler {
         if (level == null) {
             return;
         }
-        victim.hurt(admin.damageSources().indirectMagic(bit, admin), STRIKE_DAMAGE);
+        // 直接来源与起因都填 admin：击退方向取自 source.getEntity()，所以效果仍然是
+        // "从管理员那边被打退"，死亡信息也仍然署名到管理员头上。这里不再有那把飞出去的剑实体，
+        // 也不需要 —— 它现在只活在客户端画面里。
+        victim.hurt(admin.damageSources().indirectMagic(admin, admin), STRIKE_DAMAGE);
         level.sendParticles(ParticleTypes.CRIT,
                 victim.getX(), victim.getY() + victim.getBbHeight() * 0.85D, victim.getZ(),
                 6, 0.25D, 0.25D, 0.25D, 0.02D);
-        level.sendParticles(AURA_PARTICLE,
-                victim.getX(), victim.getY() + victim.getBbHeight() + STRIKE_HOVER, victim.getZ(),
+        level.sendParticles(STRIKE_SPARK,
+                victim.getX(), victim.getY() + victim.getBbHeight() + 0.45D, victim.getZ(),
                 8, 0.18D, 0.12D, 0.18D, 0.0D);
         level.playSound(null, victim.getX(), victim.getY(), victim.getZ(),
                 SoundEvents.AMETHYST_CLUSTER_BREAK, SoundSource.PLAYERS, 0.55F, 1.6F);
     }
 
-    /**
-     * 光环与拖尾（203）。
-     * <p>
-     * 粒子一律由服务端发（{@code ServerLevel#sendParticles}）：客户端自己 spawn 的粒子只有本人看得见，
-     * 而这条需求的前提正是"别的玩家也看得见"。
-     */
-    private static void tickAura(ServerPlayer player, Cosmetics state, boolean on) {
-        ServerLevel level = serverLevelOf(player);
-        if (!on || level == null) {
-            state.trailFrom = null;
-            return;
-        }
-
-        // 脚下光环：一圈点按 tick 转，看起来在转而不是闪。
-        if (player.tickCount % AURA_INTERVAL == 0) {
-            double phase = player.tickCount * AURA_SPIN;
-            for (int i = 0; i < AURA_POINTS; i++) {
-                double angle = phase + i * (Math.PI * 2.0D / AURA_POINTS);
-                level.sendParticles(AURA_PARTICLE,
-                        state.aimPos.x + Math.cos(angle) * AURA_RADIUS,
-                        state.aimPos.y + AURA_HEIGHT,
-                        state.aimPos.z + Math.sin(angle) * AURA_RADIUS,
-                        1, 0.0D, 0.01D, 0.0D, 0.0D);
-            }
-        }
-
-        // 拖尾按"走过的距离"补点，不按 tick：站着不动不该在原地堆一团粒子，
-        // 而跑起来时两点之间要补满，不然速度快了尾迹会断成一节一节。
-        // 起点终点都用补偿后的位置：粒子同样是服务端发的，落后量和不补一样。
-        Vec3 now = state.aimPos;
-        Vec3 from = state.trailFrom;
-        state.trailFrom = now;
-        if (from == null) {
-            return;
-        }
-        double distance = now.distanceTo(from);
-        if (distance < TRAIL_STEP) {
-            return;
-        }
-        // 瞬移（回城、传送门、/tp 几千格）时按上限截断，否则一 tick 就在整条线上撒满粒子。
-        int points = (int) Math.min(TRAIL_MAX_POINTS, Math.ceil(distance / TRAIL_STEP));
-        for (int i = 1; i <= points; i++) {
-            double t = i / (double) points;
-            level.sendParticles(TRAIL_PARTICLE,
-                    from.x + (now.x - from.x) * t,
-                    from.y + (now.y - from.y) * t + 0.25D,
-                    from.z + (now.z - from.z) * t,
-                    1, 0.0D, 0.0D, 0.0D, 0.0D);
-        }
+    /** 当前维度；命中火花只在服务端世界里发。 */
+    private static ServerLevel serverLevelOf(ServerPlayer player) {
+        return player.level() instanceof ServerLevel level ? level : null;
     }
 }

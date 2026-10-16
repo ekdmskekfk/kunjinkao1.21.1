@@ -5,6 +5,7 @@ import dev.modmind.kunjinkao.client.qol.QolClientState;
 import dev.modmind.kunjinkao.client.qol.ZoneClientState;
 import dev.modmind.kunjinkao.network.AdminEyeStatePayload;
 import dev.modmind.kunjinkao.network.AdminPasswordResultPayload;
+import dev.modmind.kunjinkao.network.CosmeticStatePayload;
 import dev.modmind.kunjinkao.network.ExcludedPlayersPayload;
 import dev.modmind.kunjinkao.network.HudEntityActionResultPayload;
 import dev.modmind.kunjinkao.network.HudEntityListPayload;
@@ -81,6 +82,9 @@ public final class ClientPayloadHandlers {
             } else if (payload instanceof ZoneStatusPayload status) {
                 // 选区挖掘（127）的选区与进度：存进客户端镜像，由 ZoneSelectionRenderer 每帧自己读。
                 ZoneClientState.accept(status);
+            } else if (payload instanceof CosmeticStatePayload cosmetics) {
+                // 装饰（201–203）：整表快照，存进客户端镜像后由 CosmeticRenderer 用本地玩家位置画出来。
+                CosmeticClientState.accept(cosmetics.entries());
             }
         });
     }

@@ -62,6 +62,8 @@ public class KunJinKaoClientEvents {
         // 寻宝大师（96）的扫描：每 client tick 调一次，内部自己按 tick 计数决定何时真扫，
         // 并且把区块分批摊到多次扫描里，避免单帧卡顿。
         dev.modmind.kunjinkao.client.qol.QolTreasureScanner.tick(Minecraft.getInstance());
+        // 装饰（201–203）的客户端推进：反击进度外推 + 光环/拖尾粒子。画面在 CosmeticRenderer 里。
+        dev.modmind.kunjinkao.client.CosmeticClientState.tick();
         handleOpenAdminPassword();
         handleUndoPlacement();
         handleCycleAreaMode();

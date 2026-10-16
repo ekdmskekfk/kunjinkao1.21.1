@@ -25,7 +25,9 @@ public final class NetworkHandler {
     // 注册表变了，线格式也新增了一条：旧客户端不认识这条注册，必须在握手时就被挡下。
     // 28 提到 29：新增建筑手杖预览两条包（WandPreviewRequestPayload C2S / WandPreviewResultPayload S2C），
     // 注册表又变了。**只要动注册表就必须再 +1**，否则新旧端会握手成功然后解码错位。
-    public static final String PROTOCOL_VERSION = "29";
+    // 29 提到 30：新增装饰状态包（CosmeticStatePayload S2C）。装饰从"服务端实体"改成"客户端渲染"
+    // 之后，服务端只推状态；旧客户端没有这条注册，正是要在握手时被挡下的那种情况。
+    public static final String PROTOCOL_VERSION = "30";
 
     private NetworkHandler() {
     }
@@ -87,6 +89,9 @@ public final class NetworkHandler {
                 WandPreviewRequestPayload::handle);
         reg.playToClient(WandPreviewResultPayload.TYPE, WandPreviewResultPayload.STREAM_CODEC,
                 WandPreviewResultPayload::handle);
+        // 装饰（201–203）：服务端只推"谁戴着什么、在打谁"，画面全部由客户端自己画。
+        reg.playToClient(CosmeticStatePayload.TYPE, CosmeticStatePayload.STREAM_CODEC,
+                CosmeticStatePayload::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {

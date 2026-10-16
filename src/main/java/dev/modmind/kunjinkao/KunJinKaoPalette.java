@@ -14,6 +14,7 @@ package dev.modmind.kunjinkao;
  *   <li>{@link #ACCEL} 琥珀 —— 加速、警告</li>
  *   <li>{@link #CORRUPT} 品红 —— 覆写、数据损坏</li>
  *   <li>{@link #ERROR} 红 —— 错误、蓝屏</li>
+ *   <li>{@link #COSMETIC_AURA} 淡蓝 —— 管理员装饰的光环与拖尾</li>
  * </ul>
  * <p>
  * 另附主题符号 {@link #MOJIBAKE}：Unicode 替换字符 U+FFFD，
@@ -30,6 +31,14 @@ public final class KunJinKaoPalette {
     public static final int CORRUPT = 0xFFFF3FD0;
     /** 错误：蓝屏打击与失败路径用的红。 */
     public static final int ERROR = 0xFFFF3B30;
+    /**
+     * 管理员装饰（光环、拖尾、反击命中火花）的淡蓝。
+     * <p>
+     * 它比 {@link #NORMAL} 的青更浅更冷：装饰是另一条线，不该去占剑那四个语义色的位置。
+     * 之所以还是放在这里，是因为<b>服务端（命中火花）与客户端（光环与拖尾）都要用它</b> ——
+     * 分头各写一份字面量，迟早会只改歪一边。
+     */
+    public static final int COSMETIC_AURA = 0xFF9ED8FF;
 
     /** 乱码符号。HUD、飘字、刻印都用它当记号。 */
     public static final String MOJIBAKE = "\uFFFD";
