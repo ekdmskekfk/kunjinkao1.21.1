@@ -87,10 +87,11 @@ public enum QolSetting {
     /**
      * 127 机关拆解·选区挖掘的服务器总闸。
      * <p>
-     * 这一项会<b>不可逆地改变地形</b>，所以总闸默认关闭，而且所有参数都是服务器级 ——
+     * 这一项会<b>不可逆地改变地形</b>，所以只有通过管理员密码验证的人才能用；
+     * 总闸本身默认<b>开启</b>（服主按需要关掉即可），所有参数都是服务器级 ——
      * 由服主决定这台服务器上允许挖多大、挖出来的东西去哪，而不是让玩家自己放开上限。
      */
-    ZONE_EXCAVATE_SERVER(17, 127, Category.ENGINEERING, Scope.SERVER, Kind.TOGGLE, 0, 1, 0, "zoneExcavateEnabled"),
+    ZONE_EXCAVATE_SERVER(17, 127, Category.ENGINEERING, Scope.SERVER, Kind.TOGGLE, 0, 1, 1, "zoneExcavateEnabled"),
     /**
      * 127 的单边上限（格）。
      * <p>
