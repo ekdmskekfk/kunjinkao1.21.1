@@ -163,8 +163,10 @@ public final class KunJinKaoQolHandler {
     private static final double ORBIT_SIDE_SPREAD = 0.55D;
     /** 剑柄高度（相对脚底，格）。 */
     private static final double ORBIT_HEIGHT = 1.2D;
-    /** 轻微摆动幅度（格）。三把剑一起上下点头太机械，给一点相位差。 */
+    /** 左右轻摆的幅度（格）。<b>三把同步摆</b>，所以间距不变；见 tickOrbit 里的说明。 */
     private static final double ORBIT_SWAY = 0.1D;
+    /** 上下浮动的幅度（格）。每把有自己的相位差，看起来才不是一整块。 */
+    private static final double ORBIT_BOB = 0.05D;
     /** 摆动/浮动速度（弧度每 tick）。 */
     private static final double ORBIT_SWAY_SPEED = 0.06D;
     /**
@@ -306,6 +308,25 @@ public final class KunJinKaoQolHandler {
         @Override
         public boolean shouldBeSaved() {
             return false;
+        }
+
+        /**
+         * 收到位置更新时直接落位，不做插值。
+         * <p>
+         * {@code LivingEntity#lerpTo} 只是把目标位置记下来（{@code lerpSteps = 3}），
+         * 再由 {@code LivingEntity#tick} 用 3 个 tick 慢慢挪过去 —— 那是给怪物/动物准备的：
+         * 它们的移动是服务端算的，插值能把 20 Hz 的更新抹成平滑的走位。
+         * <p>
+         * 这几个装饰是<b>贴在玩家身上</b>的，套用同一套插值的结果就是：玩家一走，它们
+         * 拖在后面 3 个 tick（冲刺时快 0.8 格），看起来就是"慢半拍地跟着"。
+         * 直接落位之后，渲染仍然会按 {@code xo/yo/zo → getX()} 做逐帧插值，所以画面依旧平滑，
+         * 只是不再落后。这也是原版 {@code Entity#lerpTo} 的默认行为（我们只是不继承
+         * {@code LivingEntity} 那份平滑）。
+         */
+        @Override
+        public void lerpTo(double x, double y, double z, float yRot, float xRot, int steps) {
+            this.setPos(x, y, z);
+            this.setRot(yRot, xRot);
         }
     }
 
@@ -1054,14 +1075,20 @@ public final class KunJinKaoQolHandler {
         }
 
         // 位置按玩家朝向算，而不是绕圈：朝向的水平分量是 (-sin, cos)，
-        // 身后就是它的反向，身侧是 (cos, sin)。三把剑排成一段弧，随朝向一起转，
-        // 转视角的时候它们是"在背后"而不是"围着人转"。
+        // 身后就是它的反向，身侧是 (cos, sin)。三把剑排成**一条直线**（与肩同向、离背等距），
+        // 随朝向一起转 —— 转视角的时候它们是"在背后"，而不是"围着人转"。
+        // 刻意不做成弧线：弧线上等角放三把，弦距就不等了，看起来就是"间隔不一致"。
         double yaw = Math.toRadians(player.getYRot());
         double behindX = Math.sin(yaw);
         double behindZ = -Math.cos(yaw);
         double sideX = Math.cos(yaw);
         double sideZ = Math.sin(yaw);
         int tick = player.tickCount;
+        // 左右摆动的相位【不带】每把自己的偏移：三把同步摆，间距才是恒定的 0.55 格。
+        // 早先每把各用一个相位，三把的横向偏移各走各的，间距就在 0.35–0.75 格之间来回变，
+        // 看起来就是"三把剑的间隔不一样" —— 那不是错觉，是真的在变。
+        // 想有生气就只把相位差放到上下浮动那一项上：高度差不会让人对间距产生误判。
+        double sway = Math.sin(tick * ORBIT_SWAY_SPEED) * ORBIT_SWAY;
         for (int i = 0; i < state.bits.size(); i++) {
             // 反击中的那一把由 tickStrike 定位（索引 0）：这里不跳过的话两处会每 tick 互相拉扯。
             if (i == 0 && state.strikeTarget != null) {
@@ -1071,12 +1098,12 @@ public final class KunJinKaoQolHandler {
             setSwordPose(bit, false);
             // slot：-1 / 0 / +1，正好左、中、右。
             double slot = i - (ORBIT_BIT_COUNT - 1) / 2.0D;
-            double phase = tick * ORBIT_SWAY_SPEED + i * 1.7D;
+            double bob = Math.sin(tick * ORBIT_SWAY_SPEED + i * 1.7D) * ORBIT_BOB;
             double targetX = player.getX() + behindX * ORBIT_BACK_DISTANCE
-                    + sideX * (slot * ORBIT_SIDE_SPREAD + Math.sin(phase) * ORBIT_SWAY);
-            double targetY = player.getY() + ORBIT_HEIGHT + Math.sin(phase) * 0.05D;
+                    + sideX * (slot * ORBIT_SIDE_SPREAD + sway);
+            double targetY = player.getY() + ORBIT_HEIGHT + bob;
             double targetZ = player.getZ() + behindZ * ORBIT_BACK_DISTANCE
-                    + sideZ * (slot * ORBIT_SIDE_SPREAD + Math.sin(phase) * ORBIT_SWAY);
+                    + sideZ * (slot * ORBIT_SIDE_SPREAD + sway);
             if (i == 0 && state.returning) {
                 // 飞回来：和追人一样用指数逼近，别从目标头顶"啪"一下跳回背后。
                 Vec3 from = bit.position().add(0.0D, BIT_HAND_OFFSET, 0.0D);
