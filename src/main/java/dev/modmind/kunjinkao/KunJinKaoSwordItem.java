@@ -14,6 +14,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.InteractionResult;
@@ -28,6 +29,7 @@ import dev.modmind.kunjinkao.world.SwordPlacementRegistry;
 import dev.modmind.kunjinkao.world.SwordTimeAcceleration;
 import dev.modmind.kunjinkao.world.SwordToolHandler;
 import dev.modmind.kunjinkao.block.entity.AcceleratorBlockEntity;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Enemy;
@@ -963,7 +965,7 @@ public class KunJinKaoSwordItem extends SwordItem {
         int removed = 0;
         for (Mob mob : level.getEntitiesOfClass(Mob.class, area,
                 mob -> mob.isAlive() && mode.matches(mob))) {
-            mob.kill();
+            killIgnoringImmunity(mob, swordKillSource(player));
             removed++;
         }
         if (mode.targetsPlayers()) {
@@ -973,7 +975,7 @@ public class KunJinKaoSwordItem extends SwordItem {
                     // 玩家用只含处决信息的标记，避免把对方背包按抢夺等级复制。
                     applyExecutionMark(target, stack);
                     recordKiller(target, player);
-                    target.kill();
+                    killIgnoringImmunity(target, swordKillSource(player));
                     removed++;
                 }
             }
@@ -995,7 +997,7 @@ public class KunJinKaoSwordItem extends SwordItem {
             if (!attacker.level().isClientSide()) {
                 LOGGER.debug("[HURT-ENEMY] player target -> instant kill target={}", target.getName().getString());
                 applyExecutionMark(target, stack);
-                target.kill();
+                killIgnoringImmunity(target, swordKillSource(attacker));
             }
             return true;
         }
@@ -1010,7 +1012,7 @@ public class KunJinKaoSwordItem extends SwordItem {
             }
             LOGGER.debug("[HURT-ENEMY] overwriteEnabled=false -> instant kill target={}", target.getType());
             applyKunJinKaoMark(target, stack);
-            target.kill();
+            killIgnoringImmunity(target, swordKillSource(attacker));
         }
         return true;
     }
@@ -1127,6 +1129,55 @@ public class KunJinKaoSwordItem extends SwordItem {
         data.putLong(KunJinKaoDeathEventHandler.MARK_TICK_KEY, target.level().getGameTime());
         data.putBoolean(ULTIMATE_DEATH_MARK, isUltimateDeathEnabled(stack));
         data.putBoolean(QUIT_STRIKE_MARK, isQuitStrikeEnabled(stack));
+    }
+
+    /**
+     * 把目标杀掉，并且处理"杀不动"的情况。
+     * <p>
+     * {@code LivingEntity#kill()} 本身只是 {@code hurt(genericKill, MAX)}：它能过掉原版的
+     * 无敌判定（genericKill 在 BYPASSES_INVULNERABILITY 里），但过不掉两种很常见的 BOSS 写法：
+     * <ul>
+     *   <li>{@code hurt()} 里直接 {@code return false} —— 阶段无敌、锁血、剧情演出；</li>
+     *   <li>{@code hurt()} 里把伤害截断成"每次最多 N 点" —— 这种会返回 true，
+     *       但血只掉一小截，目标照样站着，表现就是"伤害打不破它的防御"。</li>
+     * </ul>
+     * 所以分两步：先走原版 kill（走得通就保留正常的掉落、死亡事件与击杀归属），
+     * 再检查目标是否还活着；还活着就直接把血清零并手动进死亡流程。
+     * <p>
+     * 用 {@code die()} 而不是 {@code remove()}：掉落、死亡消息、战斗记录、死亡事件都在
+     * {@code die()} 里，掉落增强与斩首那些功能依赖它们；{@code die()} 内部会判
+     * {@code isRemoved() || dead}，重复调用是安全的。
+     * <p>
+     * 最后那道 {@code remove()} 只兜"连 die() 都被模组改写"的极端情况 ——
+     * 到这一步已经不可能再靠原版接口杀掉它了，宁可不要掉落也不能让它继续挡路。
+     */
+    public static void killIgnoringImmunity(LivingEntity target, DamageSource source) {
+        if (target.isRemoved() || !target.isAlive()) {
+            return;
+        }
+        target.kill();
+        if (!target.isAlive() || target.isRemoved()) {
+            return;
+        }
+        LOGGER.debug("[KILL] kill() 被拦下，改为直接结算死亡 target={} health={}",
+                target.getType(), target.getHealth());
+        target.setHealth(0.0F);
+        target.die(source);
+        if (!target.isRemoved() && target.isAlive()) {
+            target.remove(Entity.RemovalReason.KILLED);
+        }
+    }
+
+    /**
+     * 秒杀用的伤害来源：带上攻击者，死亡消息与击杀归属才是对的。
+     * <p>
+     * 原版 {@code kill()} 走的是没有来源实体的 genericKill，死亡信息里写不出凶手；
+     * 既然这第二步是我们自己结算死亡，就顺手把来源补上。
+     */
+    public static DamageSource swordKillSource(LivingEntity attacker) {
+        return attacker instanceof Player player
+                ? player.damageSources().playerAttack(player)
+                : attacker.damageSources().mobAttack(attacker);
     }
 
     public enum AreaClearTargetMode {

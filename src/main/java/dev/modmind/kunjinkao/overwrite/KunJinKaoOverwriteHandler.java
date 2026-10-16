@@ -27,6 +27,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
@@ -35,6 +36,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.neoforge.entity.PartEntity;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -356,7 +358,7 @@ public class KunJinKaoOverwriteHandler {
         // 先移除状态再 kill，避免死亡事件再次进入清理路径
         STATES.remove(id);
         LOGGER.debug("[OVERWRITE-FINISH] killing target={}", target.getType());
-        target.kill();
+        KunJinKaoSwordItem.killIgnoringImmunity(target, KunJinKaoSwordItem.swordKillSource(state.attacker));
     }
 
     private static void spawnUndefinedZone(ServerLevel level, BlockPos center) {
@@ -504,7 +506,7 @@ public class KunJinKaoOverwriteHandler {
         } else {
             LOGGER.debug("[SWORD-ATTACK] overwriteEnabled=false -> INSTANT KILL target={}", target.getType());
             KunJinKaoSwordItem.applyKunJinKaoMark(target, sword);
-            target.kill();
+            KunJinKaoSwordItem.killIgnoringImmunity(target, KunJinKaoSwordItem.swordKillSource(attacker));
         }
         return true;
     }
@@ -547,6 +549,26 @@ public class KunJinKaoOverwriteHandler {
     }
 
     /**
+     * 把"被砍中的那个东西"还原成真正该挨打的本体。
+     * <p>
+     * 多部件 BOSS 的外壳是 {@link PartEntity}：准星打到的是它，原版会把伤害转发给本体，
+     * 但剑的一切接管逻辑都挂在"目标是 LivingEntity"这个前提上 —— 部件不是活体，
+     * 于是这条链路整段落空。末影龙就是最典型的例子：不解析本体的话，
+     * 用剑砍它跟用普通剑砍没区别。
+     *
+     * @return 本体；既不是活体也解析不出部件父实体时返回 null
+     */
+    private static LivingEntity resolveOwner(Entity hit) {
+        if (hit instanceof LivingEntity living) {
+            return living;
+        }
+        if (hit instanceof PartEntity<?> part && part.getParent() instanceof LivingEntity parent) {
+            return parent;
+        }
+        return null;
+    }
+
+    /**
      * 玩家攻击兜底：在 Player.attack 流程最开头触发，早于伤害结算与 isInvulnerableTo 免疫判定，
      * 因此即使目标对剑类伤害免疫（例如 BOSS 在 hurt/isInvulnerableTo 中拦截），
      * 只要攻击者手持未伪装的覆写·断未，就会强制接管本次攻击。
@@ -560,8 +582,16 @@ public class KunJinKaoOverwriteHandler {
         if (player.level().isClientSide()) {
             return;
         }
-        if (!(event.getTarget() instanceof LivingEntity target) || target instanceof Player) {
-            LOGGER.debug("[ATTACK-EVENT] skipped target={} (non-living or player)", event.getTarget());
+        if (!(event.getTarget() instanceof LivingEntity) && !(event.getTarget() instanceof PartEntity<?>)) {
+            LOGGER.debug("[ATTACK-EVENT] skipped target={} (非活体也非部件)", event.getTarget());
+            return;
+        }
+        // 多部件 BOSS（末影龙那种）打中的是 PartEntity，不是本体：原版会把伤害转发给本体，
+        // 但 Item#hurtEnemy 只对 LivingEntity 目标调用 —— 于是剑的秒杀在这类 BOSS 身上
+        // 根本不会触发，表现就是"砍上去有伤害数字，怎么砍都不死"。这里先把部件解析回本体。
+        LivingEntity target = resolveOwner(event.getTarget());
+        if (target == null || target instanceof Player) {
+            LOGGER.debug("[ATTACK-EVENT] skipped target={} (解析不出本体或是玩家)", event.getTarget());
             return;
         }
         ItemStack sword = findSword(player);
