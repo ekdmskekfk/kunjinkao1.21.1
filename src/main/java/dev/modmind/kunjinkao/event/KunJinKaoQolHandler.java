@@ -630,6 +630,10 @@ public final class KunJinKaoQolHandler {
             // 不需要在这里补一次，也不该在这里另写一份 —— 两份逻辑迟早在某一边漏掉一处。
             case COSMETIC_TITLE, COSMETIC_ORBIT, COSMETIC_AURA -> {
             }
+            // 屹立不倒（204）同样没有"挂上去"的状态：客户端每 tick 现查现用（StandFirmClient），
+            // 服务端的两个事件处理器也是现查现用。开关一改下一 tick 就生效。
+            case STAND_FIRM -> {
+            }
         }
     }
 

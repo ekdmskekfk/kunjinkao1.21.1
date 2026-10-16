@@ -174,7 +174,14 @@ public enum QolSetting {
     /** 202 浮游挂件：身后三把剑（所有人看得见），被玩家攻击时其中一把飞去他头顶向下刺。 */
     COSMETIC_ORBIT(26, 202, Category.COSMETIC, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, ""),
     /** 203 光环与拖尾：脚下一圈淡蓝光环，移动时拖出一条渐隐的淡蓝尾迹。 */
-    COSMETIC_AURA(27, 203, Category.COSMETIC, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, "");
+    COSMETIC_AURA(27, 203, Category.COSMETIC, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, ""),
+    /**
+     * 204 屹立不倒：不会被推动、击退、弹飞（自己按方向键移动不受影响），也不会被传送到其他维度。
+     * <p>
+     * 生效分两半：客户端拒绝"不是自己产生的位移"（见 {@code StandFirmClient}），
+     * 服务端取消击退与换维度（见 {@code KunJinKaoStandFirmHandler}）。
+     */
+    STAND_FIRM(28, 204, Category.SURVIVAL, Scope.PERSONAL, Kind.TOGGLE, 0, 1, 0, "");
 
     /**
      * 面板顶部的分类标签。

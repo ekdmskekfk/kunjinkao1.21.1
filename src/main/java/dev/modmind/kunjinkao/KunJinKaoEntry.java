@@ -63,6 +63,9 @@ public final class KunJinKaoEntry {
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.SwordMiningPenaltyHandler());
         NeoForge.EVENT_BUS.register(new KunJinKaoColdDataEffectsHandler());
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.KunJinKaoQolHandler());
+        // 屹立不倒（204）的服务端半边：取消击退与换维度。客户端那半边在 StandFirmClient 里，
+        // 两半合起来才是这一项的效果（见 QolSetting#STAND_FIRM 的说明）。
+        NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.KunJinKaoStandFirmHandler());
         // 选区作业（127）的框选：木棍右键设角点。与上面那个面板处理器分开注册，
         // 是因为它只订阅交互事件、也不参与面板的任何判定。
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.ZoneSelectionHandler());
