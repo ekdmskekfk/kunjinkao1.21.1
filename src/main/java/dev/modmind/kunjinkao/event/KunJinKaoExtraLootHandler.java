@@ -13,6 +13,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.SpawnEggItem;
 import net.minecraft.world.level.Level;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
@@ -50,7 +51,18 @@ public final class KunJinKaoExtraLootHandler {
             Map.entry(EntityType.PIGLIN_BRUTE, Items.PIGLIN_HEAD),
             Map.entry(EntityType.ENDER_DRAGON, Items.DRAGON_HEAD));
 
-    @SubscribeEvent
+    /**
+     * 额外掉落：斩首与刷怪蛋。
+     * <p>
+     * <b>优先级必须是 LOW</b>：{@code KunJinKaoDeathEventHandler} 的"掉落增强"在同一事件里
+     * 复制"当时已经存在的掉落"，优先级 NORMAL、比这里先跑。把它排在后面有两个好处：
+     * <ol>
+     *   <li>顺序由注解定死，不再依赖 {@code KunJinKaoEntry} 里的注册次序 ——
+     *       以前两者都是 NORMAL，谁先跑全看注册顺序，而"头到底吃不吃抢夺"正好取决于它；</li>
+     *   <li>这里补的头不会被那一遍再复制一次，颗数完全由下面的算法决定，不会翻倍。</li>
+     * </ol>
+     */
+    @SubscribeEvent(priority = EventPriority.LOW)
     public void onLivingDrops(LivingDropsEvent event) {
         if (!(event.getEntity() instanceof LivingEntity victim) || victim.level().isClientSide()) {
             return;
@@ -77,13 +89,19 @@ public final class KunJinKaoExtraLootHandler {
         if (KunJinKaoSwordItem.isBeheadingEnabled(sword)) {
             Item head = HEADS.get(victim.getType());
             if (head != null) {
-                addDrop(victim, event, new ItemStack(head));
+                // 斩首也吃抢夺等级：和"掉落增强"对其它掉落用的是同一套读法 ——
+                // 等级 L 表示"额外 L 份"，所以总共 1 + L 颗头（设置值 1 = 等级 0 = 只掉原来那一颗）。
+                // 上面那个处理器排在前面、看不到这里补的头，所以不会和它叠加成两倍。
+                addDrop(victim, event, new ItemStack(head),
+                        1 + KunJinKaoSwordItem.getLootingLevel(sword));
             }
         }
         if (KunJinKaoSwordItem.isSpawnEggDropEnabled(sword)) {
             SpawnEggItem egg = SpawnEggItem.byId(victim.getType());
             if (egg != null) {
-                addDrop(victim, event, new ItemStack(egg));
+                // 刷怪蛋不吃抢夺等级：它是"这一项开着就必定掉一个"的开关语义，
+                // 按等级复制会让 1000 级的剑一次砍出十六栈刷怪蛋。
+                addDrop(victim, event, new ItemStack(egg), 1);
             }
         }
     }
@@ -157,11 +175,25 @@ public final class KunJinKaoExtraLootHandler {
         return victim.getLastHurtByMob() instanceof Player player ? player : null;
     }
 
-    private static void addDrop(LivingEntity victim, LivingDropsEvent event, ItemStack stack) {
+    /**
+     * 往本次掉落里补 {@code totalCount} 个物品，超出堆叠上限自动拆成多份。
+     * <p>
+     * 拆堆的写法与"掉落增强"一致（那边是每个已有掉落追加等级份）：
+     * 1000 级的抢夺不该生成一个 1000 颗头的物品栈，原版也接不住。
+     */
+    private static void addDrop(LivingEntity victim, LivingDropsEvent event, ItemStack stack, int totalCount) {
         Level level = victim.level();
-        ItemEntity item = new ItemEntity(level, victim.getX(),
-                victim.getY() + victim.getEyeHeight() * 0.5D, victim.getZ(), stack);
-        item.setDefaultPickUpDelay();
-        event.getDrops().add(item);
+        int maxSize = stack.getMaxStackSize();
+        int remaining = totalCount;
+        while (remaining > 0) {
+            int chunk = Math.min(remaining, maxSize);
+            ItemStack copy = stack.copy();
+            copy.setCount(chunk);
+            ItemEntity item = new ItemEntity(level, victim.getX(),
+                    victim.getY() + victim.getEyeHeight() * 0.5D, victim.getZ(), copy);
+            item.setDefaultPickUpDelay();
+            event.getDrops().add(item);
+            remaining -= chunk;
+        }
     }
 }
