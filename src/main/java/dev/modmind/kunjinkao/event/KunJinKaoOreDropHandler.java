@@ -2,6 +2,8 @@ package dev.modmind.kunjinkao.event;
 
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
@@ -14,6 +16,7 @@ import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * 在原版矿石掉落完成后补充额外掉落，使管理员剑的矿石掉落达到设置的倍数。
@@ -34,7 +37,7 @@ public final class KunJinKaoOreDropHandler {
         }
 
         BlockState state = event.getState();
-        if (!state.is(Tags.Blocks.ORES)) {
+        if (!isOre(state)) {
             return;
         }
 
@@ -79,5 +82,54 @@ public final class KunJinKaoOreDropHandler {
             Block.popResource(level, pos, extra);
             totalCount -= count;
         }
+    }
+
+    /** 方块 id 里"独立的 ore 词"。用词边界，避免 core / store / shore 这类被误判成矿石。 */
+    private static final Pattern ORE_IN_ID = Pattern.compile("(^|_)ore(_|$)");
+
+    /**
+     * 这一块算不算矿石。
+     * <p>
+     * <b>不能只看 {@code c:ores}。</b> 相当一部分模组只把矿石挂在<b>子标签</b>上：
+     * AllTheModium 3.2.1 就是典型 —— jar 里有
+     * {@code data/c/tags/block/ores/allthemodium.json} 与同级的 vibranium / unobtainium，
+     * 却<b>没有</b> {@code data/c/tags/block/ores.json}，所以 {@code c:ores} 里查不到它的矿石，
+     * 表现就是"这个模组的矿石无法被翻倍"。
+     * <p>
+     * 判定顺序（从最正典到最兜底）：
+     * <ol>
+     *   <li>{@code c:ores}：NeoForge 约定的正典标签；</li>
+     *   <li>任何一个像矿石的方块标签：{@code c:ores/<材料>}、{@code c:ores_in_ground/<岩石>}、
+     *       原版的 {@code minecraft:*_ores} 都落在这里；</li>
+     *   <li>方块 id 里带独立的 ore 词：给完全不挂标签的模组兜底
+     *       （{@code allthemodium:vibranium_ore}、{@code mod:deepslate_x_ore} 这类）。</li>
+     * </ol>
+     * 第三条是启发式，会有误报的可能（例如某个叫 {@code ore_crusher} 的机器方块）；
+     * 但它的代价只是"多掉几份"，而漏判的代价是"这个功能对这个模组完全没用"，
+     * 两边权衡下来宁可宽一点。
+     */
+    private static boolean isOre(BlockState state) {
+        if (state.is(Tags.Blocks.ORES)) {
+            return true;
+        }
+        if (state.getTags().anyMatch(tag -> looksLikeOreTag(tag.location()))) {
+            return true;
+        }
+        return ORE_IN_ID.matcher(BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath()).find();
+    }
+
+    /**
+     * 标签路径像不像"矿石标签"。
+     * <p>
+     * 覆盖到的形态（都是实机里见过的）：{@code ores}、{@code ores/allthemodium}、
+     * {@code ores_in_ground/deepslate}、{@code iron_ores}（原版那批）、{@code foo/ores/bar}。
+     */
+    private static boolean looksLikeOreTag(ResourceLocation tag) {
+        String path = tag.getPath();
+        return path.equals("ores")
+                || path.startsWith("ores/")
+                || path.startsWith("ores_in_ground/")
+                || path.endsWith("_ores")
+                || path.contains("/ores/");
     }
 }

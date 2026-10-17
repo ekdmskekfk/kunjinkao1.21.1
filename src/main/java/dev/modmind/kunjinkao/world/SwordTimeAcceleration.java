@@ -6,7 +6,10 @@ import dev.modmind.kunjinkao.block.entity.AcceleratorBlockEntity;
 import dev.modmind.kunjinkao.network.NetworkHandler;
 import dev.modmind.kunjinkao.network.TimeAccelStatusPayload;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import dev.modmind.kunjinkao.KunJinKaoSwordItem;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -25,6 +28,8 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 import javax.annotation.Nullable;
@@ -233,6 +238,7 @@ public final class SwordTimeAcceleration {
                 startBlockSession(serverLevel, pos, KunJinKaoSwordItem.getTimeAccelMultiplier(stack), mode);
             }
             refreshTickrate(server);
+            persist(server);
             player.displayClientMessage(Component.translatable(previous != null
                     ? "message.kunjinkao.time_accel_stopped"
                     : mode == MODE_TIMED
@@ -266,6 +272,7 @@ public final class SwordTimeAcceleration {
         int multiplier = KunJinKaoSwordItem.getTimeAccelMultiplier(stack);
         TIME_SESSIONS.add(new Session(null, multiplier, expiresAt(mode), server.overworld().dimension()));
         refreshTickrate(server);
+        persist(server);
         player.displayClientMessage(Component.translatable("message.kunjinkao.time_accel_time_started",
                 (int) targetTickrate(multiplier)), true);
     }
@@ -288,6 +295,8 @@ public final class SwordTimeAcceleration {
             player.displayClientMessage(Component.translatable("message.kunjinkao.time_accel_time_started",
                     (int) targetTickrate(multiplier)), true);
         }
+        // 两条分支都要落盘：开要让重启后还在，关要让重启后别又自己开回来。
+        persist(server);
         return true;
     }
 
@@ -337,6 +346,95 @@ public final class SwordTimeAcceleration {
     private static void startBlockSession(ServerLevel level, BlockPos pos, int multiplier, int mode) {
         BLOCK_SESSIONS.put(blockKey(level.dimension(), pos),
                 new Session(pos.immutable(), multiplier, expiresAt(mode), level.dimension()));
+    }
+
+    // ===================== 落盘与恢复 =====================
+
+    /**
+     * 把当前会话表整表写进存档。
+     * <p>
+     * 调用点很稀疏（一次开/关、一次过期、一次自动清理），所以不做什么增量，
+     * 直接按当前状态重建一份 —— 少一种"增量包对不上"的失败模式。
+     * {@link TimeAccelSavedData#replace} 内部判等，内容没变不会标脏。
+     */
+    private static void persist(MinecraftServer server) {
+        long now = System.currentTimeMillis();
+        List<TimeAccelSavedData.Entry> entries = new ArrayList<>();
+        for (Session session : BLOCK_SESSIONS.values()) {
+            if (session.pos() == null) {
+                continue;
+            }
+            entries.add(new TimeAccelSavedData.Entry(session.pos(), session.dimension().location().toString(),
+                    session.multiplier(), remainingMillis(session, now)));
+        }
+        for (Session session : TIME_SESSIONS) {
+            entries.add(new TimeAccelSavedData.Entry(null, session.dimension().location().toString(),
+                    session.multiplier(), remainingMillis(session, now)));
+        }
+        TimeAccelSavedData.get(server).replace(entries);
+    }
+
+    /** 会话剩余毫秒；无限会话返回 -1。 */
+    private static long remainingMillis(Session session, long now) {
+        return session.expiresAt() < 0L ? -1L : Math.max(0L, session.expiresAt() - now);
+    }
+
+    @Nullable
+    private static ResourceKey<Level> parseDimension(String dimension) {
+        ResourceLocation id = ResourceLocation.tryParse(dimension);
+        return id == null ? null : ResourceKey.create(Registries.DIMENSION, id);
+    }
+
+    /**
+     * 服务器启动：把存档里的加速会话接回来。
+     * <p>
+     * 这些会话是"开着就该一直开着"的东西（无限模式尤其如此），重启后消失等于玩家白设一次。
+     * 恢复时用存下来的<b>剩余毫秒</b>重新算截止时刻，所以关着游戏的那段时间不计时 ——
+     * 限时加速不会因为一次重启就直接过期。
+     * <p>
+     * 顺序要求：先 {@code captureBaseline}（此刻 tick 率还是原版的 20，基线要记这个），
+     * 再填会话表，最后 {@code refreshTickrate} 把刻率抬上去。
+     */
+    @SubscribeEvent
+    public static void onServerStarted(ServerStartedEvent event) {
+        MinecraftServer server = event.getServer();
+        captureBaseline(server);
+        long now = System.currentTimeMillis();
+        for (TimeAccelSavedData.Entry entry : TimeAccelSavedData.get(server).entries()) {
+            ResourceKey<Level> dimension = parseDimension(entry.dimension());
+            if (dimension == null) {
+                continue;
+            }
+            long expiresAt = entry.remainingMillis() < 0L ? -1L : now + entry.remainingMillis();
+            if (entry.pos() == null) {
+                TIME_SESSIONS.add(new Session(null, entry.multiplier(), expiresAt, dimension));
+            } else if (server.getLevel(dimension) != null) {
+                BLOCK_SESSIONS.put(blockKey(dimension, entry.pos()),
+                        new Session(entry.pos(), entry.multiplier(), expiresAt, dimension));
+            }
+        }
+        if (!BLOCK_SESSIONS.isEmpty() || !TIME_SESSIONS.isEmpty()) {
+            LOGGER.info("[ACCEL-RESTORE] block={} time={} -> tickrate={}",
+                    BLOCK_SESSIONS.size(), TIME_SESSIONS.size(), server.tickRateManager().tickrate());
+        }
+        refreshTickrate(server);
+    }
+
+    /**
+     * 服务器停止：落一次盘，然后把内存里的会话清空。
+     * <p>
+     * 清空这一步是必须的：这两张表是静态的，单人连着换存档时不清，上一个世界的加速场
+     * 会被带进新世界（坐标撞上就真的生效）。落盘放在这里只是双保险 ——
+     * 每次会话变化时已经写过一次了。
+     */
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        persist(event.getServer());
+        BLOCK_SESSIONS.clear();
+        TIME_SESSIONS.clear();
+        LAST_TOGGLE.clear();
+        previousTickrate = BASE_TICKRATE;
+        statusTicker = 0;
     }
 
     /** 该位置当前是否有局部加速场。 */
@@ -474,6 +572,8 @@ public final class SwordTimeAcceleration {
         }
         if (expiredBlocks || expiredTime) {
             refreshTickrate(server);
+            // 过期的会话不能留在存档里：否则重启后会被当成"还在开"再恢复回来。
+            persist(server);
         }
     }
 
@@ -506,8 +606,9 @@ public final class SwordTimeAcceleration {
                     session.multiplier());
         }
         if (removedAny) {
-            // 加速场数量变了，刻率基线要跟着重算。
+            // 加速场数量变了，刻率基线要跟着重算；存档里那条已经失效的会话也要擦掉。
             refreshTickrate(server);
+            persist(server);
         }
     }
 
