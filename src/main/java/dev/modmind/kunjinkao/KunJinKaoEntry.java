@@ -41,6 +41,8 @@ public final class KunJinKaoEntry {
         SwordRegistry.register(modEventBus);
         AcceleratorRegistry.register(modEventBus);
         WorldGateRegistry.register(modEventBus);
+        // 锟斤拷之手（实体 + 刷怪蛋 + 属性）。不参与自然生成，只能刷怪蛋/summon。
+        dev.modmind.kunjinkao.entity.KunJinKaoEntities.register(modEventBus);
         dev.modmind.kunjinkao.sound.KunJinKaoSounds.register(modEventBus);
         container.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON,
                 AdminToolConfig.COMMON_SPEC, "kunjinkao-admin.toml");

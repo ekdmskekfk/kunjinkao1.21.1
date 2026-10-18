@@ -10,7 +10,9 @@ import dev.modmind.kunjinkao.client.function.HudFunctionManager;
 import dev.modmind.kunjinkao.client.render.AcceleratorBlockEntityRenderer;
 import dev.modmind.kunjinkao.client.render.EyeHudLayer;
 import dev.modmind.kunjinkao.client.render.HoneycombShieldLayer;
+import dev.modmind.kunjinkao.client.render.KunJinKaoHandRenderer;
 import dev.modmind.kunjinkao.client.render.KunJinKaoThirdPersonGrabLayer;
+import dev.modmind.kunjinkao.client.model.KunJinKaoHandModel;
 import dev.modmind.kunjinkao.client.hud.HudOverlayRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -63,6 +65,14 @@ public class ClientModEvents {
     @SubscribeEvent
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerBlockEntityRenderer(AcceleratorRegistry.ACCELERATOR_BE.get(), AcceleratorBlockEntityRenderer::new);
+        // 锟斤拷之手。
+        event.registerEntityRenderer(dev.modmind.kunjinkao.entity.KunJinKaoEntities.HAND.get(),
+                KunJinKaoHandRenderer::new);
+    }
+
+    @SubscribeEvent
+    public static void registerLayerDefinitions(EntityRenderersEvent.RegisterLayerDefinitions event) {
+        event.registerLayerDefinition(KunJinKaoHandModel.LAYER, KunJinKaoHandModel::createBodyLayer);
     }
 
     @SubscribeEvent

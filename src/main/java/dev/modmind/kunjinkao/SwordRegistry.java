@@ -35,6 +35,9 @@ public class SwordRegistry {
                 output.accept(KUN_JIN_KAO_SWORD.get());
                 output.accept(AcceleratorRegistry.ACCELERATOR_ITEM.get());
                 output.accept(WorldGateRegistry.WORLD_GATE_ITEM.get());
+                // 锟斤拷之手的刷怪蛋（实体在 KunJinKaoEntities 注册；引用写在 lambda 里，
+                // 不参与本类的静态初始化，所以没有初始化顺序问题）。
+                output.accept(dev.modmind.kunjinkao.entity.KunJinKaoEntities.HAND_SPAWN_EGG.get());
             })
             .build()
     );

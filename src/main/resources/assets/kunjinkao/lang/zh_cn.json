@@ -6,6 +6,8 @@
   "message.kunjinkao.hud_magnet_enabled": "\u6218\u672f HUD \u78c1\u94c1\u5df2\u5f00\u542f\uff1a\u5438\u53d6 50\u00d750\u00d750 \u8303\u56f4\u7684\u6389\u843d\u7269\u4e0e\u7ecf\u9a8c\u3002",
   "message.kunjinkao.hud_magnet_disabled": "\u6218\u672f HUD \u78c1\u94c1\u5df2\u5173\u95ed\u3002",
   "item.kunjinkao.kun_jin_kao": "覆写·断未",
+  "entity.kunjinkao.hand": "锟斤拷之手",
+  "item.kunjinkao.hand_spawn_egg": "锟斤拷之手刷怪蛋",
   "itemGroup.kunjinkao.kun_jin_kao": "覆写·断未",
   "key.categories.kunjinkao": "KunJinKao TangTangTang",
   "key.kunjinkao.toggle_disguise": "切换伪装",
