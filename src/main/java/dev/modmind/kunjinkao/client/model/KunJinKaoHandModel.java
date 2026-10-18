@@ -7,6 +7,7 @@ import net.minecraft.client.model.geom.ModelLayerLocation;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.PartPose;
 import net.minecraft.client.model.geom.builders.CubeListBuilder;
+import net.minecraft.client.model.geom.builders.CubeDeformation;
 import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.model.geom.builders.MeshDefinition;
 import net.minecraft.client.model.geom.builders.PartDefinition;
@@ -14,145 +15,144 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 
 /**
- * 君君的模型：一只攥紧的拳头，手背朝上、指峰隆起、拇指锁扣、指尖贴地。
+ * 君君的模型 —— **几何由用户在 Blockbench 5.2.1 里制作**（junjun.java），这里原样移植：
+ * 所有 {@code texOffs}/{@code addBox}/{@code PartPose} 一概未动。
  * <p>
- * <b>坐标系备忘（这次栽过跟头，写下来防止再栽）：</b>
- * MC 实体模型的坐标是 <b>Y 翻转</b>的 —— {@code LivingEntityRenderer#render} 里做了
- * {@code scale(-1,-1,1)} + {@code translate(0,-1.501,0)}，于是：
- * <ul>
- *   <li><b>y_model = 24 是地面</b>（原版人形的脚底就在 24），越往上 y 越小；</li>
- *   <li><b>+Y_model 指向地下</b>，所以"往下蜷"是 <b>正的 xRot</b>（(0,0,-1) 绕 X 转正角 → y_model 增大 = 朝地）；</li>
- *   <li>Z 不翻转，模型 -Z 是脸的朝向（原版四足动物的头在 -Z）。</li>
- * </ul>
- * 之前那版"又高又反"就是这两条没落实：部件放在 y=0~6（悬空 1.1~1.5 格）、
- * 手指用负角蜷（结果翘向天）。
+ * 在用户几何之上只做了三件事：
+ * <ol>
+ *   <li><b>包一层父节点 {@code body}</b>（零偏移，不改外观）：所有部件挂到它下面，
+ *       于是"整体转向/整体起伏"有了单一的落点，而不用逐个部件去改；</li>
+ *   <li><b>朝向对齐</b>：用户建模时手指指向模型 <b>-X</b>（五根指骨在 x=-14~-16，向 +X 伸展），
+ *       而实体模型的脸朝 <b>-Z</b>（原版四足动物的头在 -Z），所以要整体转 -90°，
+ *       否则君君会横着爬。做成常量 {@link #FACING_YAW}，进游戏方向不对就改它（0 / ±90）；</li>
+ *   <li><b>蠕动动画</b>：五根手指各带相位差做波浪（蜷伸），掌身缓慢起伏侧倾 ——
+ *       全是模型动画，实体层用普通寻路。</li>
+ * </ol>
  * <p>
- * 姿态按描述落实：四指从指根内卷蜷进掌下、指峰隆起一截、拇指横向锁扣（侧面半包）、
- * 指甲从指缝两侧露出顺指尖斜指、手背视角只见手背与骨节。
+ * <b>坐标系备忘：</b>模型坐标 Y 翻转，{@code y_model = 24} 是地面；用户的 {@code bb_main}
+ * 放在 y=24（Boxbench 的习惯），所以贴地这件事天然正确。
  * <p>
- * 蠕动 = 尺蠖式一拱一拱：以腕部为支点，拳面绕它拱起（抬高 + 前送）再落下；
- * {@code limbSwing} 当周期时钟，拱动节奏与真实位移同步。
+ * <b>贴图约定（上色按这个来）：</b>皮肤部件共用几块皮肤区（底色+受光+血管+褶皱+腕部小痣），
+ * 指尖的 5 个 1x1x1 小块用白甲区 —— 指骨链最远端（离掌最远）是尖端，尖端就是指甲。
  */
 public class KunJinKaoHandModel extends EntityModel<KunJinKaoHandEntity> {
 
     public static final ModelLayerLocation LAYER = new ModelLayerLocation(
-            ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "hand"), "main");
+            ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "junjun"), "main");
 
-    private static final int SKIN_U = 0;
-    private static final int SKIN_V = 0;
-    private static final int NAIL_U = 32;
-    private static final int NAIL_V = 0;
+    /**
+     * 朝向对齐：建模时手指朝 -X，实体脸朝 -Z，差一个 -90° 的绕 Y 旋转。
+     * 进游戏如果横着爬/倒着爬，改这一个数（0 = 不转，90 = 反向）。
+     */
+    private static final float FACING_YAW = -(float) (Math.PI / 2.0D);
 
-    /** 模型坐标里的"地面"：见类注释，Y 翻转、24 = 脚底。 */
+    /** 模型坐标里的"地面"（Y 翻转，24 = 脚底）。 */
     private static final float GROUND = 24.0F;
 
-    private final ModelPart root;
-    private final ModelPart back;
-    private final ModelPart[] fingerCurl = new ModelPart[4];
-    private final ModelPart[] nails = new ModelPart[4];
-    private final ModelPart thumb;
+    private final ModelPart body;
+    private final ModelPart[] fingers = new ModelPart[5];
+    private final ModelPart palm;
+    private final ModelPart plate;
 
     public KunJinKaoHandModel(ModelPart root) {
-        this.root = root.getChild("root");
-        this.back = this.root.getChild("back");
-        for (int i = 0; i < 4; i++) {
-            this.fingerCurl[i] = this.back.getChild("finger" + i);
-            this.nails[i] = this.fingerCurl[i].getChild("nail" + i);
-        }
-        this.thumb = this.back.getChild("thumb");
+        this.body = root.getChild("body");
+        // 指骨顺序照用户类的字段顺序：bone3 / bone / bone2 / bone5 / bone4。
+        this.fingers[0] = this.body.getChild("bone3");
+        this.fingers[1] = this.body.getChild("bone");
+        this.fingers[2] = this.body.getChild("bone2");
+        this.fingers[3] = this.body.getChild("bone5");
+        this.fingers[4] = this.body.getChild("bone4");
+        this.plate = this.body.getChild("bone6");
+        this.palm = this.body.getChild("bb_main");
     }
 
     public static LayerDefinition createBodyLayer() {
-        MeshDefinition mesh = new MeshDefinition();
-        PartDefinition root = mesh.getRoot().addOrReplaceChild("root",
+        MeshDefinition meshdefinition = new MeshDefinition();
+        PartDefinition partdefinition = meshdefinition.getRoot();
+        // 零偏移父节点：给"整体转向/起伏"一个落点，不改变任何几何。
+        PartDefinition partdefinition2 = partdefinition.addOrReplaceChild("body",
                 CubeListBuilder.create(), PartPose.offset(0.0F, 0.0F, 0.0F));
 
-        // 腕部断口：贴地（y 21..24），在 +Z（身后），端面有暗色切面（贴图）。
-        root.addOrReplaceChild("wrist", CubeListBuilder.create()
-                        .texOffs(SKIN_U, SKIN_V)
-                        .addBox(-3.1F, -1.5F, -2.6F, 6.2F, 3.0F, 4.6F),
-                PartPose.offset(0.0F, GROUND - 1.5F, 2.8F));
+        PartDefinition bone3 = partdefinition2.addOrReplaceChild("bone3", CubeListBuilder.create().texOffs(12, 31).addBox(0.0F, -2.0F, 0.0F, 1.0F, 1.0F, 1.0F, new CubeDeformation(0.0F))
+        .texOffs(16, 31).addBox(2.0F, -1.0F, 0.0F, 1.0F, 1.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(-14.0F, 21.0F, 0.0F, 3.1416F, 0.0F, 0.0F));
 
-        // 拳体：支点放在腕部上前沿（绕它转 = 从腕部拱起，腕不悬空）。
-        // 拳体底面正好在 GROUND。
-        PartDefinition back = root.addOrReplaceChild("back", CubeListBuilder.create()
-                        .texOffs(SKIN_U, SKIN_V)
-                        .addBox(-4.3F, -1.7F, -6.6F, 8.6F, 4.2F, 6.6F),
-                PartPose.offset(0.0F, GROUND - 2.5F, 1.2F));
+        PartDefinition cube_r1 = bone3.addOrReplaceChild("cube_r1", CubeListBuilder.create().texOffs(12, 28).addBox(0.0F, -2.0F, 0.0F, 1.0F, 2.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(2.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.5708F));
 
-        // 指峰：叠在拳体上沿（y 更小 = 世界更高），比拳面高出一截。
-        back.addOrReplaceChild("knuckle", CubeListBuilder.create()
-                        .texOffs(SKIN_U, SKIN_V)
-                        .addBox(-3.7F, -0.85F, -2.0F, 7.4F, 1.7F, 4.0F),
-                PartPose.offset(0.0F, GROUND - 5.9F, -3.8F));
+        PartDefinition cube_r2 = bone3.addOrReplaceChild("cube_r2", CubeListBuilder.create().texOffs(8, 28).addBox(0.0F, -2.0F, 0.0F, 1.0F, 2.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(5.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.5708F));
 
-        // 四指内卷：从拳体前缘向下蜷（正角 = 朝地），指尖贴地。
-        // 手背视角看不到它们；只有前缘与侧面露出一点弧度。
-        float[] centerX = {-3.05F, -1.05F, 0.95F, 2.95F};
-        for (int i = 0; i < 4; i++) {
-            PartDefinition curl = back.addOrReplaceChild("finger" + i,
-                    CubeListBuilder.create()
-                            .texOffs(SKIN_U, SKIN_V)
-                            .addBox(-0.85F, -0.7F, -1.3F, 1.7F, 1.4F, 2.6F),
-                    PartPose.offsetAndRotation(centerX[i], GROUND - 3.2F, -5.2F, 1.2F, 0.0F, 0.0F));
-            // 指甲：比手指宽（1.9 > 1.7），从两侧露出来；顺着指尖方向斜指（正角 = 朝地）。
-            curl.addOrReplaceChild("nail" + i,
-                    CubeListBuilder.create()
-                            .texOffs(NAIL_U, NAIL_V)
-                            .addBox(-0.95F, -0.22F, 0.1F, 1.9F, 0.44F, 1.7F),
-                    PartPose.offsetAndRotation(0.0F, 0.0F, 0.9F, 0.55F, 0.0F, 0.0F));
-        }
+        PartDefinition bone = partdefinition2.addOrReplaceChild("bone", CubeListBuilder.create().texOffs(28, 29).addBox(2.0F, -2.0F, 0.0F, 1.0F, 1.0F, 1.0F, new CubeDeformation(0.0F))
+        .texOffs(0, 31).addBox(2.0F, -1.0F, 0.0F, 1.0F, 1.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(-16.0F, 21.0F, 2.0F, 3.1416F, 0.0F, 0.0F));
 
-        // 拇指锁扣：横跨拳面前方（绕 Y 转约 69°，让它"横"过来），侧面看微微张开呈半包；
-        // 甲面朝外上，从侧面与上方都能看到。
-        PartDefinition thumb = back.addOrReplaceChild("thumb",
-                CubeListBuilder.create()
-                        .texOffs(SKIN_U, SKIN_V)
-                        .addBox(-1.0F, -0.85F, -1.5F, 2.0F, 1.7F, 3.4F),
-                PartPose.offsetAndRotation(-1.4F, GROUND - 3.1F, -4.9F, -0.15F, 1.15F, 0.0F));
-        thumb.addOrReplaceChild("thumb_nail",
-                CubeListBuilder.create()
-                        .texOffs(NAIL_U, NAIL_V)
-                        .addBox(-1.0F, -0.2F, -0.3F, 2.0F, 0.4F, 1.5F),
-                PartPose.offset(0.0F, 0.75F, 1.6F));
+        PartDefinition cube_r3 = bone.addOrReplaceChild("cube_r3", CubeListBuilder.create().texOffs(4, 28).addBox(0.0F, -2.0F, 0.0F, 1.0F, 2.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(7.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.5708F));
 
-        return LayerDefinition.create(mesh, 64, 64);
+        PartDefinition cube_r4 = bone.addOrReplaceChild("cube_r4", CubeListBuilder.create().texOffs(20, 26).addBox(0.0F, -2.0F, 0.0F, 1.0F, 2.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(5.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.5708F));
+
+        PartDefinition bone2 = partdefinition2.addOrReplaceChild("bone2", CubeListBuilder.create().texOffs(4, 31).addBox(0.0F, -2.0F, 0.0F, 1.0F, 1.0F, 1.0F, new CubeDeformation(0.0F))
+        .texOffs(8, 31).addBox(2.0F, -1.0F, 0.0F, 1.0F, 1.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(-14.0F, 21.0F, 1.0F, 3.1416F, 0.0F, 0.0F));
+
+        PartDefinition cube_r5 = bone2.addOrReplaceChild("cube_r5", CubeListBuilder.create().texOffs(0, 28).addBox(0.0F, -2.0F, 0.0F, 1.0F, 2.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(2.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.5708F));
+
+        PartDefinition cube_r6 = bone2.addOrReplaceChild("cube_r6", CubeListBuilder.create().texOffs(24, 26).addBox(0.0F, -2.0F, 0.0F, 1.0F, 2.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(5.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.5708F));
+
+        PartDefinition bone5 = partdefinition2.addOrReplaceChild("bone5", CubeListBuilder.create().texOffs(24, 32).addBox(0.0F, -2.0F, 0.0F, 1.0F, 1.0F, 1.0F, new CubeDeformation(0.0F))
+        .texOffs(32, 26).addBox(2.0F, -1.0F, 0.0F, 1.0F, 1.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(-14.0F, 21.0F, -2.0F, 3.1416F, 0.0F, 0.0F));
+
+        PartDefinition cube_r7 = bone5.addOrReplaceChild("cube_r7", CubeListBuilder.create().texOffs(24, 29).addBox(0.0F, -2.0F, 0.0F, 1.0F, 2.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(2.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.5708F));
+
+        PartDefinition cube_r8 = bone5.addOrReplaceChild("cube_r8", CubeListBuilder.create().texOffs(20, 29).addBox(0.0F, -2.0F, 0.0F, 1.0F, 2.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(5.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.5708F));
+
+        PartDefinition bone4 = partdefinition2.addOrReplaceChild("bone4", CubeListBuilder.create().texOffs(28, 31).addBox(0.0F, -2.0F, 0.0F, 1.0F, 1.0F, 1.0F, new CubeDeformation(0.0F))
+        .texOffs(20, 32).addBox(2.0F, -1.0F, 0.0F, 1.0F, 1.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(-14.0F, 21.0F, -1.0F, 3.1416F, 0.0F, 0.0F));
+
+        PartDefinition cube_r9 = bone4.addOrReplaceChild("cube_r9", CubeListBuilder.create().texOffs(28, 26).addBox(0.0F, -2.0F, 0.0F, 1.0F, 2.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(2.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.5708F));
+
+        PartDefinition cube_r10 = bone4.addOrReplaceChild("cube_r10", CubeListBuilder.create().texOffs(16, 28).addBox(0.0F, -2.0F, 0.0F, 1.0F, 2.0F, 1.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(5.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.5708F));
+
+        PartDefinition bone6 = partdefinition2.addOrReplaceChild("bone6", CubeListBuilder.create().texOffs(20, 23).addBox(-3.0F, -1.0F, 0.0F, 6.0F, 1.0F, 2.0F, new CubeDeformation(0.0F))
+        .texOffs(20, 19).addBox(-3.0F, -1.0F, -3.0F, 6.0F, 1.0F, 3.0F, new CubeDeformation(0.0F)), PartPose.offset(-10.0F, 23.0F, 0.0F));
+
+        PartDefinition bb_main = partdefinition2.addOrReplaceChild("bb_main", CubeListBuilder.create().texOffs(0, 0).addBox(-7.0F, -6.0F, -7.0F, 11.0F, 6.0F, 13.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+
+        PartDefinition cube_r11 = bb_main.addOrReplaceChild("cube_r11", CubeListBuilder.create().texOffs(0, 19).addBox(-2.0F, -2.0F, -5.0F, 3.0F, 2.0F, 7.0F, new CubeDeformation(0.0F)), PartPose.offsetAndRotation(-7.0F, -4.0F, 1.0F, 0.0F, 0.0F, -1.5708F));
+
+        return LayerDefinition.create(meshdefinition, 64, 64);
     }
 
     @Override
     public void setupAnim(KunJinKaoHandEntity entity, float limbSwing, float limbSwingAmount,
                           float ageInTicks, float netHeadYaw, float headPitch) {
         float amplitude = entity.squirmAmplitude(limbSwingAmount);
-        // 尺蠖周期：limbSwing 随移动推进 → 拱动节奏与真实位移同步；idle 提供站立时的慢波。
-        float cycle = limbSwing * 0.75F + ageInTicks * 0.03F;
-        float hump = Mth.sin(cycle);
-        float lift = Math.max(0.0F, hump);
+        // 蠕动相位：limbSwing 随移动推进（拱动节奏与真实位移同步），idle 提供站立的慢波。
+        float wave = limbSwing * 0.8F;
+        float idle = ageInTicks * 0.05F;
 
-        // 拱起 + 前送：注意 Y 翻转 —— "往上"是 y 减小。
-        this.root.y = -lift * 0.5F * amplitude;
-        this.root.z = hump * 0.55F * amplitude;
-        this.root.xRot = 0.0F;
-        this.root.yRot = netHeadYaw * (float) (Math.PI / 180.0D) * 0.3F;
+        // 整体：转向（含 -90° 的朝向对齐）+ 轻微起伏侧倾。
+        // Y 翻转坐标系里"往上"是 y 减小，所以抬升用减法。
+        this.body.yRot = FACING_YAW + netHeadYaw * (float) (Math.PI / 180.0D) * 0.3F;
+        this.body.y = -Math.max(0.0F, Mth.sin(wave + idle)) * 0.6F * amplitude;
+        this.body.zRot = Mth.sin(idle * 0.8F) * 0.05F * amplitude;
 
-        // 拱起：拳面绕腕部支点向上抬（抬起前端 = 让 -Z 端的 y_model 减小 = 负角）。
-        this.back.xRot = -lift * 0.22F * amplitude;
+        // 掌身：缓慢的呼吸式俯仰。
+        this.palm.xRot = Mth.sin(wave + idle + 0.8F) * 0.06F * amplitude;
 
-        // 四指：拱起（推地）时稍微伸直（正角减小），落下时蜷紧（正角加大）勾住地面。
-        for (int i = 0; i < 4; i++) {
-            float phase = i * 0.6F;
-            float push = Mth.sin(cycle + phase) * 0.16F * amplitude;
-            this.fingerCurl[i].xRot = 1.2F - push;
-            this.nails[i].xRot = 0.55F - push * 0.5F;
+        // 五指：相位差波浪（蜷-伸），像肉虫的体节波。
+        // 注意每个指骨的基础 xRot 是 3.1416F（用户建模时转了 180°），必须带着它叠加，不能覆盖。
+        for (int i = 0; i < this.fingers.length; i++) {
+            float phase = i * 0.9F;
+            ModelPart finger = this.fingers[i];
+            finger.xRot = 3.1416F + Mth.sin(wave + idle + phase) * 0.30F * amplitude;
+            finger.yRot = Mth.sin(wave * 0.6F + idle + phase + 1.2F) * 0.12F * amplitude;
         }
 
-        // 拇指：锁住不参与蠕动，只给一点随周期的沉浮。
-        this.thumb.xRot = -0.15F + hump * 0.05F * amplitude;
+        // 拇指板：慢半拍，轻轻搭着。
+        this.plate.xRot = Mth.sin(wave * 0.7F + idle + 2.0F) * 0.08F * amplitude;
+        this.plate.yRot = Mth.sin(wave * 0.5F + idle) * 0.06F * amplitude;
     }
 
     @Override
     public void renderToBuffer(com.mojang.blaze3d.vertex.PoseStack poseStack,
                                com.mojang.blaze3d.vertex.VertexConsumer buffer,
                                int packedLight, int packedOverlay, int color) {
-        this.root.render(poseStack, buffer, packedLight, packedOverlay, color);
+        this.body.render(poseStack, buffer, packedLight, packedOverlay, color);
     }
 }
