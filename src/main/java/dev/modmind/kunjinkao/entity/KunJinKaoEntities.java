@@ -27,14 +27,17 @@ public final class KunJinKaoEntities {
             DeferredRegister.create(Registries.ENTITY_TYPE, KunJinKaoEntry.MOD_ID);
 
     /**
-     * 锟斤拷之手。
+     * 君君（原名"锟斤拷之手"）。
      * <p>
      * 碰撞箱刻意压得很扁（0.7 × 0.45）：它是一只贴地爬的手，不是站着的人形，
      * 判定框高一点就会显得"浮在地上"。眼睛高度取 0.3，让它看向玩家时模型抬头幅度合理。
+     * <p>
+     * 分类用 CREATURE 不用 MONSTER：它现在是**被打的受害者**（不攻击、被打就跑），
+     * 而且 CREATURE 类默认不按"离玩家太远"自动清除 —— 宠物语义。
      */
     public static final DeferredHolder<EntityType<?>, EntityType<KunJinKaoHandEntity>> HAND =
             ENTITY_TYPES.register("hand", () -> EntityType.Builder
-                    .of(KunJinKaoHandEntity::new, MobCategory.MONSTER)
+                    .of(KunJinKaoHandEntity::new, MobCategory.CREATURE)
                     .sized(0.7F, 0.45F)
                     .eyeHeight(0.3F)
                     .clientTrackingRange(8)

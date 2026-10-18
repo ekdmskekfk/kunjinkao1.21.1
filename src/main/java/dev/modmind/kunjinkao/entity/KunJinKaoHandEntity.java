@@ -5,47 +5,51 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
-import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.world.entity.ai.goal.PanicGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
-import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
-import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
-import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 
 /**
- * 锟斤拷之手：一只贴地蠕动的手。
+ * 君君：一只贴地蠕动的手（原名"锟斤拷之手"）。
  * <p>
- * 造型来自实拍：手背朝上、四指并拢朝前、指甲又长又白、腕部是断口。
- * 它没有腿，所以"走"这件事全靠模型的手指波浪式蠕动（见 {@code KunJinKaoHandModel}）——
- * 实体这一层只用最普通的步行寻路，不为它写任何位移技巧：
- * <b>蠕动必须是动画，不能是物理</b>。用脉冲式位移去"假装爬行"会在斜坡、台阶和冰面上
- * 立刻露馅，而且一拍一拍的位移会和寻路打架。
+ * 定位改过一次，而且改得很彻底：它<b>不是武器，是受害者</b>。
+ * <ul>
+ *   <li><b>不攻击任何人</b>：没有近战 goal、没有目标 goal，连 {@code doHurtTarget} 都不重写 ——
+ *       它对这个世界唯一的互动是"看一眼"和"跑"；</li>
+ *   <li><b>被打就跑</b>：{@link PanicGoal} 挂在最高优先级，受伤的那一 tick 就开始逃，
+ *       别的 goal 不许插队；</li>
+ *   <li><b>几乎所有会打架的生物都恨它</b>：这条不在实体里做，而是给<b>别人</b>注入目标
+ *       （见 {@code KunJinKaoHandHateHandler}）—— 因为"谁恨谁"是对方的目标选择器说了算。</li>
+ * </ul>
  * <p>
- * 强度定位：血量 30、单次 4 点伤害、移速 0.27 —— 比僵尸耐打一点、比僵尸慢，
- * 属于"管理员放几只出来当氛围/靶子"的档位，不是 boss。
+ * 父类因此从 {@code Monster} 换成了 {@link PathfinderMob}：Monster 会把"怪物掉落、
+ * 怪物类 despawn、怪物音效"那套行为一起带进来，而它现在是一只被全世界追着打的可怜小东西。
+ * 造型没变：手背朝上、四指并拢朝前、指甲又长又白、腕部断口。
+ * <p>
+ * 蠕动依旧是<b>动画而不是物理</b>（见 {@code KunJinKaoHandModel}）：四根手指带相位差地做波浪，
+ * 实体这层只用最普通的步行寻路。它跑得比僵尸快一点（0.32）—— 跑不掉的"逃跑"没有观赏性。
  */
-public class KunJinKaoHandEntity extends Monster {
+public class KunJinKaoHandEntity extends PathfinderMob {
 
     public KunJinKaoHandEntity(EntityType<? extends KunJinKaoHandEntity> type, Level level) {
         super(type, level);
-        this.xpReward = 6;
+        this.xpReward = 3;
     }
 
     public static AttributeSupplier.Builder createAttributes() {
-        return Monster.createMonsterAttributes()
+        return net.minecraft.world.entity.Mob.createMobAttributes()
                 .add(Attributes.MAX_HEALTH, 30.0D)
-                .add(Attributes.ATTACK_DAMAGE, 4.0D)
-                .add(Attributes.MOVEMENT_SPEED, 0.27D)
+                .add(Attributes.MOVEMENT_SPEED, 0.32D)
                 .add(Attributes.FOLLOW_RANGE, 24.0D)
-                .add(Attributes.KNOCKBACK_RESISTANCE, 0.35D)
+                .add(Attributes.KNOCKBACK_RESISTANCE, 0.2D)
                 // 1.21 里步高是属性（不再是 setMaxUpStep）。0.6 是原版默认，
                 // 显式写出来是为了说明"贴地爬行的手能翻上台阶"这件事是设计好的。
                 .add(Attributes.STEP_HEIGHT, 0.6D);
@@ -53,19 +57,17 @@ public class KunJinKaoHandEntity extends Monster {
 
     @Override
     protected void registerGoals() {
-        // 近战追击。第二个参数是速度倍率，第三个 true = 边追边重新规划路径。
-        this.goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.0D, true));
-        // 没有目标时在地上慢慢挪。
+        // 逃跑：最高优先级。被打了什么都不管，先跑。
+        this.goalSelector.addGoal(0, new PanicGoal(this, 1.7D));
+        // 平时在地上慢慢挪。
         this.goalSelector.addGoal(4, new WaterAvoidingRandomStrollGoal(this, 0.8D));
         this.goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 8.0F));
         this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
-        this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
-        this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Player.class, true));
+        // 没有 targetSelector 的 goal：它谁也不恨，谁也不打。
     }
 
     /**
      * 贴地的东西不该吃摔落伤害：它能从两格高的地方掉下去，但"啪"一下摔掉血很出戏。
-     * 其余伤害照常。
      */
     @Override
     public boolean causeFallDamage(float fallDistance, float multiplier, DamageSource source) {
@@ -79,19 +81,19 @@ public class KunJinKaoHandEntity extends Monster {
         // 不在掉落物上；真要给它做专属掉落，应该连配方一起设计，而不是先扔一个用不上的东西。
         this.spawnAtLocation(new ItemStack(Items.BONE, 1 + this.random.nextInt(2)));
         if (this.random.nextFloat() < 0.25F) {
-            // 皮 —— 照片里那只手背上的薄皮与血管，掉落上给一个"皮"的对应物。
             this.spawnAtLocation(new ItemStack(Items.LEATHER));
         }
     }
 
     @Override
     protected SoundEvent getAmbientSound() {
-        // 借蜘蛛的音效：都是"细碎的爬行系"声音，比给新生物造一套音效省事且不出戏。
+        // 借蜘蛛的音效：细碎的爬行系声音，比造一套新音效省事且不出戏。
         return SoundEvents.SPIDER_AMBIENT;
     }
 
     @Override
     protected SoundEvent getHurtSound(DamageSource source) {
+        // 被打时的声音很重要 —— 它没有攻击，惨叫就是它全部的表达。
         return SoundEvents.SPIDER_HURT;
     }
 
@@ -101,41 +103,16 @@ public class KunJinKaoHandEntity extends Monster {
     }
 
     /**
-     * 攻击时朝目标扑一下。
-     * <p>
-     * 只给一点点水平速度（0.25），够让"拍"这个动作有冲量，又不会把它自己甩出去 ——
-     * 这个实体没有腿，用力过猛会表现为"飞出去然后滑行"，比不动更难看。
+     * 宠物语义：放出来就一直在，远处不自动清除。
+     * 用户是管理员，杀掉它的成本为零；自己消失的成本是"他又得去拿刷怪蛋"。
      */
     @Override
-    public boolean doHurtTarget(net.minecraft.world.entity.Entity target) {
-        boolean hit = super.doHurtTarget(target);
-        if (hit && target instanceof LivingEntity living) {
-            double dx = living.getX() - this.getX();
-            double dz = living.getZ() - this.getZ();
-            double length = Math.sqrt(dx * dx + dz * dz);
-            if (length > 1.0E-4D) {
-                this.setDeltaMovement(this.getDeltaMovement().add(dx / length * 0.25D, 0.05D, dz / length * 0.25D));
-                this.hasImpulse = true;
-            }
-        }
-        return hit;
+    public boolean removeWhenFarAway(double distanceToClosestPlayer) {
+        return false;
     }
 
-    /** 它不会被日光点着：一只手站在太阳下起火没有道理。原版 1.21 的日光点燃是僵尸/骷髅各自内联的，没有可重写的钩子，所以这里什么都不用做。 */
-
-    /** 让模型知道"现在该蠕动得多用力"：追击时用走路的摆幅，站着时留一点轻微蠕动。 */
+    /** 让模型知道"现在该蠕动得多用力"：移动时用走路的摆幅，站着时留一点轻微蠕动。 */
     public float squirmAmplitude(float limbSwingAmount) {
         return 0.25F + 0.75F * Math.min(1.0F, limbSwingAmount);
-    }
-
-    /** 调试/工具用：这个实体是不是我们自己的手（避免 instanceof 散落各处）。 */
-    public static boolean isHand(net.minecraft.world.entity.Entity entity) {
-        return entity instanceof KunJinKaoHandEntity;
-    }
-
-    /** 让它别和同类打起来（同类之间不抢目标）。 */
-    @Override
-    public boolean canAttackType(EntityType<?> type) {
-        return type != KunJinKaoEntities.HAND.get() && super.canAttackType(type);
     }
 }

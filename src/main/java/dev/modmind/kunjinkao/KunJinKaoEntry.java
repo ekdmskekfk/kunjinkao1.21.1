@@ -68,6 +68,8 @@ public final class KunJinKaoEntry {
         // 屹立不倒（204）的服务端半边：取消击退与换维度。客户端那半边在 StandFirmClient 里，
         // 两半合起来才是这一项的效果（见 QolSetting#STAND_FIRM 的说明）。
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.KunJinKaoStandFirmHandler());
+        // 君君（贴地蠕动的手）的仇恨注入：让"本来就会锁定目标"的生物都恨它。
+        NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.KunJinKaoHandHateHandler());
         // 选区作业（127）的框选：木棍右键设角点。与上面那个面板处理器分开注册，
         // 是因为它只订阅交互事件、也不参与面板的任何判定。
         NeoForge.EVENT_BUS.register(new dev.modmind.kunjinkao.event.ZoneSelectionHandler());
