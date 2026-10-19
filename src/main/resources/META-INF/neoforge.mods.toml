@@ -26,5 +26,3 @@ side="BOTH"
 [[mixins]]
 config="kunjinkao.mixins.json"
 
-[[mixins]]
-config="shooting_star_demo.mc1211.mixins.json"
