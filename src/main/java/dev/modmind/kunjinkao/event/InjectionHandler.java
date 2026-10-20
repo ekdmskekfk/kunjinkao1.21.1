@@ -177,11 +177,26 @@ public final class InjectionHandler {
     }
 
     private static void finish(ServerPlayer player, Job job) {
-        ItemStack stack = player.getItemInHand(job.hand);
-        if (stack.isEmpty()) {
+        ItemStack held = player.getItemInHand(job.hand);
+        if (held.isEmpty()) {
             return;
         }
-        InjectionData.apply(stack);
+        // 关键语义：注入只作用于「手里这一个物品」，不是整组、更不是这一种物品。
+        // 手持一组 64 个时，拆出 1 个来注入，剩下的 63 个原样退回背包；
+        // 这样不可能出现"点一次，一组全变成神器"。
+        if (held.getCount() > 1) {
+            ItemStack target = held.copyWithCount(1);
+            ItemStack rest = held.copy();
+            rest.shrink(1);
+            InjectionData.apply(target);
+            player.setItemInHand(job.hand, target);
+            if (!rest.isEmpty() && !player.getInventory().add(rest)) {
+                // 背包塞不下就吐在脚下，绝不静默丢弃。
+                player.drop(rest, false);
+            }
+        } else {
+            InjectionData.apply(held);
+        }
         player.displayClientMessage(
                 Component.translatable("message.kunjinkao.injection_done"), true);
         NetworkHandler.sendToPlayer(player,

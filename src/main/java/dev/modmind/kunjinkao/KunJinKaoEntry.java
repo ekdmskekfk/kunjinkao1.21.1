@@ -83,6 +83,8 @@ public final class KunJinKaoEntry {
         NeoForge.EVENT_BUS.register(AdminCommandHandler.class);
         // 注入（替代原「管理员剑」）：静态方法订阅，所以按 class 注册。
         NeoForge.EVENT_BUS.register(dev.modmind.kunjinkao.event.InjectionHandler.class);
+        // 注入物品的行为转发：右键/挖掘等物品级能力，靠事件转调到剑的静态实现。
+        NeoForge.EVENT_BUS.register(dev.modmind.kunjinkao.event.InjectedItemBehaviorHandler.class);
 
 
         LOGGER.info("[Kunjinkao] NeoForge 1.21.1 锟斤拷烫烫烫 initialized");

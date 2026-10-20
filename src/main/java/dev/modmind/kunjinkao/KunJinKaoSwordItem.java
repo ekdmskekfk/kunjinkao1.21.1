@@ -749,9 +749,20 @@ public class KunJinKaoSwordItem extends SwordItem {
 
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
-        ItemStack stack = player.getItemInHand(hand);
+        return useImpl(player.getItemInHand(hand), level, player, hand);
+    }
+
+    /**
+     * {@link #use} 的实现本体，抽成静态方法供「被注入的任意物品」复用。
+     *
+     * <p>为什么必须抽：注入物品不是本类实例，原版永远不会调用它的 {@code use}，
+     * 只能由 {@code InjectedItemBehaviorHandler} 在交互事件里转调这里。
+     * 逻辑只留一份 —— 剑与注入物品走同一条代码路径，不会出现"改了剑忘了改注入"。</p>
+     */
+    public static InteractionResultHolder<ItemStack> useImpl(ItemStack stack, Level level,
+                                                            Player player, InteractionHand hand) {
         if (isInert(stack)) {
-            return super.use(level, player, hand);
+            return InteractionResultHolder.pass(stack);
         }
         if (player.isShiftKeyDown()) {
             // 对着【上方】shift+右键：加速时间（整体拉高服务器每秒 tick 数）。
@@ -862,11 +873,18 @@ public class KunJinKaoSwordItem extends SwordItem {
      */
     @Override
     public InteractionResult useOn(UseOnContext context) {
+        return useOnImpl(context.getItemInHand(), context);
+    }
+
+    /**
+     * {@link #useOn} 的实现本体，抽成静态方法的理由同 {@link #useImpl}。
+     * 物品栈改为显式参数：注入物品的调用方手里拿的就是同一个栈，不需要再从 context 取。
+     */
+    public static InteractionResult useOnImpl(ItemStack stack, UseOnContext context) {
         Player player = context.getPlayer();
-        ItemStack stack = context.getItemInHand();
         // 潜行时一律交回原版，只有一个例外：时间加速把 shift 当作触发键。
         if (player == null || isInert(stack)) {
-            return super.useOn(context);
+            return InteractionResult.PASS;
         }
         Level level = context.getLevel();
         BlockPos clickedPos = context.getClickedPos();
@@ -902,7 +920,7 @@ public class KunJinKaoSwordItem extends SwordItem {
             // 只要本模组消费了这次右键，它们就永远不会被触发；换个组合键也没用（模组认不出）。
             // 代价是开着扳手时无法加速机器，两种用途靠这个开关互斥切换。
             if (isWrenchEnabled(stack)) {
-                return super.useOn(context);
+                return InteractionResult.PASS;
             }
                 // 区域模式开着：shift+右键 立/撤区域场，这次不再走加速那条路。
                 if (tryPlaceAreaField(player, level, clickedPos, stack)) {
@@ -910,7 +928,7 @@ public class KunJinKaoSwordItem extends SwordItem {
                 }
             int accelMode = SwordTimeAcceleration.clampMode(getTimeAccelMode(stack));
             if (accelMode == SwordTimeAcceleration.MODE_OFF) {
-                return super.useOn(context);
+                return InteractionResult.PASS;
             }
             if (SwordTimeAcceleration.tryToggleBlock(player, level, clickedPos, stack)) {
                 return InteractionResult.sidedSuccess(level.isClientSide());
@@ -941,7 +959,7 @@ public class KunJinKaoSwordItem extends SwordItem {
             return InteractionResult.sidedSuccess(level.isClientSide());
         }
 
-        return super.useOn(context);
+        return InteractionResult.PASS;
     }
 
     // ===== 刷子的长按机制（对齐原版 BrushItem）=====
