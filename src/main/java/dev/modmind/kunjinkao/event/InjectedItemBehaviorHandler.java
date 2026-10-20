@@ -6,10 +6,12 @@ import dev.modmind.kunjinkao.world.SwordTimeAcceleration;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 
@@ -104,6 +106,51 @@ public final class InjectedItemBehaviorHandler {
     private static void consume(PlayerInteractEvent.RightClickBlock event, InteractionResult result) {
         event.setCancellationResult(result);
         event.setCanceled(true);
+    }
+
+    // ===== 攻击：补上 hurtEnemy 的瞬杀路径 =====
+
+    /**
+     * 原剑的 {@code hurtEnemy} 在命中瞬间直接 {@code kill()} 目标（覆写开关关闭时），
+     * 对玩家目标则打处决标记后处决。{@code KunJinKaoProtectionHandler} 只负责"打标记 +
+     * 放行伤害"，真正的瞬杀写在物品 override 里 —— 注入物品拿不到那个 override，
+     * 所以必须在这里补一刀，否则注入物品只有面板攻击力、没有"砍中即秒杀"。
+     *
+     * <p>三处刻意跳过，避免和既有事件处理器打架：
+     * <ul>
+     *   <li>伤害上限被调低 → 按普通伤害结算（与 hurtEnemy 一致）；</li>
+     *   <li>覆写开关打开 → 由 {@code onLivingAttack} 取消伤害并启动覆写流程，这里不重复触发；</li>
+     *   <li>客户端 → 只做服务端权威结算。</li>
+     * </ul>
+     */
+    @SubscribeEvent
+    public static void onAttack(AttackEntityEvent event) {
+        Player attacker = event.getEntity();
+        ItemStack stack = attacker.getMainHandItem();
+        if (!applies(stack)) {
+            return;
+        }
+        if (!(event.getTarget() instanceof LivingEntity target)) {
+            return;
+        }
+        if (KunJinKaoSwordItem.getAttackDamageLimit(stack)
+                < KunJinKaoSwordItem.MAX_ATTACK_DAMAGE_LIMIT) {
+            return;
+        }
+        if (attacker.level().isClientSide()) {
+            return;
+        }
+        if (target instanceof Player) {
+            KunJinKaoSwordItem.applyExecutionMark(target, stack);
+            KunJinKaoSwordItem.killIgnoringImmunity(target,
+                    KunJinKaoSwordItem.swordKillSource(attacker));
+            return;
+        }
+        if (KunJinKaoSwordItem.isOverwriteEnabled(stack)) {
+            return;
+        }
+        KunJinKaoSwordItem.applyKunJinKaoMark(target, stack);
+        KunJinKaoSwordItem.killIgnoringImmunity(target, KunJinKaoSwordItem.swordKillSource(attacker));
     }
 
     // ===== 挖掘：getDestroySpeed / isCorrectToolForDrops =====
