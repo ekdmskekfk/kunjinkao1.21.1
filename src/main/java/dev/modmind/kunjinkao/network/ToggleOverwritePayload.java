@@ -35,7 +35,7 @@ public record ToggleOverwritePayload(InteractionHand hand) implements CustomPack
                     return;
                 }
                 ItemStack stack = player.getItemInHand(payload.hand);
-                if (stack.getItem() instanceof KunJinKaoSwordItem) {
+                if (KunJinKaoSwordItem.isSwordLike(stack)) {
                     KunJinKaoSwordItem.toggleOverwrite(stack);
                 }
             }

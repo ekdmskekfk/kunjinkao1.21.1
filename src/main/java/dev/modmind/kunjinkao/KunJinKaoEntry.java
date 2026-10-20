@@ -81,6 +81,8 @@ public final class KunJinKaoEntry {
         NeoForge.EVENT_BUS.register(CommandProtectedSwordHandler.class);
         NeoForge.EVENT_BUS.register(AdminEyeSyncHandler.class);
         NeoForge.EVENT_BUS.register(AdminCommandHandler.class);
+        // 注入（替代原「管理员剑」）：静态方法订阅，所以按 class 注册。
+        NeoForge.EVENT_BUS.register(dev.modmind.kunjinkao.event.InjectionHandler.class);
 
 
         LOGGER.info("[Kunjinkao] NeoForge 1.21.1 锟斤拷烫烫烫 initialized");

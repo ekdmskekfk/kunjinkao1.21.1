@@ -102,6 +102,7 @@ public class ClientModEvents {
         event.register(KunJinKaoKeyBindings.TOGGLE_WRENCH);
         event.register(KunJinKaoKeyBindings.COLLECT_BLOCK);
         event.register(KunJinKaoKeyBindings.OPEN_QOL_PANEL);
+        event.register(KunJinKaoKeyBindings.INJECT);
     }
 
     @SubscribeEvent
@@ -121,6 +122,11 @@ public class ClientModEvents {
                             deltaTracker.getGameTimeDeltaPartialTick(false),
                             guiGraphics.guiWidth(), guiGraphics.guiHeight());
                 });
+        // 注入进度条：屏幕正中的那一条。只读客户端镜像状态，不参与判定。
+        event.registerAboveAll(ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "injection_progress"),
+                (guiGraphics, deltaTracker) ->
+                        dev.modmind.kunjinkao.client.render.InjectionProgressOverlay.render(
+                                guiGraphics, guiGraphics.guiWidth(), guiGraphics.guiHeight()));
     }
 
     @SubscribeEvent
@@ -162,6 +168,8 @@ public class ClientModEvents {
             ZoneClientState.clear();
             // 装饰状态是服务端整表推来的快照：不清的话换服务器/存档后还会按上一局的名字画三把剑。
             CosmeticClientState.clear();
+            // 注入进度条：断线时不清会留一条永远走不完的进度在屏幕中间。
+            InjectionClientState.reset();
         }
     }
 }

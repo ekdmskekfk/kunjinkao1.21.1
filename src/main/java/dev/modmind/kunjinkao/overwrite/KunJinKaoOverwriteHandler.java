@@ -475,7 +475,7 @@ public class KunJinKaoOverwriteHandler {
 
     private static boolean isOverwriteSword(ItemStack stack) {
         return !stack.isEmpty()
-                && stack.getItem() instanceof KunJinKaoSwordItem
+                && KunJinKaoSwordItem.isSwordLike(stack)
                 && !KunJinKaoSwordItem.isPendingCraft(stack);
     }
 

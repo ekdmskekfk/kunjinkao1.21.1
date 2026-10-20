@@ -42,7 +42,7 @@ public final class SwordAutoPickupHandler {
             return;
         }
         ItemStack sword = player.getMainHandItem();
-        if (!(sword.getItem() instanceof KunJinKaoSwordItem)
+        if (!(KunJinKaoSwordItem.isSwordLike(sword))
                 || !KunJinKaoSwordItem.canBreakUnbreakableBlocks(sword)) {
             serverPlayer.displayClientMessage(
                     Component.translatable("message.kunjinkao.collect_requires_unbreakable"), true);
@@ -118,7 +118,7 @@ public final class SwordAutoPickupHandler {
             return;
         }
         ItemStack tool = event.getTool();
-        if (!(tool.getItem() instanceof KunJinKaoSwordItem)) {
+        if (!(KunJinKaoSwordItem.isSwordLike(tool))) {
             return;
         }
         List<ItemEntity> drops = event.getDrops();

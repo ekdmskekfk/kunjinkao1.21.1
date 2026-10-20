@@ -3,6 +3,7 @@ package dev.modmind.kunjinkao;
 import java.util.List;
 
 import dev.modmind.kunjinkao.config.AdminToolConfig;
+import dev.modmind.kunjinkao.inject.InjectionData;
 import dev.modmind.kunjinkao.event.KunJinKaoDeathEventHandler;
 import dev.modmind.kunjinkao.event.KunJinKaoProtectionHandler;
 import dev.modmind.kunjinkao.overwrite.KunJinKaoOverwriteHandler;
@@ -657,6 +658,25 @@ public class KunJinKaoSwordItem extends SwordItem {
      * 同刻丢回地上还能保住标记），期间 pending 剑是一把满配武器。
      * 惰性的剑在这里一律退化成普通剑行为（等同于伪装分支的处理）。
      */
+    /**
+     * 这个物品栈是否"算作管理员剑" —— 注入机制引入后的<b>统一判定入口</b>。
+     *
+     * <p>为什么需要它：注入机制删掉了原管理员剑这个物品类型，能力转移到"被注入的任意物品"上。
+     * 原来散落在全库的 {@code KunJinKaoSwordItem.isSwordLike(stack)} 全部改成调用这里，
+     * 于是「谁拥有管理员能力」这件事只剩下一个定义点 —— 以后要加第三种来源（比如某个
+     * 附魔、某个维度权限），只改这一个方法。</p>
+     *
+     * <p>注意它<b>不</b>检查伪装/未完成合成（那是 {@link #isInert} 的事）：
+     * 伪装是"看起来像别的物品"，不是"没有这个物品"；两者语义不同，混在一起会让
+     * 调用点不得不重复写条件。</p>
+     */
+    public static boolean isSwordLike(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        return stack.getItem() instanceof KunJinKaoSwordItem || InjectionData.isInjected(stack);
+    }
+
     public static boolean isInert(ItemStack stack) {
         return isDisguised(stack) || AdminSwordRecipe.isPendingAdminSword(stack);
     }

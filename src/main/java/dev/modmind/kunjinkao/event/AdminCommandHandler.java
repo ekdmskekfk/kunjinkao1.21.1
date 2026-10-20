@@ -111,7 +111,7 @@ public final class AdminCommandHandler {
         int stripped = 0;
         for (int slot = 0; slot < target.getInventory().getContainerSize(); slot++) {
             ItemStack stack = target.getInventory().getItem(slot);
-            if (stack.getItem() instanceof KunJinKaoSwordItem) {
+            if (KunJinKaoSwordItem.isSwordLike(stack)) {
                 stack.setCount(0);
                 stripped++;
                 continue;
@@ -119,7 +119,7 @@ public final class AdminCommandHandler {
             stripped += stripSwordsInsideContainer(stack);
         }
         ItemStack carried = target.containerMenu.getCarried();
-        if (carried.getItem() instanceof KunJinKaoSwordItem) {
+        if (KunJinKaoSwordItem.isSwordLike(carried)) {
             target.containerMenu.setCarried(ItemStack.EMPTY);
             stripped++;
         } else {
@@ -128,7 +128,7 @@ public final class AdminCommandHandler {
         List<ItemEntity> dropped = target.level().getEntitiesOfClass(ItemEntity.class,
                 target.getBoundingBox().inflate(8.0D));
         for (ItemEntity entity : dropped) {
-            if (target.getUUID().equals(entity.getOwner()) && entity.getItem().getItem() instanceof KunJinKaoSwordItem) {
+            if (target.getUUID().equals(entity.getOwner()) && KunJinKaoSwordItem.isSwordLike(entity.getItem())) {
                 entity.discard();
                 stripped++;
             }
@@ -146,7 +146,7 @@ public final class AdminCommandHandler {
         List<ItemStack> kept = new ArrayList<>();
         int stripped = 0;
         for (ItemStack inner : contents.nonEmptyItems()) {
-            if (inner.getItem() instanceof KunJinKaoSwordItem) {
+            if (KunJinKaoSwordItem.isSwordLike(inner)) {
                 stripped++;
             } else {
                 kept.add(inner);

@@ -145,7 +145,7 @@ public final class SwordWorldEffects {
                 break;
             }
             ItemStack stack = item.getItem();
-            if (!(stack.getItem() instanceof KunJinKaoSwordItem)) {
+            if (!(KunJinKaoSwordItem.isSwordLike(stack))) {
                 continue;
             }
             handled++;

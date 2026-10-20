@@ -27,7 +27,9 @@ public final class NetworkHandler {
     // 注册表又变了。**只要动注册表就必须再 +1**，否则新旧端会握手成功然后解码错位。
     // 29 提到 30：新增装饰状态包（CosmeticStatePayload S2C）。装饰从"服务端实体"改成"客户端渲染"
     // 之后，服务端只推状态；旧客户端没有这条注册，正是要在握手时被挡下的那种情况。
-    public static final String PROTOCOL_VERSION = "30";
+    // 30 提到 31：新增注入两条包（InjectionStartPayload C2S / InjectionStatePayload S2C）。
+    // 注入是用来替代原「管理员剑」的机制，注册表变了就 +1。
+    public static final String PROTOCOL_VERSION = "31";
 
     private NetworkHandler() {
     }
@@ -92,6 +94,11 @@ public final class NetworkHandler {
         // 装饰（201–203）：服务端只推"谁戴着什么、在打谁"，画面全部由客户端自己画。
         reg.playToClient(CosmeticStatePayload.TYPE, CosmeticStatePayload.STREAM_CODEC,
                 CosmeticStatePayload::handle);
+        // 注入（替代原「管理员剑」）：开始注入（C2S）+ 进度/中断/完成（S2C）。
+        reg.playToServer(InjectionStartPayload.TYPE, InjectionStartPayload.STREAM_CODEC,
+                InjectionStartPayload::handle);
+        reg.playToClient(InjectionStatePayload.TYPE, InjectionStatePayload.STREAM_CODEC,
+                InjectionStatePayload::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {

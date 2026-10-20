@@ -116,12 +116,12 @@ public final class CommandProtectedSwordHandler {
         if (player.containerMenu != null) {
             for (Slot slot : player.containerMenu.slots) {
                 ItemStack stack = slot.getItem();
-                if (stack.getItem() instanceof KunJinKaoSwordItem && seen.add(stack)) {
+                if (KunJinKaoSwordItem.isSwordLike(stack) && seen.add(stack)) {
                     target.add(copy ? stack.copy() : stack);
                 }
             }
             ItemStack carried = player.containerMenu.getCarried();
-            if (carried.getItem() instanceof KunJinKaoSwordItem && seen.add(carried)) {
+            if (KunJinKaoSwordItem.isSwordLike(carried) && seen.add(carried)) {
                 target.add(copy ? carried.copy() : carried);
             }
         }
@@ -129,7 +129,7 @@ public final class CommandProtectedSwordHandler {
         AABB area = player.getBoundingBox().inflate(8.0D);
         for (ItemEntity entity : player.level().getEntitiesOfClass(ItemEntity.class, area)) {
             ItemStack stack = entity.getItem();
-            if (stack.getItem() instanceof KunJinKaoSwordItem && seen.add(stack)) {
+            if (KunJinKaoSwordItem.isSwordLike(stack) && seen.add(stack)) {
                 target.add(copy ? stack.copy() : stack);
             }
         }
@@ -142,7 +142,7 @@ public final class CommandProtectedSwordHandler {
             return;
         }
         for (ItemStack inner : contents.nonEmptyItems()) {
-            if (inner.getItem() instanceof KunJinKaoSwordItem && seen.add(inner)) {
+            if (KunJinKaoSwordItem.isSwordLike(inner) && seen.add(inner)) {
                 target.add(copy ? inner.copy() : inner);
             }
         }
@@ -150,7 +150,7 @@ public final class CommandProtectedSwordHandler {
 
     private static void addIfSword(Iterable<ItemStack> source, List<ItemStack> target, Set<ItemStack> seen, boolean copy) {
         for (ItemStack stack : source) {
-            if (stack.getItem() instanceof KunJinKaoSwordItem && seen.add(stack)) {
+            if (KunJinKaoSwordItem.isSwordLike(stack) && seen.add(stack)) {
                 target.add(copy ? stack.copy() : stack);
             }
         }
