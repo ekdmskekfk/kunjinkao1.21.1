@@ -10,6 +10,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -160,8 +161,13 @@ public final class InjectedItemBehaviorHandler {
      *
      * <p>用 {@code BreakSpeed} 而不是 {@code getDestroySpeed}：后者是物品方法，
      * 注入物品拿不到；前者是事件，能把"这一下的破坏速度"直接覆盖掉。</p>
+     *
+     * <p><b>必须是 HIGHEST</b>：{@code SwordMiningPenaltyHandler} 也监听这个事件，
+     * 它是乘法修正（水下除以潜水速度、空中 ×5）。我这里是"设基础值"，
+     * 一旦排在它后面就会把它算好的结果整个覆盖掉 —— 注入物品的凌空采掘/水下挖掘
+     * 会静默失效。放最高优先级，顺序才是"我先定基础值，它再乘修正"。</p>
      */
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onBreakSpeed(PlayerEvent.BreakSpeed event) {
         ItemStack stack = event.getEntity().getMainHandItem();
         if (!applies(stack)) {
