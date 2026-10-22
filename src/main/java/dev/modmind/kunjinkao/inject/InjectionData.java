@@ -113,19 +113,29 @@ public final class InjectionData {
         stack.remove(DataComponents.UNBREAKABLE);
     }
 
-    /** 追加那行注释；已有同样文案就不再追加。 */
+    /** 追加那行注入注释；已有同样文案就不再追加。 */
     private static void appendLore(ItemStack stack) {
+        appendLoreLine(stack, LORE_LINE);
+    }
+
+    /** 追加任意一行注释（拟态刷的专属简介也走这里）。已有同样文案就不重复加。 */
+    public static void appendLoreLine(ItemStack stack, Component line) {
         ItemLore lore = stack.getOrDefault(DataComponents.LORE, ItemLore.EMPTY);
-        for (Component line : lore.lines()) {
-            if (sameLine(line, LORE_LINE)) {
+        for (Component existing : lore.lines()) {
+            if (sameLine(existing, line)) {
                 return;
             }
         }
-        stack.set(DataComponents.LORE, lore.withLineAdded(LORE_LINE));
+        stack.set(DataComponents.LORE, lore.withLineAdded(line));
     }
 
-    /** 去掉那行注释；其它注释保持原样、原顺序。 */
+    /** 去掉那行注入注释；其它注释保持原样、原顺序。 */
     private static void removeLore(ItemStack stack) {
+        removeLoreLine(stack, LORE_LINE);
+    }
+
+    /** 去掉指定的那一行注释；其它注释保持原样、原顺序。 */
+    public static void removeLoreLine(ItemStack stack, Component target) {
         ItemLore lore = stack.get(DataComponents.LORE);
         if (lore == null) {
             return;
@@ -133,7 +143,7 @@ public final class InjectionData {
         java.util.List<Component> kept = new java.util.ArrayList<>();
         boolean removed = false;
         for (Component line : lore.lines()) {
-            if (!removed && sameLine(line, LORE_LINE)) {
+            if (!removed && sameLine(line, target)) {
                 removed = true;
                 continue;
             }

@@ -265,6 +265,12 @@ public final class KunJinKaoColdDataEffectsHandler {
     /** 刷子：长按右键可刷的方块即可刷取。 */
     public static void handleToggleBrush(Player player, InteractionHand hand, boolean enabled) {
         withSword(player, hand, stack -> KunJinKaoSwordItem.setBrushEnabled(stack, enabled));
+        // 注入物品：刷子要真的是刷子，原版 BrushItem 才会跑长按刷取 —— 这里做拟态换物品。
+        // 剑本体不需要（它自己带刷子动画），MimicBrush 内部会跳过。
+        if (player instanceof ServerPlayer serverPlayer
+                && AdminToolConfig.isAuthorized(serverPlayer.getUUID())) {
+            dev.modmind.kunjinkao.inject.MimicBrush.applyForToggle(serverPlayer, hand, enabled);
+        }
     }
 
     /** 工具模式：0 关 / 1 锄头 / 2 铲子。 */
