@@ -43,6 +43,8 @@ public final class KunJinKaoEntry {
         WorldGateRegistry.register(modEventBus);
         // 锟斤拷之手（实体 + 刷怪蛋 + 属性）。不参与自然生成，只能刷怪蛋/summon。
         dev.modmind.kunjinkao.entity.KunJinKaoEntities.register(modEventBus);
+        // 状态效果（骚臭）。
+        dev.modmind.kunjinkao.entity.KunJinKaoEffects.register(modEventBus);
         dev.modmind.kunjinkao.sound.KunJinKaoSounds.register(modEventBus);
         container.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON,
                 AdminToolConfig.COMMON_SPEC, "kunjinkao-admin.toml");
@@ -85,6 +87,8 @@ public final class KunJinKaoEntry {
         NeoForge.EVENT_BUS.register(dev.modmind.kunjinkao.event.InjectionHandler.class);
         // 注入物品的行为转发：右键/挖掘等物品级能力，靠事件转调到剑的静态实现。
         NeoForge.EVENT_BUS.register(dev.modmind.kunjinkao.event.InjectedItemBehaviorHandler.class);
+        // 骚臭相关交互：玻璃瓶挤尿、尿液瓶触发双君仪式。
+        NeoForge.EVENT_BUS.register(dev.modmind.kunjinkao.event.StenchInteractionHandler.class);
 
 
         LOGGER.info("[Kunjinkao] NeoForge 1.21.1 锟斤拷烫烫烫 initialized");

@@ -39,7 +39,7 @@ public final class KunJinKaoEntities {
      */
     public static final DeferredHolder<EntityType<?>, EntityType<KunJinKaoHandEntity>> HAND =
             ENTITY_TYPES.register("hand", () -> EntityType.Builder
-                    .of(KunJinKaoHandEntity::new, MobCategory.CREATURE)
+                    .of(KunJinKaoHandEntity::new, MobCategory.MONSTER)
                     .sized(0.7F, 0.45F)
                     .eyeHeight(0.3F)
                     .clientTrackingRange(8)

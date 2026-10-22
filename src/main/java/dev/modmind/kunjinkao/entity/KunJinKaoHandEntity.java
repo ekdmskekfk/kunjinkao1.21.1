@@ -1,21 +1,30 @@
 package dev.modmind.kunjinkao.entity;
 
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.PanicGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
+import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+
+import java.util.EnumSet;
 
 /**
  * 君君：一只贴地蠕动的手（原名"锟斤拷之手"）。
@@ -59,11 +68,14 @@ public class KunJinKaoHandEntity extends PathfinderMob {
     protected void registerGoals() {
         // 逃跑：最高优先级。被打了什么都不管，先跑。
         this.goalSelector.addGoal(0, new PanicGoal(this, 1.7D));
+        // 喷尿：站在中距离朝目标滋一泡（见 sprayAt）。
+        this.goalSelector.addGoal(1, new SprayUrineGoal(this));
         // 平时在地上慢慢挪。
         this.goalSelector.addGoal(4, new WaterAvoidingRandomStrollGoal(this, 0.8D));
         this.goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 8.0F));
         this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
-        // 没有 targetSelector 的 goal：它谁也不恨，谁也不打。
+        // 现在会主动找人：MobCategory 已改成 MONSTER，需要一个玩家目标选择器。
+        this.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(this, Player.class, true));
     }
 
     /**
@@ -114,5 +126,87 @@ public class KunJinKaoHandEntity extends PathfinderMob {
     /** 让模型知道"现在该蠕动得多用力"：移动时用走路的摆幅，站着时留一点轻微蠕动。 */
     public float squirmAmplitude(float limbSwingAmount) {
         return 0.25F + 0.75F * Math.min(1.0F, limbSwingAmount);
+    }
+
+    // ===== 喷尿攻击 =====
+
+    /**
+     * 朝目标滋一泡尿：沿视线撒一串土黄色粒子，命中则施加「骚臭」。
+     *
+     * <p>不做实体弹道：那样要新增一个投掷物实体 + 渲染器 + 命中判定，
+     * 而这里要的只是"看得见的一道黄线"和"被喷到就臭"。所以粒子纯表现，
+     * 命中直接按视线判定 —— 简单、服务端权威、也不会因为弹道卡在方块里而打空。</p>
+     */
+    public void sprayAt(LivingEntity target) {
+        if (!(this.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        Vec3 from = this.position().add(0.0D, 0.35D, 0.0D);
+        Vec3 to = target.position().add(0.0D, target.getBbHeight() * 0.5D, 0.0D);
+        Vec3 delta = to.subtract(from);
+        int steps = (int) Math.max(4.0D, delta.length() * 4.0D);
+        for (int i = 0; i <= steps; i++) {
+            Vec3 point = from.add(delta.scale(i / (double) steps));
+            serverLevel.sendParticles(ParticleTypes.FALLING_HONEY,
+                    point.x, point.y, point.z, 1, 0.02D, 0.02D, 0.02D, 0.0D);
+        }
+        serverLevel.playSound(null, this.blockPosition(), SoundEvents.SLIME_SQUISH,
+                SoundSource.HOSTILE, 1.0F, 1.2F);
+        if (this.hasLineOfSight(target)) {
+            target.addEffect(new MobEffectInstance(KunJinKaoEffects.STENCH,
+                    StenchEffect.DURATION_TICKS), this);
+        }
+    }
+
+    /**
+     * 喷尿的 goal：只负责"隔一会儿滋一次"，弹道与命中都在 {@link #sprayAt} 里。
+     *
+     * <p>3 秒一发：骚臭持续 5 分钟、60 秒致死，喷太快没有意义，
+     * 反而会让玩家一进范围就必死。</p>
+     */
+    static final class SprayUrineGoal extends Goal {
+
+        private static final int COOLDOWN_TICKS = 60;
+        private static final double RANGE_SQR = 10.0D * 10.0D;
+
+        private final KunJinKaoHandEntity hand;
+        private int cooldown;
+
+        SprayUrineGoal(KunJinKaoHandEntity hand) {
+            this.hand = hand;
+            this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
+        }
+
+        @Override
+        public boolean canUse() {
+            LivingEntity target = this.hand.getTarget();
+            return target != null && target.isAlive()
+                    && this.hand.distanceToSqr(target) <= RANGE_SQR;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return canUse();
+        }
+
+        @Override
+        public void start() {
+            this.cooldown = 20;
+        }
+
+        @Override
+        public void tick() {
+            LivingEntity target = this.hand.getTarget();
+            if (target == null) {
+                return;
+            }
+            this.hand.getLookControl().setLookAt(target, 30.0F, 30.0F);
+            if (this.cooldown > 0) {
+                this.cooldown--;
+                return;
+            }
+            this.cooldown = COOLDOWN_TICKS;
+            this.hand.sprayAt(target);
+        }
     }
 }
