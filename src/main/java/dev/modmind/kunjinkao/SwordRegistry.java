@@ -23,6 +23,16 @@ public class SwordRegistry {
         () -> new KunJinKaoSwordItem(Tiers.DIAMOND, new Item.Properties())
     );
 
+    /**
+     * 拟态刷：注入物品开启刷子功能时换成的物品。
+     *
+     * <p>刻意<b>不放进创造模式物品栏</b> —— 它只是"拟态"的产物，正常途径不该拿得到。
+     * 继承原版 {@code BrushItem}，所以刷取行为与动画完全是原版的。</p>
+     */
+    public static final DeferredItem<Item> MIMIC_BRUSH = ITEMS.register("mimic_brush",
+        () -> new dev.modmind.kunjinkao.inject.MimicBrushItem(new Item.Properties())
+    );
+
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<AdminSwordRecipe>> ADMIN_SWORD_RECIPE =
             RECIPE_SERIALIZERS.register("admin_sword", () -> AdminSwordRecipe.SERIALIZER);
 

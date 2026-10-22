@@ -12,7 +12,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
-import net.minecraft.world.item.component.CustomModelData;
 
 /**
  * 「拟态」：开启刷子功能时，把注入物品变成<b>真正的原版刷子</b>。
@@ -31,9 +30,6 @@ import net.minecraft.world.item.component.CustomModelData;
  */
 public final class MimicBrush {
 
-    /** 原版刷子模型里 {@code custom_model_data} 的判别值，与 brush.json 的 overrides 对应。 */
-    public static final int MODEL_DATA = 20251;
-
     /** 记原始物品 id（还原时用）。 */
     public static final String ORIGINAL_ID_KEY = "KunjinKaoMimicOriginalId";
     /** 记原始自定义名称的 JSON（原本没改名就不写）。 */
@@ -44,7 +40,7 @@ public final class MimicBrush {
 
     /** 是不是我们造出来的拟态刷。 */
     public static boolean isMimic(ItemStack stack) {
-        if (stack == null || stack.isEmpty() || !stack.is(Items.BRUSH)) {
+        if (stack == null || stack.isEmpty() || !stack.is(dev.modmind.kunjinkao.SwordRegistry.MIMIC_BRUSH.get())) {
             return false;
         }
         return KunJinKaoSwordItem.dataTag(stack).contains(ORIGINAL_ID_KEY);
@@ -90,9 +86,8 @@ public final class MimicBrush {
                     Component.Serializer.toJson(customName, player.level().registryAccess()));
         }
 
-        ItemStack mimic = new ItemStack(Items.BRUSH);
+        ItemStack mimic = new ItemStack(dev.modmind.kunjinkao.SwordRegistry.MIMIC_BRUSH.get());
         KunJinKaoSwordItem.writeDataTag(mimic, tag);
-        mimic.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(MODEL_DATA));
         mimic.set(DataComponents.CUSTOM_NAME, Component.translatable("item.kunjinkao.mimic_brush"));
         // 新栈没有原物品的注释/属性/无法破坏，重新落一遍（幂等）。
         InjectionData.apply(mimic);

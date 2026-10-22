@@ -60,6 +60,20 @@ public class ClientModEvents {
                 ResourceLocation.fromNamespaceAndPath(KunJinKaoEntry.MOD_ID, "draw_compile"),
                 (stack, level, entity, seed) -> KunJinKaoClientSwordVisuals.getDrawCompileModelStage(stack, entity)
         ));
+        // 拟态刷的刷取动画：原版 brush.json 里那三条 brushing override 只作用于原版刷子，
+        // 我们的物品要自己注册同名谓词，才能在自己的模型文件里切刷取三帧。
+        // 语义照抄原版：正在用这件物品时返回剩余时长的个位数 / 10（0.0 ~ 0.9）。
+        event.enqueueWork(() -> ItemProperties.register(
+                SwordRegistry.MIMIC_BRUSH.get(),
+                ResourceLocation.withDefaultNamespace("brushing"),
+                (stack, level, entity, seed) -> {
+                    if (entity instanceof net.minecraft.world.entity.LivingEntity living
+                            && living.getUseItem() == stack) {
+                        return (living.getUseItemRemainingTicks() % 10) / 10.0F;
+                    }
+                    return 0.0F;
+                }
+        ));
     }
 
     @SubscribeEvent
