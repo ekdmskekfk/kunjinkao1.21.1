@@ -149,7 +149,8 @@ public class KunJinKaoProtectionHandler {
             // 例外：该玩家已被剑打上处决标记时不能拦——target.kill() 用的 genericKill 没有来源实体，
             // 正好落在这个分支里；拦下来会让「砍中即秒杀」对持剑玩家完全失效。
             if (target instanceof Player player && hasSwordInInventory(player)
-                    && !player.getPersistentData().getBoolean(KILL_BY_OVERWRITE_KEY)) {
+                    && !player.getPersistentData().getBoolean(KILL_BY_OVERWRITE_KEY)
+                    && isInvincibleEnabled(player)) {
                 LOGGER.debug("[PROTECT-ATTACK] cancel damage source={} on sword-holding player", event.getSource().getMsgId());
                 event.setCanceled(true);
             }
@@ -199,6 +200,18 @@ public class KunJinKaoProtectionHandler {
                 event.setNewDamage(limit);
             }
         }
+    }
+
+    /**
+     * 「金刚不坏」是否生效（功能面板里的开关）。
+     *
+     * <p>这是那份"持剑/持有注入物品即完全免疫"的总闸：关掉之后，即使背包里有注入物品，
+     * 伤害也照常结算。状态存在玩家自己的存档里（{@code QolStateSavedData}），
+     * 所以每个管理员可以各自决定要不要无敌。</p>
+     */
+    private static boolean isInvincibleEnabled(Player player) {
+        return player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
+                && KunJinKaoQolHandler.isOn(serverPlayer, dev.modmind.kunjinkao.qol.QolSetting.INVINCIBLE);
     }
 
     private static final org.apache.logging.log4j.Logger LOGGER =
