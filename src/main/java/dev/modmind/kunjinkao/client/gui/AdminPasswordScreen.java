@@ -7,12 +7,20 @@ import dev.modmind.kunjinkao.network.SubmitAdminPasswordPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
-/** 】键打开的管理员密码验证窗口。密码是否正确只由服务器决定。 */
-public final class AdminPasswordScreen extends Screen {
+/**
+ * 】键打开的管理员密码验证窗口。密码是否正确只由服务器决定。
+ *
+ * <p>外观走 {@link KunJinKaoScreen} 的统一壳：深色面板、青色双层描边、四角括号、
+ * 扫描线、带乱码记号的标题栏。这里只负责内容区（标签 / 输入框 / 按钮 / 提示）。</p>
+ */
+public final class AdminPasswordScreen extends KunJinKaoScreen {
+
+    private static final int PANEL_WIDTH = 260;
+    private static final int PANEL_HEIGHT = 132;
+
     private EditBox passwordBox;
     /** 提交按钮：等待服务端回包期间禁用，防止反复提交。 */
     private Button submitButton;
@@ -29,42 +37,43 @@ public final class AdminPasswordScreen extends Screen {
     }
 
     @Override
-    protected void init() {
-        int panelWidth = 220;
-        int panelHeight = 105;
-        int x = (width - panelWidth) / 2;
-        int y = (height - panelHeight) / 2;
-        passwordBox = new EditBox(font, x + 20, y + 42, panelWidth - 40, 20, Component.literal("密码"));
+    protected int panelWidth() {
+        return PANEL_WIDTH;
+    }
+
+    @Override
+    protected int panelHeight() {
+        return PANEL_HEIGHT;
+    }
+
+    @Override
+    protected void initPanel() {
+        int x = contentX();
+        int y = contentY();
+        int w = contentWidth();
+
+        passwordBox = new EditBox(font, x, y + 14, w, 20, Component.literal("密码"));
         passwordBox.setMaxLength(64);
         passwordBox.setHint(Component.literal("输入管理员密码"));
         addRenderableWidget(passwordBox);
+
         submitButton = addRenderableWidget(Button.builder(Component.literal("验证"), button -> submit())
-                .bounds(x + 70, y + 72, 80, 20).build());
+                .bounds(x + (w - 80) / 2, y + 44, 80, 20).build());
         setInitialFocus(passwordBox);
     }
 
-    /**
-     * 1.21.1 的 Screen.render 第一步就会调用 renderBackground，随后才画控件。
-     * 因此面板与标题必须画在这里（即 super.renderBackground 之后），才能得到
-     * "背景只画一遍 → 面板 → 控件"的正确顺序：画到 super.render 之后会被 0xE0 的面板
-     * 盖住输入框与按钮，画到 super.render 之前又会被背景纹理压暗（原 bug）。
-     */
     @Override
-    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        // 不再手动调用 renderBackground：背景由 super.render 内部负责，只保留这一次绘制
-        super.renderBackground(graphics, mouseX, mouseY, partialTick);
-        int panelWidth = 220;
-        int panelHeight = 105;
-        int x = (width - panelWidth) / 2;
-        int y = (height - panelHeight) / 2;
-        graphics.fill(x, y, x + panelWidth, y + panelHeight, 0xE0122030);
-        graphics.fill(x, y, x + panelWidth, y + 1, 0xFF57CFFF);
-        graphics.fill(x, y + panelHeight - 1, x + panelWidth, y + panelHeight, 0xFF57CFFF);
-        graphics.drawCenteredString(font, title, width / 2, y + 16, 0xFFE9FBFF);
-        graphics.drawString(font, "密码", x + 20, y + 30, 0xFF8FEAFF);
+    protected void renderPanelBody(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        int x = contentX();
+        int y = contentY();
+        int w = contentWidth();
+
+        graphics.drawString(font, "密码", x, y, KunJinKaoUi.TEXT_LABEL, false);
+        // 输入框外面套一圈焦点环，让"现在该在这里输入"一眼可见
+        KunJinKaoUi.focusRing(graphics, x, y + 14, w, 20);
         if (hint != null) {
-            // 提示画在面板下方：面板 105 高、按钮底边在 y+92，塞进面板会挤到按钮
-            graphics.drawCenteredString(font, hint, width / 2, y + panelHeight + 8, 0xFFFFD166);
+            graphics.drawCenteredString(font, hint, panelX() + panelW() / 2,
+                    contentBottom() - font.lineHeight, KunJinKaoUi.TEXT_WARN);
         }
     }
 
@@ -79,12 +88,6 @@ public final class AdminPasswordScreen extends Screen {
             onResult();
             hint = Component.translatable("message.kunjinkao.admin_password_timeout");
         }
-    }
-
-    @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        // 背景与控件都由 super.render 负责；密码面板见上面的 renderBackground
-        super.render(graphics, mouseX, mouseY, partialTick);
     }
 
     @Override
@@ -131,10 +134,5 @@ public final class AdminPasswordScreen extends Screen {
         if (passwordBox != null) {
             passwordBox.setValue("");
         }
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
     }
 }

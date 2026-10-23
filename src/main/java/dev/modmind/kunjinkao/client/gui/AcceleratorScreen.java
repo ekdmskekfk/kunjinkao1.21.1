@@ -223,17 +223,15 @@ public class AcceleratorScreen extends Screen {
         int left = (this.width - PANEL_WIDTH) / 2;
         int top = (this.height - PANEL_HEIGHT) / 2;
 
-        graphics.fill(left, top, left + PANEL_WIDTH, top + PANEL_HEIGHT, COLOR_PANEL);
-        graphics.fill(left, top, left + PANEL_WIDTH, top + 1, COLOR_ACCENT);
-        graphics.fill(left, top + PANEL_HEIGHT - 1, left + PANEL_WIDTH, top + PANEL_HEIGHT, COLOR_BORDER);
-        graphics.fill(left, top, left + 1, top + PANEL_HEIGHT, COLOR_BORDER);
-        graphics.fill(left + PANEL_WIDTH - 1, top, left + PANEL_WIDTH, top + PANEL_HEIGHT, COLOR_BORDER);
-
-        graphics.drawCenteredString(this.font, this.title, this.width / 2, top + 12, COLOR_ACCENT);
+        // 统一外观：面板底 / 双层描边 / 扫描线 / 四角括号 / 乱码记号标题栏。
+        // 换掉原来那 5 行手写描边 + 居中标题，四个界面从此长得是一套。
+        KunJinKaoUi.panel(graphics, left, top, PANEL_WIDTH, PANEL_HEIGHT);
+        KunJinKaoUi.titleBar(graphics, this.font, this.title, left, top, PANEL_WIDTH);
 
         // ===== 过滤区 =====
-        graphics.drawString(this.font, Component.translatable("gui.kunjinkao.accelerator.filter"),
-                left + 20, top + 146, COLOR_ACCENT);
+        KunJinKaoUi.sectionHeader(graphics, this.font,
+                Component.translatable("gui.kunjinkao.accelerator.filter"),
+                left + 20, top + 146, PANEL_WIDTH - 40);
         boolean hasEntries = false;
         for (int slot = 0; slot < AcceleratorBlockEntity.FILTER_SLOTS; slot++) {
             ItemStack entry = this.filterDraft.get(slot);
