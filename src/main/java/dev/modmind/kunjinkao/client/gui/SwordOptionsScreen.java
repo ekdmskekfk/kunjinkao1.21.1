@@ -191,6 +191,10 @@ public final class SwordOptionsScreen extends Screen {
         panelH = TITLE_H + Math.max(leftColH, rightColH) + SIDE_PAD;
 
         panelX = (width - panelW) / 2;
+        // 附魔工坊入口：放在标题栏右上角，不占任何分区的位置，面板高度也不用重算。
+        addRenderableWidget(Button.builder(Component.translatable("screen.kunjinkao.enchant"),
+                        b -> Minecraft.getInstance().setScreen(new EnchantScreen(this)))
+                .bounds(panelX + panelW - 76, panelY + 3, 66, 14).build());
         panelY = (height - panelH) / 2;
 
         int leftX = panelX + SIDE_PAD;
@@ -344,6 +348,10 @@ public final class SwordOptionsScreen extends Screen {
         int btnW = Math.max(56, (boxW - BOX_PAD * 2 - BTN_GAP) / 2);
         panelH = TITLE_H + HEADER_H + boxHeight(3) + SIDE_PAD;
         panelX = (width - panelW) / 2;
+        // 附魔工坊入口：放在标题栏右上角，不占任何分区的位置，面板高度也不用重算。
+        addRenderableWidget(Button.builder(Component.translatable("screen.kunjinkao.enchant"),
+                        b -> Minecraft.getInstance().setScreen(new EnchantScreen(this)))
+                .bounds(panelX + panelW - 76, panelY + 3, 66, 14).build());
         panelY = (height - panelH) / 2;
 
         int contentTop = addSection(panelX + SIDE_PAD, panelY + TITLE_H, boxW,
@@ -385,6 +393,10 @@ public final class SwordOptionsScreen extends Screen {
         // 只有一块列表分区；▲▼ 排在分区框【外面】的下面。
         panelH = TITLE_H + HEADER_H + boxHeight(RECORDS_PER_PAGE) + 4 + BTN_H + SIDE_PAD;
         panelX = (width - panelW) / 2;
+        // 附魔工坊入口：放在标题栏右上角，不占任何分区的位置，面板高度也不用重算。
+        addRenderableWidget(Button.builder(Component.translatable("screen.kunjinkao.enchant"),
+                        b -> Minecraft.getInstance().setScreen(new EnchantScreen(this)))
+                .bounds(panelX + panelW - 76, panelY + 3, 66, 14).build());
         panelY = (height - panelH) / 2;
 
         int contentTop = addSection(panelX + SIDE_PAD, panelY + TITLE_H, boxW,

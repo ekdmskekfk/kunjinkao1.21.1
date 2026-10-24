@@ -29,7 +29,7 @@ public final class NetworkHandler {
     // 之后，服务端只推状态；旧客户端没有这条注册，正是要在握手时被挡下的那种情况。
     // 30 提到 31：新增注入两条包（InjectionStartPayload C2S / InjectionStatePayload S2C）。
     // 注入是用来替代原「管理员剑」的机制，注册表变了就 +1。
-    public static final String PROTOCOL_VERSION = "31";
+    public static final String PROTOCOL_VERSION = "32";
 
     private NetworkHandler() {
     }
@@ -99,6 +99,8 @@ public final class NetworkHandler {
                 InjectionStartPayload::handle);
         reg.playToClient(InjectionStatePayload.TYPE, InjectionStatePayload.STREAM_CODEC,
                 InjectionStatePayload::handle);
+        // 附魔工坊：把某个附魔做成附魔书或写到手持物上（管理员操作）
+        reg.playToServer(EnchantPayload.TYPE, EnchantPayload.STREAM_CODEC, EnchantPayload::handle);
     }
 
     public static void sendToServer(CustomPacketPayload payload) {
