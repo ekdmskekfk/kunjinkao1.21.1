@@ -1434,7 +1434,7 @@ public final class SwordOptionsScreen extends Screen {
 
     // ===== 三个滑条（逻辑未变，只把文字改成「名称：值」）=====
 
-private static final class MiningSpeedSlider extends AbstractSliderButton implements IntSlider {
+private static final class MiningSpeedSlider extends KunJinKaoSlider implements IntSlider {
 
         @Override
         public int sliderValue() {
@@ -1469,7 +1469,7 @@ private static final class MiningSpeedSlider extends AbstractSliderButton implem
 
         @Override
         protected void updateMessage() {
-            setMessage(label("screen.kunjinkao.mining_speed", Component.literal(Integer.toString(currentSpeed))));
+            setMessage(label("screen.kunjinkao.mining_speed", Component.literal(Integer.toString(roll(currentSpeed)))));
         }
 
         @Override
@@ -1495,7 +1495,7 @@ private static final class MiningSpeedSlider extends AbstractSliderButton implem
         }
     }
 
-private static final class OreDropMultiplierSlider extends AbstractSliderButton implements IntSlider {
+private static final class OreDropMultiplierSlider extends KunJinKaoSlider implements IntSlider {
 
         @Override
         public int sliderValue() {
@@ -1532,7 +1532,7 @@ private static final class OreDropMultiplierSlider extends AbstractSliderButton 
         @Override
         protected void updateMessage() {
             setMessage(label("screen.kunjinkao.ore_drop_multiplier",
-                    Component.literal(Integer.toString(currentMultiplier))));
+                    Component.literal(Integer.toString(roll(currentMultiplier)))));
         }
 
         @Override
@@ -1567,7 +1567,7 @@ private static final class OreDropMultiplierSlider extends AbstractSliderButton 
      * 与挖矿倍数滑条"1 = 无加成"是同一套读法，两个滑条并排放在一起才不会一个 1 是关、
      * 另一个 1 是满级。
      */
-private static final class LootingLevelSlider extends AbstractSliderButton implements IntSlider {
+private static final class LootingLevelSlider extends KunJinKaoSlider implements IntSlider {
 
         /** 对外暴露的是"增强等级"（设置值 - 1），与滑条上显示的数字一致。 */
         @Override
@@ -1605,7 +1605,7 @@ private static final class LootingLevelSlider extends AbstractSliderButton imple
         @Override
         protected void updateMessage() {
             setMessage(label("screen.kunjinkao.looting_mode",
-                    Component.literal(Integer.toString(currentSetting - 1))));
+                    Component.literal(Integer.toString(roll(currentSetting) - 1))));
         }
 
         @Override
@@ -1633,7 +1633,7 @@ private static final class LootingLevelSlider extends AbstractSliderButton imple
         }
     }
 
-private static final class AttackDamageSlider extends AbstractSliderButton implements IntSlider {
+private static final class AttackDamageSlider extends KunJinKaoSlider implements IntSlider {
 
         @Override
         public int sliderValue() {
@@ -1670,7 +1670,7 @@ private static final class AttackDamageSlider extends AbstractSliderButton imple
         protected void updateMessage() {
             Component valueText = currentDamage >= KunJinKaoSwordItem.MAX_ATTACK_DAMAGE_LIMIT
                     ? Component.translatable("screen.kunjinkao.unlimited")
-                    : Component.literal(Integer.toString(currentDamage));
+                    : Component.literal(Integer.toString(roll(currentDamage)));
             setMessage(label("screen.kunjinkao.attack_damage_limit", valueText));
         }
 
