@@ -1474,7 +1474,7 @@ private static final class MiningSpeedSlider extends KunJinKaoSlider implements 
 
         @Override
         protected void updateMessage() {
-            setMessage(label("screen.kunjinkao.mining_speed", Component.literal(Integer.toString(roll(currentSpeed)))));
+            setMessage(label("screen.kunjinkao.mining_speed", Component.literal(Integer.toString(currentSpeed))));
         }
 
         @Override
@@ -1537,7 +1537,7 @@ private static final class OreDropMultiplierSlider extends KunJinKaoSlider imple
         @Override
         protected void updateMessage() {
             setMessage(label("screen.kunjinkao.ore_drop_multiplier",
-                    Component.literal(Integer.toString(roll(currentMultiplier)))));
+                    Component.literal(Integer.toString(currentMultiplier))));
         }
 
         @Override
@@ -1610,7 +1610,7 @@ private static final class LootingLevelSlider extends KunJinKaoSlider implements
         @Override
         protected void updateMessage() {
             setMessage(label("screen.kunjinkao.looting_mode",
-                    Component.literal(Integer.toString(roll(currentSetting) - 1))));
+                    Component.literal(Integer.toString(currentSetting - 1))));
         }
 
         @Override
@@ -1675,7 +1675,7 @@ private static final class AttackDamageSlider extends KunJinKaoSlider implements
         protected void updateMessage() {
             Component valueText = currentDamage >= KunJinKaoSwordItem.MAX_ATTACK_DAMAGE_LIMIT
                     ? Component.translatable("screen.kunjinkao.unlimited")
-                    : Component.literal(Integer.toString(roll(currentDamage)));
+                    : Component.literal(Integer.toString(currentDamage));
             setMessage(label("screen.kunjinkao.attack_damage_limit", valueText));
         }
 
